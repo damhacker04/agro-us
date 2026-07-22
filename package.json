@@ -1,0 +1,21 @@
+{
+  "name": "agro-os",
+  "version": "0.0.0",
+  "private": true,
+  "description": "AgroOS — B2B Agro-Logistics SaaS (white-label marketplace sayur & buah)",
+  "packageManager": "pnpm@10.30.3",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "type-check": "turbo run type-check",
+    "clean": "turbo run clean"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.6.0"
+  }
+}

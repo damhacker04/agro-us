@@ -1,0 +1,14 @@
+{
+  "name": "@agro-os/web",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo \"[web] placeholder — scaffold Next.js belum dibuat (lihat README)\"",
+    "build": "echo \"[web] placeholder build\"",
+    "lint": "echo \"[web] placeholder lint\"",
+    "type-check": "echo \"[web] placeholder type-check\""
+  },
+  "dependencies": {
+    "@agro-os/shared": "workspace:*"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "@agro-os/api",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo \"[api] placeholder — scaffold NestJS belum dibuat (lihat README)\"",
+    "build": "echo \"[api] placeholder build\"",
+    "lint": "echo \"[api] placeholder lint\"",
+    "type-check": "echo \"[api] placeholder type-check\""
+  },
+  "dependencies": {
+    "@agro-os/shared": "workspace:*"
+  }
+}
