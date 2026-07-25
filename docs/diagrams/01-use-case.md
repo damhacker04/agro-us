@@ -8,6 +8,9 @@
 > **v2.2:** tambah **UC-4a Deklarasi Gagal/Panen Sebagian** (`«include»` ke UC-3 karena dicatat sebagai
 > node timeline, FR-4.9) dan **UC-4b Alokasi FIFO Shortfall** (FR-7.9). UC-7a kini juga dipicu oleh shortfall,
 > bukan hanya gagal panen total.
+>
+> **Catatan render:** label garis diringkas demi kerapian layout — kondisi lengkap tiap relasi
+> ada di tabel **"Kondisi Relasi"** di bawah diagram.
 
 ```mermaid
 ---
@@ -75,20 +78,21 @@ flowchart LR
     CO --- UC10
 
     %% ============ RELASI INCLUDE / EXTEND ============
+    %% Kondisi tiap relasi: lihat tabel "Kondisi Relasi" di bawah diagram.
     UC1 -.->|«include»| UC0
     UC6 -.->|«include»| UC0
     UC6 -.->|«include»| UC6a
     UC6 -.->|«include»| UC6b
     UC9 -.->|«include»| UC9b
     UC9 -.->|«include»| UC9a
-    UC8 -.->|«include» sinyal-1| UC9a
+    UC8 -.->|«include»| UC9a
     UC3a -.->|«extend»| UC3
     UC4 -.->|«include»| UC4b
-    UC4a -.->|«extend» jika panen kurang| UC4
-    UC4a -.->|«include» node GAGAL_PANEN| UC3
-    UC7a -.->|«extend» jika gagal panen<br/>atau shortfall| UC7
-    UC8a -.->|«extend» jika ada keberatan| UC8
-    UC12 -.->|«extend» klaim di atas 10 persen| UC8a
+    UC4a -.->|«extend»| UC4
+    UC4a -.->|«include»| UC3
+    UC7a -.->|«extend»| UC7
+    UC8a -.->|«extend»| UC8
+    UC12 -.->|«extend»| UC8a
 
     %% ============ STYLING ============
     classDef actor fill:#1F2937,color:#ffffff,stroke:#111827,stroke-width:2px;
@@ -98,3 +102,25 @@ flowchart LR
     class PG,CO ext;
     class UC0,UC1,UC2,UC3,UC3a,UC4,UC4a,UC4b,UC5,UC6,UC6a,UC6b,UC7,UC7a,UC8,UC8a,UC9,UC9a,UC9b,UC10,UC11,UC12 uc;
 ```
+
+## Kondisi Relasi
+
+> Label garis di diagram sengaja diringkas (`«include»` / `«extend»` saja) agar layout tetap rapi.
+> Kondisi/keterangan lengkap tiap relasi ada di tabel ini.
+
+| Relasi | Jenis | Kondisi / Keterangan |
+|---|---|---|
+| UC-1 → UC-0 | «include» | Onboarding selalu melalui autentikasi OTP |
+| UC-6 → UC-0 | «include» | Checkout mensyaratkan login OTP |
+| UC-6 → UC-6a | «include» | Checkout selalu mengonsolidasi rencana pengiriman |
+| UC-6 → UC-6b | «include» | Checkout selalu berakhir di pembayaran + penahanan escrow |
+| UC-9 → UC-9b | «include» | **Kode Antar diverifikasi sebelum sesi pelacakan aktif** (FR-6.2) |
+| UC-9 → UC-9a | «include» | Sesi aktif memancarkan posisi + deteksi geofence |
+| UC-8 → UC-9a | «include» | **Sinyal-1** dual-signal PoD: geofence memicu notifikasi konfirmasi |
+| UC-3a → UC-3 | «extend» | Hanya bila Tenant perlu mengoreksi node (node asli tetap tampil) |
+| UC-4 → UC-4b | «include» | Tandai Panen selalu menjalankan alokasi FIFO (`PAYMENTS.paid_at`, FR-7.9) |
+| UC-4a → UC-4 | «extend» | Hanya bila hasil panen **kurang dari kuota terjual** (FR-7.8) |
+| UC-4a → UC-3 | «include» | Deklarasi dicatat sebagai **node timeline `GAGAL_PANEN`** (FR-4.9) |
+| UC-7a → UC-7 | «extend» | Hanya bila **gagal panen atau shortfall** (FR-7.4) |
+| UC-8a → UC-8 | «extend» | Hanya bila ada keberatan mutu dalam jendela klaim (FR-5.3) |
+| UC-12 → UC-8a | «extend» | Hanya bila nilai klaim **> 10% nilai order** (FR-5.6) |
