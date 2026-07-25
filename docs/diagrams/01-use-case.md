@@ -1,13 +1,17 @@
-# AgroUs — Use Case Diagram (UML 2.5) — v2.1
+# AgroUs — Use Case Diagram (UML 2.5) — v2.2
 
 > Aktor primer: Tenant/Penjual, Pembeli HORECA, Kurir Pihak Ketiga.
 > Aktor sekunder & sistem eksternal: Operator AgroUs, Payment Gateway (Midtrans/Xendit), Copernicus Sentinel-2.
 >
 > **v2.1:** tambah **UC-9b Verifikasi Kode Antar** — `«include»` dari UC-9, dijalankan sebelum UC-9a.
+>
+> **v2.2:** tambah **UC-4a Deklarasi Gagal/Panen Sebagian** (`«include»` ke UC-3 karena dicatat sebagai
+> node timeline, FR-4.9) dan **UC-4b Alokasi FIFO Shortfall** (FR-7.9). UC-7a kini juga dipicu oleh shortfall,
+> bukan hanya gagal panen total.
 
 ```mermaid
 ---
-title: "AgroUs — Use Case Diagram (UML 2.5) — v2.1"
+title: "AgroUs — Use Case Diagram (UML 2.5) — v2.2"
 ---
 flowchart LR
     %% ============ AKTOR PRIMER ============
@@ -30,6 +34,8 @@ flowchart LR
             UC3(["UC-3<br/>Catat Verified Timeline"])
             UC3a(["UC-3a<br/>Ajukan Node Ralat"])
             UC4(["UC-4<br/>Tandai Panen dan<br/>Cetak QR Box"])
+            UC4a(["UC-4a<br/>Deklarasi Gagal Panen<br/>atau Panen Sebagian"])
+            UC4b(["UC-4b<br/>Alokasi FIFO Shortfall<br/>ke Pesanan"])
         end
 
         subgraph MP["Modul Pembeli"]
@@ -77,7 +83,10 @@ flowchart LR
     UC9 -.->|«include»| UC9a
     UC8 -.->|«include» sinyal-1| UC9a
     UC3a -.->|«extend»| UC3
-    UC7a -.->|«extend» jika gagal panen| UC7
+    UC4 -.->|«include»| UC4b
+    UC4a -.->|«extend» jika panen kurang| UC4
+    UC4a -.->|«include» node GAGAL_PANEN| UC3
+    UC7a -.->|«extend» jika gagal panen<br/>atau shortfall| UC7
     UC8a -.->|«extend» jika ada keberatan| UC8
     UC12 -.->|«extend» klaim di atas 10 persen| UC8a
 
@@ -87,5 +96,5 @@ flowchart LR
     classDef uc fill:#F0FDF4,stroke:#14532D,color:#14532D;
     class T,P,K,OP actor;
     class PG,CO ext;
-    class UC0,UC1,UC2,UC3,UC3a,UC4,UC5,UC6,UC6a,UC6b,UC7,UC7a,UC8,UC8a,UC9,UC9a,UC9b,UC10,UC11,UC12 uc;
+    class UC0,UC1,UC2,UC3,UC3a,UC4,UC4a,UC4b,UC5,UC6,UC6a,UC6b,UC7,UC7a,UC8,UC8a,UC9,UC9a,UC9b,UC10,UC11,UC12 uc;
 ```

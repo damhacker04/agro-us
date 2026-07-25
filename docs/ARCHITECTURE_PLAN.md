@@ -1,6 +1,6 @@
-# AgroUs — Rencana Arsitektur & Setup Repo (v2.1)
+# AgroUs — Rencana Arsitektur & Setup Repo (v2.2)
 
-> Selaras dengan [`PRD.md`](PRD.md) v2.1. **PRD adalah sumber kebenaran** untuk requirement;
+> Selaras dengan [`PRD.md`](PRD.md) v2.2. **PRD adalah sumber kebenaran** untuk requirement;
 > dokumen ini adalah keputusan teknis & workflow repo.
 >
 > Produk: B2B Agro-Logistics **PWA** — supply chain berbasis permintaan yang **terverifikasi**:
@@ -90,6 +90,22 @@ modules/<module>/
 4. **Kode Antar (v2.1)** — PIN disimpan **hash** (bukan plaintext), maks 5 percobaan lalu token terkunci,
    dan `consumed_at` token QR diisi **setelah PIN benar** — bukan saat scan (FR-6.2). Salah urutan di sini
    = celah yang justru mau ditutup v2.1.
+5. **Alokasi FIFO (v2.2)** — urutkan berdasarkan **`PAYMENTS.paid_at`**, bukan `ORDERS.created_at`.
+   Salah kolom = celah *gaming* (booking duluan, bayar belakangan). Alokasi harus **transaksional**
+   agar tidak ada double-allocation saat panen dideklarasikan bersamaan (FR-7.9).
+6. **Panen sebagian diturunkan, bukan disimpan ganda** — `quota_box_fulfilled < quota_box_sold`
+   adalah satu-satunya penanda shortfall. **Jangan** menambah nilai `production_status` baru;
+   dua sumber kebenaran akan tidak sinkron (§5.7.2).
+
+### 3d. Seed data yang WAJIB ada sebelum Fase 1 selesai
+
+`COMMODITIES` (grade standards, toleransi susut, **rendemen rata-rata**) dan `ZONES` (nilai minimum pesanan)
+**memblokir** FR-3.2, FR-3.3, FR-5.1, dan FR-5.2 — tanpa keduanya produk tidak bisa punya grade dan kuota
+tidak bisa dibatasi. Cukup **file seed di migration**; konsol CRUD operator (OP-09/OP-10) baru perlu Fase 4.
+
+> ⚠️ **`avg_yield_kg_per_ha` langsung menentukan batas kuota 70%.** Angka yang salah membuat Tenant
+> bisa menjual melebihi kapasitas lahannya. **Wajib divalidasi ke penyuluh pertanian / data BPS**
+> sebelum produksi — jangan pakai angka perkiraan untuk komitmen bisnis.
 
 ---
 

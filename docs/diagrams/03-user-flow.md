@@ -1,14 +1,18 @@
-# AgroUs — User Flow: Tiga Persona dan Titik Interkoneksi — v2.1
+# AgroUs — User Flow: Tiga Persona dan Titik Interkoneksi — v2.2
 
 > Alur Tenant (Desktop/Tablet), Pembeli (Mobile), dan Kurir (Zero-Install),
 > beserta titik interkoneksi antar persona (garis putus-putus).
 >
 > **v2.1:** alur Kurir menyisipkan layar **input Kode Antar** (`KP`/`KPD`, kunci setelah 5x salah → `KPE`).
 > Layar Tenant `T12` kini "Detail Pesanan Aktif: Cetak QR + Kode Antar".
+>
+> **v2.2:** Tenant mendapat **`TH1` Tandai Panen + jumlah aktual → `TH3` node GAGAL_PANEN → `TH4` pratinjau alokasi**.
+> Pembeli mendapat **`PSB` pilihan terima sebagian** (tidak dipaksa parsial, FR-7.10) dan **`PSU` penyaringan
+> opsi substitusi** bila selisih harga > 10% (FR-7.11). Notifikasi kedatangan kini **bertahap** (FR-10.2).
 
 ```mermaid
 ---
-title: "AgroUs — User Flow: Tiga Persona dan Titik Interkoneksi — v2.1"
+title: "AgroUs — User Flow: Tiga Persona dan Titik Interkoneksi — v2.2"
 ---
 flowchart TB
     subgraph FT["🧑‍🌾 ALUR TENANT — Desktop/Tablet"]
@@ -24,7 +28,13 @@ flowchart TB
         T8 --> T10["Input Node Timeline<br/>maksimal 3 ketukan + kamera"]
         T10 --> T11{"Node = Panen?"}
         T11 -- "Belum" --> T10
-        T11 -- "Ya" --> T12["Detail Pesanan Aktif:<br/>Cetak QR + Kode Antar"]
+        T11 -- "Ya" --> TH1["Tandai Panen<br/>+ isi jumlah box AKTUAL"]
+        TH1 --> TH2{"Cukup untuk<br/>semua PO?"}
+        TH2 -- "Ya" --> T12["Detail Pesanan Aktif:<br/>Cetak QR + Kode Antar"]
+        TH2 -- "Kurang / nihil" --> TH3["Node GAGAL_PANEN:<br/>alasan + foto + GPS"]
+        TH3 --> TH4["Pratinjau alokasi FIFO<br/>sebelum konfirmasi"]
+        TH4 --> T12
+        TH4 -.->|"pesanan tak terpenuhi"| PHA
     end
 
     subgraph FP["🏪 ALUR PEMBELI — Mobile"]
@@ -41,11 +51,19 @@ flowchart TB
         P11 --> P12{"Bayar sebelum<br/>kedaluwarsa?"}
         P12 -- "Tidak" --> P13["Layar tagihan kedaluwarsa"] --> P11
         P12 -- "Ya" --> P14["Pesanan Saya<br/>status + timeline + peta live"]
-        P14 --> PD1{"Notifikasi<br/>gagal panen?"}
-        PD1 -- "Ya" --> PHA["Layar Harvest Assurance:<br/>substitusi / jadwal ulang / refund"]
-        PHA -- "Substitusi atau jadwal ulang" --> P14
-        PHA -- "Refund" --> PRF["Layar dana dikembalikan<br/>pesanan ditutup"]
-        PD1 -- "Tidak" --> P15[["Push: Kurir Tiba di Lokasi"]]
+        P14 --> PD1{"Notifikasi gagal panen<br/>atau shortfall?"}
+        PD1 -- "Shortfall, di perbatasan" --> PSB{"Terima sebagian?"}
+        PSB -- "Ya" --> PSC["Terima porsi tersedia<br/>+ refund sisa"] --> P14
+        PSB -- "Tidak, tolak semua" --> PHA
+        PD1 -- "Gagal total" --> PHA["Layar Harvest Assurance:<br/>substitusi / jadwal ulang / refund"]
+        PHA --> PSU{"Substitusi tersedia?<br/>selisih harga maks 10%"}
+        PSU -- "Tidak" --> PHB["Hanya jadwal ulang<br/>atau refund"]
+        PSU -- "Ya" --> PHC["Substitusi / jadwal ulang / refund"]
+        PHC -- "Substitusi atau jadwal ulang" --> P14
+        PHB -- "Jadwal ulang" --> P14
+        PHC -- "Refund" --> PRF["Layar dana dikembalikan<br/>pesanan ditutup"]
+        PHB -- "Refund" --> PRF
+        PD1 -- "Tidak" --> P15[["Push: Kurir Tiba di Lokasi<br/>notif bertahap: Dikirim, 1 km, 100 m"]]
         P15 --> P16{"Respons dalam<br/>60 menit?"}
         P16 -- "Tidak" --> P17["Diterima Otomatis<br/>jendela klaim 24 jam"]
         P16 -- "Ya" --> P18["Konfirmasi 1-Ketuk<br/>+ foto kondisi barang"]
@@ -80,7 +98,7 @@ flowchart TB
     classDef error fill:#FEF2F2,color:#B91C1C,stroke:#B91C1C;
     classDef push fill:#FFFBEB,color:#B45309,stroke:#B45309;
     classDef done fill:#F0FDF4,color:#14532D,stroke:#14532D,stroke-width:2px;
-    class P8,P13,K3,K6,KPE,T7 error;
+    class P8,P13,K3,K6,KPE,T7,TH3 error;
     class P15,K8 push;
-    class P22,PRF,T12 done;
+    class P22,PRF,T12,PSC done;
 ```

@@ -1,15 +1,25 @@
-# AgroUs — Entity Relationship Diagram (PostgreSQL + PostGIS) — v2.1
+# AgroUs — Entity Relationship Diagram (PostgreSQL + PostGIS) — v2.2
 
-> Skema data v2.1. Menggunakan PostGIS untuk `geometry` (poligon lahan, titik GPS, geofence).
+> Skema data v2.2. Menggunakan PostGIS untuk `geometry` (poligon lahan, titik GPS, geofence).
 > Entitas kunci: append-only `TIMELINE_NODES` (rantai hash SHA-256), `SATELLITE_OBSERVATIONS`
 > (NDVI/NDMI), `ESCROW_LEDGER` (append-only), dan `DEMAND_AGGREGATES` (materialized view).
 >
 > **v2.1:** `SHIPMENTS` menambah `courier_pin_hash` + `pin_attempts` (Kode Antar, FR-6.1/6.3);
 > `BOX_QR_TOKENS.consumed_at` kini terisi **setelah kode terverifikasi** (FR-6.2), bukan saat dipindai.
+>
+> **v2.2 — Panen Sebagian:** `BATCHES.quota_box_fulfilled`, `ORDER_ITEMS.qty_box_fulfilled`,
+> `ASSURANCE_RESOLUTIONS.shortfall_box` + `price_gap_borne_by_tenant`.
+> `PAYMENTS.paid_at` menjadi **kunci urutan alokasi FIFO** (FR-7.9). `TENANTS.shortfall_ratio_cached`
+> untuk penalti kuota (FR-7.12). `activity_type` bertambah `GAGAL_PANEN` → **7 jenis** (FR-4.9).
+> `SUBSCRIPTIONS.grace_until` (FR-9.4).
+>
+> **Catatan:** `production_status` **tidak** menambah nilai baru. Panen sebagian diturunkan dari
+> `quota_box_fulfilled < quota_box_sold` — satu sumber kebenaran, menghindari status dan angka jadi tidak sinkron.
+> `ESCROW_LEDGER` juga tidak butuh `entry_type` baru: `RELEASE` untuk porsi terpenuhi, `REFUND` untuk shortfall.
 
 ```mermaid
 ---
-title: "AgroUs — Entity Relationship Diagram (PostgreSQL + PostGIS) — v2.1"
+title: "AgroUs — Entity Relationship Diagram (PostgreSQL + PostGIS) — v2.2"
 ---
 erDiagram
     USERS {
@@ -28,7 +38,8 @@ erDiagram
         text legality_status "PENDING / APPROVED / REJECTED - FR-1.7"
         uuid reviewed_by FK "operator peninjau"
         numeric claim_ratio_cached "tampil publik - FR-5.7"
-        numeric quota_multiplier "penalti reputasi side-selling"
+        numeric shortfall_ratio_cached "rolling 2 siklus - tampil publik - FR-7.12"
+        numeric quota_multiplier "0.70 normal - turun 0.50 jika shortfall lebih 15 persen - FR-7.12"
     }
 
     BUYERS {
@@ -88,6 +99,7 @@ erDiagram
         date claimed_harvest_date
         int quota_box_total "CHECK maks 70 persen kapasitas lahan"
         int quota_box_sold
+        int quota_box_fulfilled "hasil panen aktual - FR-7.8 - FAILED implies 0"
         int locked_price "harga terkunci PO"
         text production_status "PLANNING / GROWING / HARVESTED / FAILED"
         text verification_status "TERVERIFIKASI / FOTO_SAJA / PERLU_DITINJAU / TIDAK_DAPAT / TIDAK_SESUAI"
@@ -99,7 +111,7 @@ erDiagram
         uuid id PK
         uuid batch_id FK
         int seq
-        text activity_type "6 jenis terstruktur - 5.4.1"
+        text activity_type "7 jenis terstruktur termasuk GAGAL_PANEN - 5.4.1 FR-4.9"
         text description "maks 280 karakter"
         geometry gps_point "wajib dalam poligon - FR-4.3"
         timestamptz device_ts
@@ -148,7 +160,8 @@ erDiagram
         int price_month "Rp199000 - Sumber 2"
         date period_start
         date period_end
-        text status "gerbang akses verifikasi satelit"
+        date grace_until "tenggang 14 hari - FR-9.4"
+        text status "gerbang verifikasi BATCH BARU saja - badge lama permanen FR-9.2"
     }
 
     ORDERS {
@@ -165,6 +178,7 @@ erDiagram
         uuid shipment_id FK
         uuid batch_id FK
         int qty_box
+        int qty_box_fulfilled "hasil alokasi FIFO - FR-7.9"
         int unit_price_locked
         int subtotal
     }
@@ -195,7 +209,7 @@ erDiagram
         int amount
         text status "PENDING / PAID / EXPIRED / FAILED"
         timestamptz expires_at "timeout D3 activity"
-        timestamptz paid_at
+        timestamptz paid_at "KUNCI URUTAN ALOKASI FIFO - FR-7.9"
     }
 
     ESCROW_LEDGER {
@@ -254,7 +268,9 @@ erDiagram
         uuid id PK
         uuid order_item_id FK,UK
         uuid failed_batch_id FK
-        text chosen_option "SUBSTITUSI / JADWAL_ULANG / REFUND - FR-7.4"
+        text chosen_option "SUBSTITUSI / JADWAL_ULANG / REFUND / TERIMA_SEBAGIAN - FR-7.4 7.10"
+        int shortfall_box "porsi tidak terpenuhi - FR-7.10"
+        int price_gap_borne_by_tenant "cap 10 persen - gugur jika tak terverifikasi - FR-7.11"
         uuid replacement_batch_id FK "nullable"
         timestamptz resolved_at
     }
@@ -265,7 +281,7 @@ erDiagram
         uuid shipment_id FK
         text pdf_url
         int price "Rp25000 - Sumber 3"
-        text paid_ref
+        text paid_ref "dibundel di tagihan checkout - FR-2.10"
     }
 
     DEMAND_AGGREGATES {

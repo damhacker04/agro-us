@@ -54,7 +54,7 @@ export enum VerificationBadge {
   BELUM_TERVERIFIKASI = "BELUM_TERVERIFIKASI",
 }
 
-/** Jenis kegiatan node timeline — daftar terstruktur, bukan teks bebas (5.4.1). */
+/** Jenis kegiatan node timeline — 7 jenis terstruktur, bukan teks bebas (5.4.1). */
 export enum TimelineActivity {
   PENYIAPAN_LAHAN = "PENYIAPAN_LAHAN",
   PENANAMAN = "PENANAMAN",
@@ -62,6 +62,8 @@ export enum TimelineActivity {
   PENGENDALIAN_HAMA = "PENGENDALIAN_HAMA",
   PENGAIRAN = "PENGAIRAN",
   PANEN = "PANEN",
+  /** Deklarasi gagal panen total maupun sebagian (FR-4.9). */
+  GAGAL_PANEN = "GAGAL_PANEN",
 }
 
 /** Status pengiriman/pesanan (SHIPMENTS.status, 6 tahap + batal — 5.6.1). */
@@ -85,11 +87,13 @@ export enum EscrowEntryType {
   BIAYA_BATAL10 = "BIAYA_BATAL10",
 }
 
-/** Opsi Harvest Assurance saat gagal panen (FR-7.4). */
+/** Opsi Harvest Assurance saat gagal panen / shortfall (FR-7.4, FR-7.10). */
 export enum AssuranceOption {
   SUBSTITUSI = "SUBSTITUSI",
   JADWAL_ULANG = "JADWAL_ULANG",
   REFUND = "REFUND",
+  /** Pembeli di perbatasan alokasi memilih terima porsi tersedia + refund sisa (FR-7.10). */
+  TERIMA_SEBAGIAN = "TERIMA_SEBAGIAN",
 }
 
 export const APP_NAME = "AgroUs" as const;
@@ -105,3 +109,22 @@ export const MIN_LAND_PLOT_HA = 0.1; // FR-1.6
 /** Kode Antar Kurir — PIN 4 digit sekali pakai per pengiriman (FR-6.1, FR-6.3). */
 export const COURIER_PIN_LENGTH = 4;
 export const COURIER_PIN_MAX_ATTEMPTS = 5; // lewat ini token terkunci
+
+/** Notifikasi kedatangan bertahap (FR-10.2). Jendela 60 menit mulai di tahap 100 m. */
+export const PRENOTIFY_RADIUS_M = 1000;
+
+/**
+ * Panen sebagian / shortfall (§5.7.2).
+ * Alokasi FIFO memakai PAYMENTS.paid_at — bukan waktu order dibuat (FR-7.9).
+ */
+/** Cap tanggungan Tenant atas selisih harga substitusi. Gugur bila gagal panen tak terverifikasi (FR-7.11). */
+export const SUBSTITUTION_PRICE_GAP_CAP_PCT = 10;
+/** Ambang shortfall terverifikasi pemicu penalti kuota, rolling 2 siklus (FR-7.12). */
+export const SHORTFALL_PENALTY_THRESHOLD_PCT = 15;
+export const SHORTFALL_PENALTY_ROLLING_CYCLES = 2;
+/** quota_multiplier: normal → penalti. Pulih setelah 2 siklus bersih (FR-7.12). */
+export const QUOTA_MULTIPLIER_NORMAL = 0.7;
+export const QUOTA_MULTIPLIER_PENALTY = 0.5;
+
+/** Masa tenggang langganan sebelum fitur dikunci (FR-9.4). */
+export const SUBSCRIPTION_GRACE_DAYS = 14;

@@ -1,4 +1,4 @@
-# AgroUs — Sequence Diagram: Zero-Install Tracking, Dual-Signal PoD, Pencairan Escrow — v2.1
+# AgroUs — Sequence Diagram: Zero-Install Tracking, Dual-Signal PoD, Pencairan Escrow — v2.2
 
 > Alur runtime dari scan QR kurir → **verifikasi Kode Antar** → pelacakan posisi → geofence →
 > konfirmasi pembeli (dual-signal PoD) → jendela klaim mutu → pencairan escrow ke Tenant.
@@ -6,10 +6,14 @@
 > **v2.1:** blok `verifyPin` disisipkan setelah token valid. Perhatikan `Note`: token baru
 > ditandai `consumed` **di titik kode benar**, bukan saat dipindai — sehingga pemindaian iseng
 > tidak menghanguskan token.
+>
+> **v2.2 — notifikasi bertahap (FR-10.2):** Notif-1 saat Dikirim, Notif-2 saat ±1 km, Notif-3 saat geofence 100 m.
+> **Jendela 60 menit baru dimulai pada Notif-3**, bukan sebelumnya. Kanal kritis = WhatsApp + SMS fallback,
+> karena push PWA di iOS hanya jalan bila pembeli memasang PWA ke home screen.
 
 ```mermaid
 ---
-title: "AgroUs — Sequence Diagram: Zero-Install Tracking, Dual-Signal PoD, Pencairan Escrow — v2.1"
+title: "AgroUs — Sequence Diagram: Zero-Install Tracking, Dual-Signal PoD, Pencairan Escrow — v2.2"
 ---
 sequenceDiagram
     autonumber
@@ -47,7 +51,7 @@ sequenceDiagram
             TRK->>DB: UPDATE token = consumed, buat sesi lacak
             TRK->>ORD: updateStatus(order, "Dikirim")
             ORD->>DB: UPDATE status + event log append-only
-            ORD--)UIP: Push notif "Pesanan Dikirim"
+            ORD--)UIP: Notif-1 via WhatsApp "Pesanan Dikirim, estimasi tiba"
             TRK-->>GW: 200 + session_id
             GW-->>UIK: Halaman pelacakan ringan
         end
@@ -71,11 +75,18 @@ sequenceDiagram
         TRK--)UIP: Tampilkan posisi terakhir + stempel waktu jujur
     end
 
+    opt Kurir dalam radius 1 km
+        TRK->>DB: ST_DWithin(posisi_kurir, titik_tujuan, 1000 m)
+        TRK--)UIP: Notif-2 via WhatsApp "Kurir hampir tiba, siapkan penerimaan"
+        Note over TRK,P: Jendela 60 menit BELUM dimulai di sini
+    end
+
     TRK->>DB: ST_DWithin(posisi_kurir, titik_tujuan, 100 m)
     DB-->>TRK: true
     TRK->>ORD: updateStatus(order, "Tiba di Lokasi")
     ORD->>DB: UPDATE status
-    ORD--)UIP: Push "Kurir tiba. Konfirmasi penerimaan Anda"
+    ORD--)UIP: Notif-3 via WhatsApp + SMS fallback "Kurir tiba. Konfirmasi penerimaan"
+    Note over ORD,P: Jendela 60 menit dimulai di notifikasi ketiga ini - FR-10.2
     UIP->>P: Tampilkan tombol konfirmasi + kamera
 
     alt Sinyal-2 diterima. Pembeli konfirmasi dalam 60 menit

@@ -1,9 +1,13 @@
 # AgroUs — Page Inventory (Daftar Halaman untuk UI/UX)
 
-> Turunan dari [`PRD.md`](PRD.md) v2.1 + [`diagrams/`](diagrams). Setiap cabang keputusan di
+> Turunan dari [`PRD.md`](PRD.md) **v2.2** + [`diagrams/`](diagrams). Setiap cabang keputusan di
 > User Flow & Activity Diagram sudah ditelusuri agar **tiap jalur punya halaman/state tujuan**.
 >
-> **Total: 5 role · 109 halaman & state** (termasuk error handling).
+> **Total: 5 role · 112 halaman & state** (termasuk error handling).
+>
+> **Status v2.2:** seluruh gap di §8 sudah **diputuskan** dan sudah dipropagasi ke PRD + diagram.
+> Perubahan utama bagi desainer: **alur panen sebagian** (TN-19a, BY-11c), **laporan ketertelusuran
+> pindah ke checkout** (BY-18 dihapus), dan **notifikasi kedatangan bertahap** (BY-10b).
 
 ---
 
@@ -81,8 +85,10 @@ Desktop/Tablet untuk dashboard; **input timeline wajib nyaman di ponsel**.
 | TN-17b | ↳ Peringatan GPS di Luar Poligon | — | Tolak simpan, **atau** minta alasan tertulis yang akan **tampil ke pembeli**. Harus jelas konsekuensinya. | FR-4.3, `D4` | M |
 | TN-17c | ↳ Antrean Offline | — | Node tersimpan lokal saat tanpa sinyal + indikator "menunggu terkirim". | Persona §4.1 | S |
 | TN-18 | Tambah Node Ralat | `/tenant/batch/[id]/node/[id]/ralat` | Node koreksi merujuk node asli. **Tegaskan: node asli tetap tampil & tidak terhapus.** | FR-4.2 | M |
-| TN-19 | Tandai Panen | `/tenant/batch/[id]/panen` | Konfirmasi panen. **Ditolak jika belum ada node penanaman** atau rentang waktu tidak masuk akal. | FR-4.8, `T11` | M |
-| TN-20 | Laporkan Gagal Panen | `/tenant/batch/[id]/gagal` | Deklarasi gagal panen + alasan & bukti → memicu Harvest Assurance ke pembeli. ⚠️ *Implisit, lihat §8.* | `D8` | M |
+| TN-19 | Tandai Panen | `/tenant/batch/[id]/panen` | Konfirmasi panen + **wajib isi jumlah box hasil aktual**. Ditolak jika belum ada node penanaman atau rentang waktu tidak masuk akal. | FR-4.8, FR-7.8, `TH1` | M |
+| TN-19a | ↳ Pratinjau Alokasi FIFO | — | **Sebelum konfirmasi**, tampilkan dampak: *"6 dari 10 pesanan terpenuhi penuh. 4 pesanan akan ditawari Harvest Assurance."* Tenant harus melihat konsekuensi sebelum menekan. | FR-7.8, FR-7.9, `TH4` | M |
+| TN-20 | Deklarasi Gagal / Panen Sebagian | `/tenant/batch/[id]/gagal` | **Bukan tombol status — ini form node timeline** tipe `GAGAL_PANEN`: alasan terstruktur (cuaca/hama/penyakit/lainnya) + foto kamera in-app + GPS dalam poligon. Append-only, masuk rantai hash, **tidak bisa dihapus**. Memicu Harvest Assurance **segera**. | FR-4.9, `TH3` | M |
+| TN-20a | ↳ Peringatan Konsekuensi | — | Sebelum simpan: jelaskan shortfall tercatat permanen & memengaruhi rasio publik + kuota siklus berikutnya. | FR-7.12 | M |
 
 ### 2d. Pesanan, QR & Kode Antar (5)
 
@@ -103,7 +109,9 @@ Desktop/Tablet untuk dashboard; **input timeline wajib nyaman di ponsel**.
 | TN-27 | Rekomendasi Tanam | `/tenant/rekomendasi` | Permintaan agregat belum terpenuhi 8–16 minggu ke depan, **kalimat operasional** ("Zona Malang butuh 8 ton cabai rawit minggu ke-34…"). + **indikator kejenuhan pasokan**. | FR-3.7, FR-8.2, FR-8.4 | S |
 | TN-28 | Buka Kuota dari Rekomendasi | — | **Satu ketukan** dari TN-27 → prefilled TN-16. | FR-8.3 | M |
 | TN-29 | Klaim Masuk | `/tenant/klaim` | Klaim mutu terhadap pengiriman Tenant + status penyelesaian. ⚠️ *Implisit.* | FR-5.x | M |
-| TN-30 | Langganan (Paket Verified) | `/tenant/langganan` | Rp199.000/bulan. **Gerbang akses verifikasi satelit**, kuota PO tanpa batas, Rekomendasi Tanam. Status & perpanjangan. ⚠️ *Implisit.* | §8.1 Sumber 2 | M |
+| TN-30 | Langganan (Paket Verified) | `/tenant/langganan` | Rp199.000/bulan. Gerbang verifikasi satelit **batch baru**, kuota PO tanpa batas, Rekomendasi Tanam. | FR-9.1 | M |
+| TN-30a | ↳ State Masa Tenggang | — | **14 hari** sebelum penguncian + notifikasi. Nyatakan jelas apa yang **tetap aman**: badge lama permanen, batch dengan PO terjual tetap diverifikasi. | FR-9.2, FR-9.3, FR-9.4 | S |
+| TN-33 | Rasio Shortfall & Reputasi | `/tenant/reputasi` | Rasio klaim + **rasio shortfall** (rolling 2 siklus) + `quota_multiplier` berjalan. Peringatan bila mendekati ambang 15%. | FR-5.7, FR-7.12 | S |
 | TN-31 | Notifikasi | `/tenant/notifikasi` | PO masuk, pembayaran, klaim, hasil verifikasi satelit, pencairan. | — | M |
 | TN-32 | Pengaturan Akun | `/tenant/pengaturan` | Profil bisnis, logo, telepon, zona layanan. | FR-1.4 | M |
 
@@ -130,6 +138,7 @@ Mobile-first (di lapangan), tetap layak di desktop saat rekonsiliasi tagihan.
 | ID | Halaman | Rute | Isi kunci | Ref | Prio |
 |---|---|---|---|---|---|
 | BY-06 | Checkout: Detail Pengiriman | `/checkout` | Nama penerima, **titik lokasi di peta**, patokan alamat (opsional), telepon, **jam operasional penerimaan**. ⚠️ **Tanpa pilihan ekspedisi** (FR-6.4). | FR-2.7, `P10` | M |
+| BY-06a | ↳ Opsi Laporan Ketertelusuran | — | Checkbox *"Sertakan Laporan Ketertelusuran (+Rp25.000)"* — ikut tagihan yang sama. **Menggantikan halaman pembelian terpisah** (biaya gateway akan memakan 16% dari harga laporan). | FR-2.10 | S |
 | BY-07 | Pilih Metode Pembayaran | `/checkout/bayar` | QRIS / Virtual Account / E-Wallet. | FR-2.8, `P11` | M |
 | BY-07a | ↳ Instruksi QRIS | — | QR + countdown kedaluwarsa. | FR-2.8 | M |
 | BY-07b | ↳ Instruksi Virtual Account | — | Nomor VA + salin + countdown. | FR-2.8 | M |
@@ -143,9 +152,11 @@ Mobile-first (di lapangan), tetap layak di desktop saat rekonsiliasi tagihan.
 | BY-09 | Pesanan Saya | `/pesanan` | Daftar + status ringkas. | FR-2.9, `P14` | M |
 | BY-10 | Detail Pesanan | `/pesanan/[id]` | **Stepper 6 status**, Verified Timeline, posisi kargo real-time. | FR-2.9 | M |
 | BY-10a | ↳ Live Map Tracking | — | Peta posisi kurir. **Wajib ada state**: posisi terakhir + stempel waktu jujur saat sinyal terputus. | §6.3 Batasan 3 | M |
-| BY-11 | Harvest Assurance | `/pesanan/[id]/assurance` | **3 opsi**: substitusi Tenant lain (harga terkunci) / jadwal ulang / refund penuh. | FR-7.4, `PHA` | M |
-| BY-11a | ↳ Pilih Batch Substitusi | — | Daftar Tenant pengganti di zona sama + badge verifikasi. | FR-7.4 | M |
+| BY-10b | ↳ State Notifikasi Bertahap | — | **3 tahap berbeda**: (1) Dikirim + estimasi tiba, (2) kurir ±1 km "siapkan penerimaan", (3) geofence 100 m "konfirmasi sekarang". **Countdown 60 menit hanya muncul di tahap 3.** | FR-10.2 | M |
+| BY-11 | Harvest Assurance | `/pesanan/[id]/assurance` | **3 opsi**: substitusi Tenant lain (harga terkunci) / jadwal ulang / refund. **Konteks parsial wajib tampil**: *"Anda memesan 50 box, tersedia 30."* | FR-7.4, `PHA` | M |
+| BY-11a | ↳ Pilih Batch Substitusi | — | Daftar Tenant pengganti di zona sama + badge verifikasi. **Opsi ini disembunyikan** bila gagal panen terverifikasi & selisih harga > 10% — hanya tampil jadwal ulang/refund. | FR-7.4, FR-7.11, `PSU` | M |
 | BY-11b | ↳ Konfirmasi Jadwal Ulang | — | Siklus panen berikutnya + tanggal baru. | FR-7.4 | M |
+| BY-11c | ↳ **Pilihan Pembeli di Perbatasan** | — | Muncul bila hanya kebagian sebagian box. **Dua pilihan setara, jangan default ke parsial**: (a) terima sebagian + refund sisa, (b) tolak semua → Harvest Assurance penuh. Bila porsi terpenuhi di bawah minimum order zona, **tawarkan (b) lebih dahulu**. | FR-7.10, `PSB` | M |
 | BY-12 | Refund Diproses | `/pesanan/[id]/refund` | Dana dikembalikan, pesanan ditutup. | FR-7.4, `PRF` | M |
 | BY-13 | Konfirmasi Penerimaan | `/pesanan/[id]/terima` | **Satu ketukan + foto kondisi barang**. Dipicu notifikasi geofence. Jelaskan: membuka jendela klaim 2 jam. | §5.6.4, `P18` | M |
 | BY-14 | Ajukan Klaim Mutu | `/pesanan/[id]/klaim` | **Foto + berat aktual hasil timbang**. Tampilkan toleransi susut yang berlaku (5% daun / 3% buah-umbi) sebelum kirim. | FR-5.2, FR-5.4, `P20` | M |
@@ -157,7 +168,7 @@ Mobile-first (di lapangan), tetap layak di desktop saat rekonsiliasi tagihan.
 |---|---|---|---|---|---|
 | BY-16 | Pesanan Selesai | — | Escrow dicairkan ke Tenant, jendela klaim berakhir. | `P22`, `G3` | M |
 | BY-17 | Batalkan Pesanan | `/pesanan/[id]/batal` | **Hanya saat "Menunggu Panen"**. Tampilkan **biaya batal 10%** yang diteruskan ke Tenant. Setelah Panen: tidak bisa dibatalkan. | FR-7.5, FR-7.6 | M |
-| BY-18 | Beli Laporan Ketertelusuran | `/pesanan/[id]/laporan` | PDF rantai bukti lengkap, **Rp25.000**. Butuh alur bayar mikro. ⚠️ *Alur pembayaran implisit.* | FR-2.10, §8.1 Sumber 3 | S |
+| ~~BY-18~~ | ~~Beli Laporan Ketertelusuran~~ | — | **DIHAPUS v2.2** — dipindah jadi checkbox di checkout (**BY-06a**). Yang tersisa hanya **tautan unduh PDF** di halaman pesanan Selesai (BY-16), bukan halaman tersendiri. | FR-2.10 | — |
 | BY-19 | Pesan Ulang | — | Salin komposisi order sebelumnya, **satu ketukan**. | FR-2.11 | C |
 | BY-20 | Notifikasi | `/notifikasi` | Panen, dikirim, **kurir tiba**, gagal panen, klaim, refund. | `P15` | M |
 | BY-21 | Pengaturan / Profil | `/pengaturan` | Profil perusahaan, outlet, zona aktif. | — | M |
@@ -224,7 +235,9 @@ Bukan "halaman sisa" — beberapa di antaranya adalah **jalur bisnis normal** (E
 | ER-08 | **Panen Ditolak Sistem** | Belum ada node penanaman / rentang tak masuk akal. | Jelaskan syaratnya. | FR-4.8 |
 | ER-09 | **Kuota Melebihi Kapasitas Lahan** | Input kuota > 70% kapasitas poligon. | Tampilkan batas terhitung + alasannya (ruang penyangga gagal panen). | FR-3.3, Risiko 2 |
 | ER-10 | **Tidak Dapat Diverifikasi (Awan)** | Tutupan awan >40% berkepanjangan. | ⚪ **Jujur, bukan disembunyikan.** Jelaskan bukti foto jadi lapis kedua. | FR-4.5, §5.4.3 |
-| ER-11 | **Langganan Kedaluwarsa** | Paket Verified habis → verifikasi satelit terkunci. | Dampak eksplisit + CTA perpanjang. | §8.1 Sumber 2 |
+| ER-11 | **Langganan Kedaluwarsa** | Paket Verified habis (setelah tenggang 14 hari). | Nyatakan **batas dampaknya**: hanya batch **baru** yang tidak diverifikasi. Badge lama **tetap**, batch dengan PO terjual **tetap diverifikasi**. Jangan bikin Tenant panik. | FR-9.2, FR-9.3 |
+| ER-21 | **Kuota Diturunkan (Penalti Shortfall)** | Shortfall terverifikasi >15% rolling 2 siklus. | Tampilkan `quota_multiplier` turun 0,70 → 0,50, perhitungannya, dan **syarat pemulihan** (2 siklus bersih). | FR-7.12 |
+| ER-22 | **Substitusi Tidak Tersedia** | Gagal panen terverifikasi tapi selisih harga pengganti > 10%. | Jujur: hanya jadwal ulang / refund. Jangan tampilkan opsi substitusi yang tidak bisa dipenuhi. | FR-7.11 |
 | ER-12 | **Minimum Order Belum Terpenuhi** | Nilai keranjang < minimum zona. | Banner + selisih yang dibutuhkan + saran item. Bukan blokir buta. | `P8`, `D1` |
 
 ### 6b. Error teknis & perangkat
@@ -255,22 +268,47 @@ Untuk setiap form: **Idle · Validating · Inline error · Submitting (disabled)
 
 | Fase | Minggu | Halaman |
 |---|---|---|
-| **1 — Fondasi** | 1–3 | SH-01…08 · TN-01…05 · TN-10…15 · BY-01…03 · OP-01,02,09,10 · ER-13,14,19,20 |
-| **2 — Transaksi** | 4–6 | BY-04…08 · BY-09,10,17 · TN-25 · ER-01,02,03,12 |
-| **3 — Verifikasi** | 7–9 | TN-16…19 · TN-30 · BY-03a,03b · OP-07,08,12 · ER-07,08,09,10,11,16,17 |
-| **4 — Logistik** | 10–11 | TN-20…24 · TN-29 · BY-10a,11…15 · **KR-01…10** · OP-03…06,11 · ER-04,05,06,15,18 |
-| **5 — Intelijen** | 12 | TN-27,28 · BY-18,19 |
+| **1 — Fondasi** | 1–3 | SH-01…08 · TN-01…05 · TN-10…15 · BY-01…03 · OP-01,02 · ER-13,14,19,20 · **seed komoditas & zona** |
+| **2 — Transaksi** | 4–6 | BY-04…08 · **BY-06a** · BY-09,10,17 · TN-25 · ER-01,02,03,12 |
+| **3 — Verifikasi** | 7–9 | TN-16…18 · TN-30,30a · BY-03a,03b · OP-07,08,12 · ER-07,08,09,10,11,16,17 |
+| **4 — Logistik** | 10–11 | **TN-19,19a,20,20a** · TN-21…24 · TN-29,33 · BY-10a,**10b**,11,**11c**…15 · **KR-01…10** · OP-03…06,09,10,11 · ER-04,05,06,15,18,**21,22** |
+| **5 — Intelijen** | 12 | TN-27,28 · BY-19 |
+
+> **Catatan penjadwalan v2.2:** OP-09 & OP-10 **turun ke Fase 4**. Yang dibutuhkan Fase 1 adalah
+> **datanya**, bukan UI-nya — cukup file *seed* `COMMODITIES` (grade, toleransi susut, rendemen)
+> dan `ZONES` (nilai minimum pesanan). Konsol CRUD-nya baru perlu saat komoditas melebihi daftar awal.
 
 ---
 
-## 8. Gap di PRD yang perlu keputusan sebelum desain
+## 8. Keputusan yang Sudah Diambil (v2.2)
 
-Halaman bertanda ⚠️ di atas **tidak punya FR eksplisit** tapi tidak bisa dihilangkan. Ini bukan kritik dokumen —
-ini yang biasanya baru ketahuan saat desain, jadi lebih baik diputuskan sekarang:
+Enam gap yang ditemukan saat menyusun inventaris ini **sudah diputuskan** dan dipropagasi ke PRD v2.2 +
+diagram terkait. Dicatat di sini supaya desainer tahu *kenapa* sebuah halaman berbentuk demikian.
 
-1. **Siapa mendeklarasikan gagal panen?** (TN-20) Activity `D8` mengasumsikan ada yang menekan. Kandidat: Tenant, atau otomatis dari satelit + konfirmasi Tenant. **Ini memicu seluruh alur Harvest Assurance** — perlu diputuskan.
-2. **Konsol Operator hampir tak terspesifikasi.** OP-09 (min order per zona) & OP-10 (standar grade + toleransi susut) **memblokir** FR-5.1 dan FR-3.3 — tanpa keduanya, produk tidak bisa punya grade dan kuota tidak bisa dibatasi. Prioritas Fase 1, bukan belakangan.
-3. **Alur pembayaran Laporan Ketertelusuran** (BY-18, Rp25.000) belum dijelaskan: sekali bayar per laporan, atau termasuk langganan?
-4. **Langganan Tenant** (TN-30) muncul di model bisnis & tabel `SUBSCRIPTIONS`, tapi tanpa FR. Perlu: apa yang terjadi pada batch terverifikasi saat langganan lapse?
-5. **Notifikasi**: PRD menyebut push di beberapa titik tapi tak ada FR yang mengatur kanal (in-app / WA / SMS). Persona Tenant "melek ponsel, tidak melek komputer" — kanal ini menentukan desain.
-6. **Sengaja TIDAK ada halaman** (jangan didesain): pemilihan ekspedisi saat checkout, dan metrik performa kurir di dashboard Tenant — keduanya ditolak eksplisit oleh **FR-6.4**.
+| # | Gap | Keputusan | Dampak halaman |
+|---|---|---|---|
+| 1 | Siapa mendeklarasikan gagal panen? | **Tenant**, melalui **node timeline `GAGAL_PANEN`** (append-only, wajib foto + GPS + alasan). Harvest Assurance dipicu **segera**; verifikasi satelit berjalan paralel & asinkron — pembeli tidak menunggu langit cerah. | TN-20, TN-20a |
+| 1b | Panen sebagian | **FIFO berdasarkan `PAYMENTS.paid_at`** (bukan waktu order dibuat — agar tidak bisa di-*gaming*). Pesanan dipenuhi **utuh** berurutan. Pembeli di perbatasan **memilih**, tidak dipaksa parsial. | TN-19, TN-19a, BY-11, BY-11c |
+| 2 | Master data komoditas & zona | **Seed data di Fase 1, konsol CRUD di Fase 4.** Yang memblokir adalah datanya, bukan UI-nya. | OP-09, OP-10 → Fase 4 |
+| 3 | Bayar Laporan Ketertelusuran | **Checkbox di checkout**, ikut tagihan yang sama. Pembayaran mikro terpisah tidak masuk akal (fee gateway ±16%). | **BY-18 dihapus** → BY-06a |
+| 4 | Langganan lapse | **Badge yang sudah terbit permanen.** Batch dengan PO terjual tetap diverifikasi. Hanya batch **baru** yang terkunci. Tenggang 14 hari. | TN-30a, ER-11 |
+| 5 | Kanal notifikasi | **WhatsApp** untuk kejadian kritis + **SMS fallback** (infra SMS sudah ada untuk OTP). Notifikasi kedatangan **bertahap**: Dikirim → ±1 km → 100 m; jendela 60 menit baru mulai di tahap terakhir. | BY-10b |
+
+**Angka kebijakan yang mengikat desain** (jangan diubah tanpa update PRD):
+
+| Angka | Untuk | Ref |
+|---|---|---|
+| **10%** | Cap tanggungan Tenant atas selisih harga substitusi. **Gugur** bila gagal panen tak terverifikasi. | FR-7.11 |
+| **15%** | Ambang shortfall terverifikasi (rolling 2 siklus) → `quota_multiplier` 0,70 → 0,50 | FR-7.12 |
+| **14 hari** | Masa tenggang langganan | FR-9.4 |
+| **±1 km / 100 m** | Radius notifikasi bertahap | FR-10.2 |
+
+> Angka **10%** sengaja dipakai ulang di tiga tempat (biaya pembatalan pembeli FR-7.5, ambang klaim otomatis
+> FR-5.5, cap selisih substitusi FR-7.11) — satu angka yang sama lebih mudah dijelaskan ke juri dan diingat tim.
+
+### Sengaja TIDAK ada halaman (jangan didesain)
+
+- **Pemilihan ekspedisi saat checkout** — pengaturan kurir sepenuhnya di tangan Tenant.
+- **Metrik performa kurir di dashboard Tenant** — kurir tidak punya identitas dalam sistem.
+
+Keduanya ditolak eksplisit oleh **FR-6.4**.

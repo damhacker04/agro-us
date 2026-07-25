@@ -1,14 +1,19 @@
-# AgroUs — Activity Diagram: Siklus Hidup Pesanan (UML 2.5) — v2.1
+# AgroUs — Activity Diagram: Siklus Hidup Pesanan (UML 2.5) — v2.2
 
 > Empat fase: (1) Transaksi & Escrow, (2) Budidaya & Verifikasi Satelit (paralel),
 > (3) Logistik Zero-Install, (4) Dual-Signal PoD & Penyelesaian.
 >
 > **v2.1:** Fase 3 menyisipkan **input Kode Antar** (`EK1`/`DK`) setelah validasi token.
 > Token baru ditandai **terpakai setelah kode benar** (`E4`), bukan saat dipindai.
+>
+> **v2.2 — Panen Sebagian:** `D8` tidak lagi biner. Alurnya kini
+> **Tandai Panen + jumlah aktual (`HV`) → alokasi FIFO (`ALC`) → pratinjau (`PRV`)**, lalu bercabang tiga:
+> penuh / sebagian / gagal total. Pembeli di perbatasan (`SP2`) **memilih**, tidak dipaksa parsial (FR-7.10).
+> `DSUB` menyaring opsi substitusi bila selisih harga > 10% (FR-7.11). `PEN` menjalankan penalti kuota (FR-7.12).
 
 ```mermaid
 ---
-title: "AgroUs — Activity Diagram: Siklus Hidup Pesanan (UML 2.5) — v2.1"
+title: "AgroUs — Activity Diagram: Siklus Hidup Pesanan (UML 2.5) — v2.2"
 ---
 flowchart TB
     START(("●")) --> A1
@@ -55,13 +60,33 @@ flowchart TB
     C6 --> JOIN
     JOIN["«join» — sinkronisasi"]
 
-    JOIN --> D8{"Panen berhasil?"}
-    D8 -- "Tidak" --> H1["Harvest Assurance:<br/>Pembeli memilih opsi"]
-    H1 --> D9{"Opsi Pembeli"}
+    JOIN --> HV["Tenant: Tandai Panen<br/>+ isi jumlah box AKTUAL"]
+    HV --> ALC["Sistem: alokasi FIFO<br/>urut PAYMENTS.paid_at<br/>pesanan dipenuhi UTUH berurutan"]
+    ALC --> PRV["Pratinjau dampak ke Tenant<br/>sebelum konfirmasi"]
+    PRV --> D8{"Hasil panen<br/>vs kuota terjual?"}
+
+    D8 -- "Penuh" --> E1["Tenant: cetak QR unik per box<br/>tombol aktif hanya pasca-Panen"]
+
+    D8 -- "Sebagian" --> SP1["Pesanan terpenuhi utuh<br/>lanjut ke pengiriman"]
+    SP1 --> E1
+    D8 -- "Sebagian" --> SP2{"Pembeli di perbatasan:<br/>terima sebagian?"}
+    SP2 -- "Ya, terima sebagian" --> SP3["Kirim porsi tersedia<br/>+ refund sisa"] --> E1
+    SP2 -- "Tidak, tolak semua" --> H1
+    D8 -- "Gagal total<br/>node GAGAL_PANEN" --> H1
+
+    H1["Harvest Assurance:<br/>Pembeli memilih opsi"]
+    H1 --> DSUB{"Gagal terverifikasi satelit<br/>DAN selisih harga maks 10%?"}
+    DSUB -- "Tidak" --> D9B{"Opsi Pembeli<br/>tanpa substitusi"}
+    DSUB -- "Ya" --> D9{"Opsi Pembeli"}
     D9 -- "Substitusi Tenant lain,<br/>harga terkunci" --> E1
     D9 -- "Jadwal ulang<br/>siklus berikutnya" --> FORK
-    D9 -- "Refund penuh" --> R1["Sistem: kembalikan escrow<br/>via Payment Gateway"] --> REF
-    D8 -- "Ya" --> E1["Tenant: cetak QR unik per box<br/>tombol aktif hanya pasca-Panen"]
+    D9 -- "Refund" --> R1["Sistem: kembalikan escrow<br/>via Payment Gateway"] --> REF
+    D9B -- "Jadwal ulang" --> FORK
+    D9B -- "Refund" --> R1
+
+    ALC --> PEN{"Shortfall lebih 15%<br/>rolling 2 siklus?"}
+    PEN -- "Ya, terverifikasi" --> PN1["quota_multiplier 0.70 menjadi 0.50<br/>pulih setelah 2 siklus bersih"]
+    PEN -- "Tidak terverifikasi" --> PN2["Penalti langsung tanpa ambang<br/>cap 10% gugur - FR-7.11"]
 
     subgraph F3["FASE 3 — LOGISTIK ZERO-INSTALL"]
         E2["Kurir: scan QR dengan kamera bawaan"]
@@ -112,4 +137,5 @@ flowchart TB
     class FAIL1,REF fail;
     class SUCC ok;
     class FORK,JOIN bar;
+    class PN1,PN2 fail;
 ```

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Nama Produk** | AgroUs |
-| **Versi Dokumen** | v2.1 (menambahkan Kode Antar Kurir — menggantikan v2.0) |
+| **Versi Dokumen** | v2.2 (menambahkan Panen Sebagian, Langganan & Notifikasi — menggantikan v2.1) |
 | **Tanggal** | 25 Juli 2026 |
 | **Platform** | Progressive Web App (Responsive/Mobile-First) |
 | **Fase Rilis** | MVP (12 Minggu Pengembangan) |
@@ -38,6 +38,24 @@ Dokumen ini bukan sekadar penyempurnaan redaksional. Terdapat enam perubahan str
 **Dua keputusan yang ditegaskan pada versi ini** (bukan perubahan perilaku):
 1. Dashboard Tenant **tidak** menampilkan metrik performa kurir — kurir tidak memiliki identitas dalam sistem.
 2. Pembeli **tidak** memilih ekspedisi saat checkout — pengaturan kurir sepenuhnya di tangan Tenant.
+
+---
+
+## Ringkasan Perubahan v2.1 ke v2.2
+
+Versi ini menutup celah yang ditemukan saat penyusunan inventaris halaman: **v2.1 hanya mengenal gagal panen total**, padahal realitas agrikultur nyaris selalu berupa **panen sebagian**. Ditambah tiga modul yang sebelumnya tersirat tetapi tidak pernah punya requirement eksplisit.
+
+**Perubahan 1 — Panen Sebagian (celah utama).** FR-7.4 sebelumnya biner: `HARVESTED` atau `FAILED`. Ditambahkan sub-alur shortfall dengan kebijakan alokasi **FIFO berdasarkan waktu pembayaran masuk escrow** (bukan waktu order dibuat, agar tidak bisa di-*gaming* oleh pemesan yang booking duluan tapi bayar belakangan). *Alasan memilih FIFO: pro-rata membuat SEMUA pembeli kekurangan sedikit-sedikit, dan bagi restoran 70% pesanan sering tidak berguna karena menu tidak bisa dimasak setengah — ujungnya seluruh pengiriman memicu klaim. FIFO membuat yang terdampak hanya pembeli paling akhir, dan mereka langsung masuk jalur Harvest Assurance yang sudah ada. Lebih sedikit korban, lebih sedikit alur baru.* → **FR-7.8 s.d. FR-7.12**
+
+**Perubahan 2 — Deklarasi gagal panen sebagai node timeline.** Sebelumnya tidak dinyatakan siapa yang mendeklarasikan. Kini Tenant mendeklarasikan melalui **node timeline append-only** (wajib foto + GPS + alasan terstruktur), Harvest Assurance dipicu **segera**, dan verifikasi satelit berjalan **paralel & asinkron**. *Alasan: pembeli tidak boleh menunggu langit cerah — revisit satelit 5 hari dan tutupan awan tropis bisa menunda berminggu-minggu, sementara dana mereka tertahan di escrow.* Jenis kegiatan timeline bertambah dari 6 menjadi **7**. → **FR-4.9**
+
+**Perubahan 3 — Cap tanggungan selisih substitusi 10%.** Angka 10% dipilih agar konsisten dengan dua angka 10% yang sudah ada (biaya pembatalan pembeli FR-7.5 dan ambang klaim otomatis FR-5.5). Bila gagal panen **tidak terverifikasi** satelit, cap gugur dan Tenant menanggung penuh — *inilah yang memberi mitigasi side-selling gigi finansial, bukan sekadar penalti reputasi.* → **FR-7.11**
+
+**Perubahan 4 — Ambang penalti kuota 15% rolling 2 siklus.** Kuota sudah dibatasi 70% kapasitas lahan, artinya Tenant punya bantalan 30%. Bila dengan bantalan itu masih gagal kirim >15% dari kuota terjual, realisasi panennya meleset 40%+ dari estimasi — itu bukan cuaca lagi. → **FR-7.12**
+
+**Perubahan 5 — Modul Langganan (§5.9) & Modul Notifikasi (§5.10).** Keduanya sebelumnya hanya muncul di model bisnis dan tabel basis data tanpa requirement. Ditegaskan: **badge verifikasi yang sudah terbit bersifat permanen** dan batch yang PO-nya sudah terjual tetap diverifikasi meski langganan lapse.
+
+**Perubahan 6 — Laporan Ketertelusuran dibundel di checkout.** FR-2.10 diperjelas: dipilih sebagai opsi saat checkout, bukan pembelian mikro terpisah. *Alasan: biaya gateway VA ±Rp4.000 akan memakan 16% dari harga laporan Rp25.000.*
 
 ---
 
@@ -148,7 +166,7 @@ Berbeda dengan marketplace agrikultur konvensional yang hanya memindahkan transa
 | FR-2.7 | M | Detail pengiriman: nama penerima, titik peta, patokan (opsional), telepon, jam operasional terima. |
 | FR-2.8 | M | Pembayaran QRIS/VA/E-Wallet dengan validasi otomatis tanpa unggah bukti transfer. |
 | FR-2.9 | M | Halaman "Pesanan Saya": status, Verified Timeline, posisi kargo real-time. |
-| FR-2.10 | S | Unduh Laporan Ketertelusuran (PDF) berisi rantai bukti lengkap untuk audit/pemasaran. |
+| FR-2.10 | S | Laporan Ketertelusuran (PDF, Rp25.000) berisi rantai bukti lengkap untuk audit/pemasaran. **Dipilih sebagai opsi tambahan saat checkout** dan ikut pada tagihan yang sama — bukan pembayaran mikro terpisah (biaya gateway akan memakan porsi terlalu besar). Diunduh setelah pesanan Selesai. |
 | FR-2.11 | C | "Pesan Ulang" — menyalin komposisi order sebelumnya dalam satu ketukan. |
 
 ### 5.3. Modul Manajemen Tenant (Seller Dashboard)
@@ -171,7 +189,7 @@ Berbeda dengan marketplace agrikultur konvensional yang hanya memindahkan transa
 
 **5.4.1. Struktur Node Timeline** — tiap node wajib memuat 5 elemen (node tanpa elemen wajib ditolak):
 
-1. **Jenis Kegiatan** — dipilih dari daftar terstruktur (Penyiapan Lahan, Penanaman, Pemupukan, Pengendalian Hama, Pengairan, Panen). Bukan teks bebas.
+1. **Jenis Kegiatan** — dipilih dari daftar terstruktur **7 jenis** (Penyiapan Lahan, Penanaman, Pemupukan, Pengendalian Hama, Pengairan, Panen, **Gagal Panen**). Bukan teks bebas.
 2. **Deskripsi** — teks ≤ 280 karakter.
 3. **Bukti Foto** — minimal satu foto dari kamera dalam aplikasi. Unggahan galeri ditandai berbeda & menurunkan kepercayaan node.
 4. **Metadata** — koordinat GPS & stempel waktu perangkat, direkam otomatis, tidak dapat disunting.
@@ -189,6 +207,7 @@ Berbeda dengan marketplace agrikultur konvensional yang hanya memindahkan transa
 | FR-4.6 | M | Ketidaksesuaian ditampilkan terbuka ke pembeli, bukan disembunyikan. |
 | FR-4.7 | S | Node Pemupukan & Pengendalian Hama dapat menyertakan foto nota pembelian input sebagai bukti sekunder. |
 | FR-4.8 | M | Status "Panen" hanya bisa jika ≥1 node penanaman tercatat sebelumnya & rentang waktunya masuk akal bagi komoditas. |
+| FR-4.9 | M | **Deklarasi gagal panen (total maupun sebagian) dicatat sebagai node timeline tipe `GAGAL_PANEN`** — append-only, masuk rantai hash, tidak dapat dihapus. Wajib: alasan terstruktur (cuaca / hama / penyakit / lainnya), foto kamera in-app, dan GPS dalam poligon. **Harvest Assurance dipicu segera** setelah node tersimpan; verifikasi satelit berjalan **paralel dan asinkron** — pembeli tidak menunggu hasil satelit. |
 
 **5.4.3. Batasan yang Diakui Terbuka** — verifikasi satelit tidak dapat membuktikan jenis pupuk/pestisida; hanya keberadaan tanaman aktif, perkiraan waktu tanam/panen, luas lahan. Tutupan awan tropis dapat menghalangi pengamatan berminggu-minggu → status diturunkan ke "Tidak Dapat Diverifikasi" alih-alih menebak. Menyatakan batasan ini eksplisit adalah bagian dari strategi produk.
 
@@ -222,7 +241,7 @@ Berbeda dengan marketplace agrikultur konvensional yang hanya memindahkan transa
 3. Pemindaian membuka halaman browser berisi **kolom input Kode Antar**. Tanpa daftar akun, tanpa instalasi.
 4. Kurir memasukkan **Kode Antar 4 digit** yang diberikan Tenant saat serah terima barang. Setelah kode terverifikasi benar, **token ditandai terpakai** dan browser meminta izin lokasi.
 5. Status pesanan otomatis → "Dikirim", posisi kurir mulai dipancarkan.
-6. Saat kurir masuk radius 100 m dari tujuan → status "Tiba di Lokasi" + notifikasi ke pembeli.
+6. Saat kurir masuk radius 100 m dari tujuan → status "Tiba di Lokasi" + notifikasi ke pembeli. **Notifikasi dikirim bertahap** (Dikirim → ±1 km → 100 m); jendela 60 menit baru dimulai pada notifikasi terakhir (FR-10.2).
 7. Pembeli konfirmasi penerimaan 1-ketuk + foto kondisi barang. Kurir tidak perlu menekan apa pun.
 8. Sesi pelacakan berakhir.
 
@@ -252,12 +271,26 @@ Berbeda dengan marketplace agrikultur konvensional yang hanya memindahkan transa
 | FR-7.1 | M | Seluruh pembayaran ditahan di rekening escrow mitra payment gateway berizin, bukan rekening operasional AgroUs. |
 | FR-7.2 | M | Dana dicairkan ke Tenant hanya setelah status Selesai & jendela klaim berakhir. |
 | FR-7.3 | S | Tenant dapat mengajukan pencairan sebagian (maks 30%) saat status Panen untuk menutup biaya logistik. |
-| FR-7.4 | M | Jika batch gagal panen, sistem menawarkan 3 opsi: substitusi dari Tenant lain (harga terkunci), penjadwalan ulang, atau refund penuh. |
+| FR-7.4 | M | Jika batch gagal panen — **total maupun sebagian (untuk porsi yang tidak terpenuhi)** — sistem menawarkan 3 opsi: substitusi dari Tenant lain (harga terkunci), penjadwalan ulang, atau refund. Rincian alokasi shortfall di **§5.7.2**. |
 | FR-7.5 | M | Pembatalan sepihak pembeli hanya saat status "Menunggu Panen", dikenakan biaya 10% yang diteruskan ke Tenant. |
 | FR-7.6 | M | Setelah "Panen", pesanan mengikat & tidak dapat dibatalkan. Sengketa lewat jalur klaim mutu. |
 | FR-7.7 | S | Tenant gagal memenuhi PO tanpa bukti gagal panen terverifikasi satelit → penalti reputasi + pembatasan kuota siklus berikut. |
 
 **5.7.1. Catatan Kepatuhan (Wajib)** — struktur penghimpunan dana di muka untuk komoditas yang belum ada fisik mirip skema investasi. Pembatas: (1) pembeli adalah badan usaha yang membeli barang untuk dipakai, bukan investor; (2) tidak ada janji keuntungan finansial; (3) dana di rekening escrow mitra berizin, tidak pernah masuk rekening operasional platform. **AgroUs tidak boleh membangun unit pembiayaan sendiri**; jika pembiayaan input ditawarkan, harus lewat kemitraan dengan lembaga keuangan berizin.
+
+**5.7.2. Panen Sebagian / Shortfall** *(baru di v2.2)*
+
+> Agrikultur nyaris tidak pernah menghasilkan 0% atau 100%. Yang lazim adalah panen 600 dari 1.000 box yang dijanjikan. Tanpa sub-alur ini, kejadian pertama harus ditangani operator secara manual — menghitung refund dengan tangan dan menyesuaikan escrow lewat SQL, pada sistem yang ledger-nya **append-only** (tidak bisa "diperbaiki", hanya bisa ditambah entri koreksi).
+
+| Kode | Prio | Requirement |
+|---|---|---|
+| FR-7.8 | M | Saat menandai Panen, Tenant **wajib mengisi jumlah box hasil panen aktual**. Sistem mengalokasikannya ke PO yang sudah terjual dan menampilkan **pratinjau dampak sebelum konfirmasi** (contoh: "6 dari 10 pesanan terpenuhi penuh, 4 pesanan akan ditawari Harvest Assurance"). |
+| FR-7.9 | M | **Alokasi FIFO berdasarkan waktu pembayaran masuk escrow** (`PAYMENTS.paid_at`), **bukan** waktu order dibuat — agar tidak dapat di-*gaming* oleh pemesan yang booking lebih dulu tetapi membayar belakangan. Pesanan dipenuhi **utuh** secara berurutan sampai stok habis. |
+| FR-7.10 | M | Pembeli di **perbatasan alokasi** (hanya kebagian sebagian box) **diberi pilihan, tidak dipaksa menerima parsial**: (a) terima sebagian + refund sisanya, atau (b) tolak seluruhnya dan masuk Harvest Assurance penuh. Bila porsi yang terpenuhi jatuh **di bawah nilai minimum pesanan zona**, opsi (b) ditawarkan lebih dahulu. |
+| FR-7.11 | M | **Selisih harga substitusi ditanggung Tenant maksimal 10% nilai PO yang gagal** (konsisten dengan FR-7.5 dan FR-5.5). Bila gagal panen **terverifikasi satelit** dan selisih melampaui 10%, **opsi substitusi tidak ditawarkan** — sistem hanya menampilkan penjadwalan ulang atau refund. Bila gagal panen **tidak terverifikasi** (indikasi side-selling), **cap gugur** dan Tenant menanggung selisih penuh. |
+| FR-7.12 | M | **Penalti kuota:** shortfall **terverifikasi** melebihi **15% dari kuota terjual**, dihitung **rolling 2 siklus**, menurunkan `quota_multiplier` dari **0,70 menjadi 0,50** pada siklus berikutnya; pulih setelah **2 siklus bersih**. Shortfall **tanpa bukti satelit** dikenai penalti **langsung tanpa ambang**, sesuai semangat FR-7.7. |
+
+> **Mengapa ambang 15%:** kuota sudah dibatasi 70% kapasitas lahan, sehingga Tenant memiliki bantalan 30%. Bila dengan bantalan tersebut ia masih gagal mengirim lebih dari 15% kuota terjual, realisasi panennya meleset 40%+ dari estimasi — itu bukan cuaca, melainkan perencanaan buruk atau penjualan ke pihak lain.
 
 ### 5.8. Modul Demand Intelligence
 
@@ -268,6 +301,25 @@ Berbeda dengan marketplace agrikultur konvensional yang hanya memindahkan transa
 | FR-8.3 | M | Tenant dapat membuka kuota PO langsung dari halaman rekomendasi dalam satu ketukan. |
 | FR-8.4 | S | Indikator kejenuhan pasokan untuk mencegah seluruh Tenant menanam komoditas sama (panen raya). |
 | FR-8.5 | C | Laporan tren permintaan bulanan yang dapat dijual sebagai produk data terpisah. |
+
+### 5.9. Modul Langganan Tenant *(baru di v2.2)*
+
+| Kode | Prio | Requirement |
+|---|---|---|
+| FR-9.1 | M | Paket **Verified** Rp199.000/bulan menjadi gerbang: verifikasi satelit **batch baru**, kuota PO tanpa batas, dan akses Rekomendasi Tanam. |
+| FR-9.2 | M | **Badge verifikasi yang sudah terbit bersifat permanen.** Langganan lapse **tidak** mencabutnya secara surut. Badge adalah fakta historis yang buktinya sudah ter-anchor ke penyimpanan write-once eksternal — mencabutnya akan membuat UI berbohong dan merugikan pembeli yang sudah membayar premium. |
+| FR-9.3 | M | **Batch yang PO-nya sudah terjual tetap diverifikasi hingga selesai** meski langganan lapse. Ini kewajiban kepada pembeli yang sudah membayar, bukan benefit Tenant. |
+| FR-9.4 | S | **Masa tenggang 14 hari** disertai notifikasi sebelum penguncian fitur. |
+
+### 5.10. Modul Notifikasi *(baru di v2.2)*
+
+| Kode | Prio | Requirement |
+|---|---|---|
+| FR-10.1 | M | Kejadian **kritis** (kurir tiba, gagal panen/shortfall, putusan klaim, pencairan escrow) dikirim via **WhatsApp** dengan **SMS sebagai fallback**. Infrastruktur SMS sudah dibutuhkan untuk OTP (FR-1.3) sehingga tidak menambah komponen baru. |
+| FR-10.2 | M | **Notifikasi kedatangan bertahap** — (1) saat status Dikirim, (2) saat kurir ±1 km dari tujuan, (3) saat geofence 100 m terpicu. **Jendela 60 menit baru dimulai pada notifikasi ketiga.** |
+| FR-10.3 | S | Notifikasi non-kritis (PO masuk, pembayaran diterima, update timeline) cukup in-app/push. |
+
+> **Mengapa bertahap:** push notification PWA di iOS baru berfungsi bila pengguna memasang PWA ke home screen. Bila pembeli tidak memasangnya, notifikasi geofence berpotensi terlewat, fallback 60 menit terpicu terus-menerus, dan **Dual-Signal PoD efektif runtuh menjadi single-signal** — sekaligus menggerus target metrik keberhasilan pelacakan (§10). Notifikasi bertahap membuat pembeli sudah siap sebelum jam mulai berjalan, tanpa mengubah aturan fallback sama sekali. Estimasi biaya ±Rp2.000/order terhadap take-rate Rp140.000/order = **1,4%**.
 
 ---
 
@@ -308,6 +360,7 @@ Entitas timeline = tabel append-only dengan rantai hash. Tiap baris menyimpan ha
 5. **Geospasial:** Copernicus Data Space + pemrosesan Python (rasterio, numpy). Pekerjaan terjadwal harian, bukan sinkron.
 6. **Pembayaran:** Midtrans atau Xendit dengan penahanan dana. Wajib skema escrow mitra, bukan penahanan mandiri.
 7. **Penyimpanan:** object storage untuk foto bukti; metadata EXIF diekstrak & disimpan terpisah. Foto tidak dikompresi ulang sebelum ekstraksi metadata.
+8. **Notifikasi:** **WhatsApp Business API** untuk kejadian kritis, **penyedia SMS** sebagai fallback (sekaligus dipakai untuk OTP), dan Web Push untuk in-app. Lihat §5.10.
 
 ---
 
@@ -316,6 +369,7 @@ Entitas timeline = tabel append-only dengan rantai hash. Tiap baris menyimpan ha
 | # | Risiko | Tingkat | Mitigasi |
 |---|---|---|---|
 | 1 | **Side-Selling** — Tenant menjual ke pihak lain saat harga pasar melonjak | Tinggi | Verifikasi satelit deteksi panen tanpa pemenuhan PO; penalti reputasi publik; pembatasan kuota; bagi keuntungan 50/50 bila harga pasar melampaui ambang. |
+| 1b | **Side-Selling via Shortfall Palsu** *(baru v2.2)* — Tenant melaporkan panen 600 padahal dapat 1.000, sisanya dijual ke tengkulak. **Satelit membuktikan panen terjadi, tetapi tidak dapat menghitung jumlah box.** | Tinggi | **Rasio shortfall per Tenant** dicatat & ditampilkan publik (setara rasio klaim FR-5.7); ambang 15% rolling 2 siklus menurunkan `quota_multiplier` 0,70 → 0,50 (FR-7.12); shortfall tanpa bukti satelit **menggugurkan cap 10%** sehingga Tenant menanggung selisih substitusi penuh (FR-7.11). Shortfall sesekali wajar — yang dihukum adalah **pola**. |
 | 2 | **Gagal Panen** — cuaca, hama, penyakit | Tinggi | Harvest Assurance (3 opsi); kuota PO maks 70% kapasitas lahan; jaringan Tenant sezona untuk substitusi. |
 | 3 | **Unit Economics Negatif** — ongkir order kecil > take-rate | Tinggi | Nilai minimum pesanan per zona; konsolidasi lintas-Tenant; jendela pengiriman terjadwal. |
 | 4 | **Ketidakpatuhan Regulasi** — dipersepsi skema investasi | Sedang | Escrow mitra berizin; tanpa janji imbal hasil; pembeli terbatas badan usaha; konsultasi hukum pra-peluncuran. |
