@@ -1,6 +1,6 @@
-# AgroUs — Rencana Arsitektur & Setup Repo (v2.0)
+# AgroUs — Rencana Arsitektur & Setup Repo (v2.1)
 
-> Selaras dengan [`PRD.md`](PRD.md) v2.0. **PRD adalah sumber kebenaran** untuk requirement;
+> Selaras dengan [`PRD.md`](PRD.md) v2.1. **PRD adalah sumber kebenaran** untuk requirement;
 > dokumen ini adalah keputusan teknis & workflow repo.
 >
 > Produk: B2B Agro-Logistics **PWA** — supply chain berbasis permintaan yang **terverifikasi**:
@@ -79,7 +79,7 @@ modules/<module>/
 | `order` | keranjang lintas-Tenant, rencana pengiriman terkonsolidasi (FR-2.3–2.4) | — |
 | `payment` | Midtrans/Xendit, validasi otomatis (FR-2.8) | — |
 | `escrow` | **ledger append-only** HOLD/RELEASE/REFUND, Harvest Assurance (FR-7.\*) | **append-only** |
-| `logistics` | QR token sekali pakai, tracking session, geofence, **Dual-Signal PoD** (FR-3.6, 5.6) | — |
+| `logistics` | QR token sekali pakai, **Kode Antar 4 digit** (FR-6.\*), tracking session, geofence, **Dual-Signal PoD** (FR-3.6, 5.6) | — |
 | `quality` | grade, toleransi susut, **jendela klaim**, routing operator (FR-5.\*) | — |
 | `demand` | agregasi PO → Rekomendasi Tanam (materialized view) (FR-8.\*) | — |
 
@@ -87,6 +87,9 @@ modules/<module>/
 1. **Timeline INSERT-ONLY** — di 3 lapis: API (tanpa endpoint UPDATE/DELETE), DB (hak akses + trigger tolak UPDATE/DELETE), dan **root hash harian ke storage write-once eksternal**.
 2. **Escrow ledger append-only** — tiap mutasi = row baru (`entry_type`), tidak ada edit.
 3. **Foto EXIF** — ekstrak metadata **sebelum** kompresi apa pun; simpan terpisah dari file.
+4. **Kode Antar (v2.1)** — PIN disimpan **hash** (bukan plaintext), maks 5 percobaan lalu token terkunci,
+   dan `consumed_at` token QR diisi **setelah PIN benar** — bukan saat scan (FR-6.2). Salah urutan di sini
+   = celah yang justru mau ditutup v2.1.
 
 ---
 

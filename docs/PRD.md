@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Nama Produk** | AgroUs |
-| **Versi Dokumen** | v2.0 (Revisi Strategis — menggantikan v1.0 MVP Draft) |
+| **Versi Dokumen** | v2.1 (menambahkan Kode Antar Kurir — menggantikan v2.0) |
 | **Tanggal** | 25 Juli 2026 |
 | **Platform** | Progressive Web App (Responsive/Mobile-First) |
 | **Fase Rilis** | MVP (12 Minggu Pengembangan) |
@@ -24,6 +24,20 @@ Dokumen ini bukan sekadar penyempurnaan redaksional. Terdapat enam perubahan str
 4. **Geofence Auto-Complete → Dual-Signal PoD.** Pada v1.0 geofencing memicu status "Diterima" otomatis. Pada v2.0 geofence memicu notifikasi, lalu pembeli mengonfirmasi dengan satu ketukan disertai foto kondisi barang. *Alasan: koordinat GPS bukan bukti serah terima.*
 5. **Penambahan Modul Mutu dan Susut.** Pada v1.0 tidak ada penanganan mutu, grading, atau penyusutan. Pada v2.0 tersedia kelas mutu A/B/C, toleransi susut yang disepakati, dan jendela klaim 2 jam. *Alasan: mutu dan penolakan barang adalah realitas operasional harian procurement HORECA.*
 6. **Reposisi menjadi Demand Intelligence Platform.** Pada v1.0 produk diposisikan sebagai marketplace. Pada v2.0 data PO agregat diubah menjadi rekomendasi tanam bagi Tenant. *Alasan: aset sesungguhnya bukan transaksi, melainkan data permintaan pra-panen. Ini membalik rantai pasok dari push menjadi pull.*
+
+---
+
+## Ringkasan Perubahan v2.0 ke v2.1
+
+**Perubahan tunggal: penambahan Kode Antar Kurir**, yaitu PIN 4 digit sekali pakai per pengiriman pada alur pemindaian QR.
+
+*Latar belakang:* pada v2.0, siapa pun yang memindai QR lebih dulu dapat menghabiskan token sekali-pakai sebelum kurir yang sebenarnya tiba. Kode Antar menutup celah tersebut sekaligus menjadi verifikasi sederhana bahwa pemegang kode memang orang yang menerima barang langsung dari Tenant, tanpa mengorbankan prinsip nol instalasi dan nol akun.
+
+*Konsekuensi ikutan:* token QR kini berstatus terpakai **setelah kode terverifikasi benar**, bukan saat dipindai.
+
+**Dua keputusan yang ditegaskan pada versi ini** (bukan perubahan perilaku):
+1. Dashboard Tenant **tidak** menampilkan metrik performa kurir — kurir tidak memiliki identitas dalam sistem.
+2. Pembeli **tidak** memilih ekspedisi saat checkout — pengaturan kurir sepenuhnya di tangan Tenant.
 
 ---
 
@@ -77,7 +91,7 @@ Berbeda dengan marketplace agrikultur konvensional yang hanya memindahkan transa
   - *Tidak bisa diverifikasi:* jenis pupuk/pestisida spesifik → pakai bukti sekunder (foto nota pembelian input).
   - *Mengapa moat:* pipeline geospasial + kalibrasi baseline per komoditas butuh waktu & data historis, bukan sekadar uang.
 - **B — Aset Data Permintaan Pra-Panen.** Setiap Pre-Order adalah sinyal permintaan berjangka. Setelah 2-3 siklus tanam, data ini menjadi produk rekomendasi tanam. Network effect: makin banyak pengguna, makin akurat.
-- **C — Friksi Nol pada Titik Terlemah Rantai.** Kurir cukup memindai QR dengan kamera bawaan — nol instalasi. Inovasi distribusi, bukan teknologi; justru di titik ini banyak pesaing gagal.
+- **C — Friksi Nol pada Titik Terlemah Rantai.** Kurir cukup memindai QR dengan kamera bawaan ponsel, lalu memasukkan **Kode Antar 4 digit** dari Tenant sebagai verifikasi tanpa akun — nol instalasi. Inovasi distribusi, bukan teknologi; justru di titik ini banyak pesaing gagal.
 
 ---
 
@@ -101,7 +115,7 @@ Berbeda dengan marketplace agrikultur konvensional yang hanya memindahkan transa
 - **Profil:** Pengemudi lepas / karyawan vendor logistik lokal. Melayani banyak klien per hari.
 - **Tujuan:** Selesaikan rute secepat mungkin tanpa administrasi tambahan.
 - **Frustrasi:** Diminta memasang aplikasi berbeda tiap klien, memori ponsel penuh.
-- **Implikasi Desain:** Nol instalasi, nol pendaftaran akun, nol tombol wajib. Cukup satu pemindaian QR.
+- **Implikasi Desain:** Nol instalasi dan nol pendaftaran akun. Seluruh interaksi cukup satu pemindaian QR ditambah satu **Kode Antar 4 digit** yang diberikan Tenant saat serah terima barang.
 
 ---
 
@@ -148,6 +162,8 @@ Berbeda dengan marketplace agrikultur konvensional yang hanya memindahkan transa
 | FR-3.5 | M | Dashboard menampilkan nilai escrow tertahan + jadwal pencairan. |
 | FR-3.6 | M | "Cetak QR Box" muncul hanya setelah status batch = "Panen". Tiap box QR unik, tidak dapat dipakai ulang. |
 | FR-3.7 | S | Halaman Rekomendasi Tanam: permintaan agregat belum terpenuhi di zona Tenant untuk 8-16 minggu ke depan. |
+
+> **Catatan:** dashboard Tenant **tidak** menampilkan metrik performa kurir. Kurir tidak memiliki identitas dalam sistem sehingga tidak ada data pembanding antar kurir; satu-satunya metrik logistik adalah tingkat keberhasilan sesi pelacakan secara agregat (§10).
 
 ### 5.4. Modul Verified Timeline
 
@@ -203,11 +219,12 @@ Berbeda dengan marketplace agrikultur konvensional yang hanya memindahkan transa
 
 1. Tenant menempelkan QR Code tercetak pada tiap box fisik.
 2. Kurir memindai QR dengan kamera bawaan / Google Lens.
-3. Pemindaian membuka tautan browser berisi token sesi sekali pakai yang meminta izin lokasi. Tanpa daftar akun, tanpa instalasi.
-4. Status pesanan otomatis → "Dikirim", posisi kurir mulai dipancarkan.
-5. Saat kurir masuk radius 100 m dari tujuan → status "Tiba di Lokasi" + notifikasi ke pembeli.
-6. Pembeli konfirmasi penerimaan 1-ketuk + foto kondisi barang. Kurir tidak perlu menekan apa pun.
-7. Sesi pelacakan berakhir, token tidak berlaku.
+3. Pemindaian membuka halaman browser berisi **kolom input Kode Antar**. Tanpa daftar akun, tanpa instalasi.
+4. Kurir memasukkan **Kode Antar 4 digit** yang diberikan Tenant saat serah terima barang. Setelah kode terverifikasi benar, **token ditandai terpakai** dan browser meminta izin lokasi.
+5. Status pesanan otomatis → "Dikirim", posisi kurir mulai dipancarkan.
+6. Saat kurir masuk radius 100 m dari tujuan → status "Tiba di Lokasi" + notifikasi ke pembeli.
+7. Pembeli konfirmasi penerimaan 1-ketuk + foto kondisi barang. Kurir tidak perlu menekan apa pun.
+8. Sesi pelacakan berakhir.
 
 **5.6.3. Catatan Radius Geofence** — diperlebar dari 50 m (v1.0) menjadi 100 m. Geolokasi browser bersandar pada triangulasi WiFi/seluler dengan galat 50-150 m di kota padat. Karena "Tiba di Lokasi" kini hanya memicu notifikasi (bukan penyelesaian final), radius lebih longgar justru lebih andal.
 
@@ -216,6 +233,17 @@ Berbeda dengan marketplace agrikultur konvensional yang hanya memindahkan transa
 1. **Sinyal 1 (Geofence):** membuktikan kargo tiba fisik di lokasi tujuan.
 2. **Sinyal 2 (Konfirmasi Pembeli):** membuktikan siapa yang menerima, kapan, dalam kondisi apa.
 3. **Fallback:** jika pembeli tidak merespons dalam 60 menit setelah geofence, sistem set "Diterima Otomatis" + perpanjang jendela klaim jadi 24 jam sebagai kompensasi.
+
+**5.6.5. Kode Antar Kurir** *(baru di v2.1)*
+
+> *Latar belakang:* token QR sekali pakai memiliki celah pada v2.0 — siapa pun yang memindai lebih dulu dapat menghabiskan token sebelum kurir yang sebenarnya tiba. Kode Antar menutup celah tersebut sekaligus menjadi bukti sederhana bahwa pemegangnya memang orang yang menerima barang langsung dari Tenant, tanpa mengorbankan prinsip nol instalasi dan nol akun.
+
+| Kode | Prio | Requirement |
+|---|---|---|
+| FR-6.1 | M | Sistem menghasilkan Kode Antar **4 digit unik per pengiriman** secara otomatis. Kode hanya tampil pada detail pesanan aktif di dashboard Tenant; Tenant menyampaikannya ke kurir saat serah terima. |
+| FR-6.2 | M | Halaman hasil pemindaian QR menampilkan kolom input Kode Antar **sebelum** sesi pelacakan aktif. Token QR berstatus terpakai **hanya setelah kode terverifikasi benar**, bukan saat dipindai — sehingga pemindaian iseng tidak menghanguskan token. |
+| FR-6.3 | M | Kode disimpan dalam bentuk **hash**. Input salah dibatasi **maksimal 5 kali**; setelah itu token terkunci dan Tenant dapat menerbitkan kode baru dari dashboard. |
+| FR-6.4 | M | AgroUs **tidak** menyediakan pemilihan ekspedisi pada checkout pembeli. Pengaturan kurir sepenuhnya di tangan Tenant, dan sistem **tidak** menyimpan identitas maupun metrik performa kurir. |
 
 ### 5.7. Modul Escrow & Harvest Assurance
 
@@ -373,7 +401,7 @@ Entitas timeline = tabel append-only dengan rantai hash. Tiap baris menyimpan ha
 ### 12.1. Dua Momen yang Wajib Ditampilkan
 
 1. **Layar Verifikasi (60 detik):** split-screen — kiri Verified Timeline + foto bukti, kanan grafik NDVI satelit pada poligon yang sama. Tunjukkan kenaikan kurva vegetasi berimpit tanggal tanam, penurunan berimpit tanggal panen. *Penutup: "Kompetitor meminta Anda mempercayai kata petani. Kami memeriksanya dari orbit, setiap lima hari, tanpa biaya lisensi."*
-2. **Rantai Logistik Tanpa Instalasi (45 detik):** ponsel kedua sebagai perangkat kurir. Pindai QR pakai kamera bawaan → status berubah "Dikirim" otomatis di layar pembeli → ikon kendaraan bergerak → notifikasi kedatangan terpicu geofence. *Penutup: "Kurir tidak mengunduh apa pun, tidak mendaftar apa pun, dan tidak menekan apa pun."*
+2. **Rantai Logistik Tanpa Instalasi (45 detik):** ponsel kedua sebagai perangkat kurir. Pindai QR pakai kamera bawaan → **masukkan Kode Antar 4 digit dari layar Tenant** → status berubah "Dikirim" otomatis di layar pembeli → ikon kendaraan bergerak → notifikasi kedatangan terpicu geofence. *Penutup: "Kurir tidak mengunduh apa pun dan tidak mendaftar apa pun. Hanya satu kode 4 digit dari Tenant, lalu tidak menekan apa pun sampai barang diterima. Titik terlemah rantai pasok baru saja dihilangkan."*
 
 ### 12.2. Pertanyaan yang Harus Diantisipasi
 
@@ -382,6 +410,7 @@ Entitas timeline = tabel append-only dengan rantai hash. Tiap baris menyimpan ha
 - **"Bagaimana jika gagal panen?"** → Harvest Assurance: substitusi, penjadwalan ulang, atau refund penuh dari escrow.
 - **"Mengapa tidak blockchain?"** → Rantai hash + root hash write-once eksternal memberi jaminan setara tanpa biaya & kompleksitas tambahan.
 - **"Apa yang menghalangi pemain besar meniru?"** → Fitur bisa ditiru 6 bulan; baseline kurva vegetasi per komoditas & basis data permintaan pra-panen butuh beberapa siklus tanam, nilainya bertambah seiring pertumbuhan pengguna.
+- **"Bagaimana memastikan yang memindai QR adalah kurir yang sah?"** → Melalui **Kode Antar 4 digit** sekali pakai per pengiriman yang dibuat sistem dan hanya tampil di dashboard Tenant. Pemegang kode adalah orang yang menerima barang langsung dari Tenant. Token QR baru terpakai setelah kode terverifikasi, sehingga pemindaian iseng tidak menghanguskan token.
 
 ---
 

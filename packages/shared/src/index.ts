@@ -101,3 +101,7 @@ export const CLAIM_WINDOW_FALLBACK_MS = 24 * 60 * 60 * 1000; // 24 jam (5.6.4 fa
 export const POD_TIMEOUT_MS = 60 * 60 * 1000; // 60 menit sebelum "Diterima Otomatis"
 export const POSITION_PING_INTERVAL_MS = 10 * 1000; // 10 detik (§6.4)
 export const MIN_LAND_PLOT_HA = 0.1; // FR-1.6
+
+/** Kode Antar Kurir — PIN 4 digit sekali pakai per pengiriman (FR-6.1, FR-6.3). */
+export const COURIER_PIN_LENGTH = 4;
+export const COURIER_PIN_MAX_ATTEMPTS = 5; // lewat ini token terkunci

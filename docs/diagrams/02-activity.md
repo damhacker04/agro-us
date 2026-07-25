@@ -1,11 +1,14 @@
-# AgroUs — Activity Diagram: Siklus Hidup Pesanan (UML 2.5)
+# AgroUs — Activity Diagram: Siklus Hidup Pesanan (UML 2.5) — v2.1
 
 > Empat fase: (1) Transaksi & Escrow, (2) Budidaya & Verifikasi Satelit (paralel),
 > (3) Logistik Zero-Install, (4) Dual-Signal PoD & Penyelesaian.
+>
+> **v2.1:** Fase 3 menyisipkan **input Kode Antar** (`EK1`/`DK`) setelah validasi token.
+> Token baru ditandai **terpakai setelah kode benar** (`E4`), bukan saat dipindai.
 
 ```mermaid
 ---
-title: "AgroUs — Activity Diagram: Siklus Hidup Pesanan (UML 2.5)"
+title: "AgroUs — Activity Diagram: Siklus Hidup Pesanan (UML 2.5) — v2.1"
 ---
 flowchart TB
     START(("●")) --> A1
@@ -64,7 +67,10 @@ flowchart TB
         E2["Kurir: scan QR dengan kamera bawaan"]
         E2 --> D10{"Token sesi valid<br/>dan belum terpakai?"}
         D10 -- "Tidak" --> E3["Tolak akses: QR tidak berlaku,<br/>hubungi Tenant"] --> E2
-        D10 -- "Ya" --> E4["Status = Dikirim<br/>notifikasi ke Pembeli"]
+        D10 -- "Ya" --> EK1["Kurir: masukkan Kode Antar<br/>4 digit dari Tenant"]
+        EK1 --> DK{"Kode Antar benar?"}
+        DK -- "Salah - maks 5x<br/>lalu token terkunci" --> EK1
+        DK -- "Ya" --> E4["Token ditandai terpakai<br/>status = Dikirim + notifikasi Pembeli"]
         E4 --> D11{"Izin lokasi browser<br/>diberikan?"}
         D11 -- "Tidak" --> E5["Mode tanpa live-tracking:<br/>jalur konfirmasi manual tetap ada"]
         D11 -- "Ya" --> E6["Loop kirim posisi tiap 10 detik<br/>+ cek kewajaran anti-spoof"]

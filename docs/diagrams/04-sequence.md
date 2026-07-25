@@ -1,11 +1,15 @@
-# AgroUs — Sequence Diagram: Zero-Install Tracking, Dual-Signal PoD, Pencairan Escrow
+# AgroUs — Sequence Diagram: Zero-Install Tracking, Dual-Signal PoD, Pencairan Escrow — v2.1
 
-> Alur runtime dari scan QR kurir → pelacakan posisi → geofence → konfirmasi pembeli
-> (dual-signal PoD) → jendela klaim mutu → pencairan escrow ke Tenant.
+> Alur runtime dari scan QR kurir → **verifikasi Kode Antar** → pelacakan posisi → geofence →
+> konfirmasi pembeli (dual-signal PoD) → jendela klaim mutu → pencairan escrow ke Tenant.
+>
+> **v2.1:** blok `verifyPin` disisipkan setelah token valid. Perhatikan `Note`: token baru
+> ditandai `consumed` **di titik kode benar**, bukan saat dipindai — sehingga pemindaian iseng
+> tidak menghanguskan token.
 
 ```mermaid
 ---
-title: "AgroUs — Sequence Diagram: Zero-Install Tracking, Dual-Signal PoD, Pencairan Escrow"
+title: "AgroUs — Sequence Diagram: Zero-Install Tracking, Dual-Signal PoD, Pencairan Escrow — v2.1"
 ---
 sequenceDiagram
     autonumber
@@ -30,12 +34,23 @@ sequenceDiagram
         TRK-->>GW: 403 INVALID_TOKEN
         GW-->>UIK: Halaman "QR tidak berlaku, hubungi Tenant"
     else Token valid
-        TRK->>DB: UPDATE token = consumed, buat sesi lacak
-        TRK->>ORD: updateStatus(order, "Dikirim")
-        ORD->>DB: UPDATE status + event log append-only
-        ORD--)UIP: Push notif "Pesanan Dikirim"
-        TRK-->>GW: 200 + session_id
-        GW-->>UIK: Halaman pelacakan ringan
+        TRK-->>GW: 200 halaman verifikasi
+        GW-->>UIK: Tampilkan kolom Kode Antar 4 digit
+        K->>UIK: Masukkan Kode Antar dari Tenant
+        UIK->>GW: POST /session/verify-pin
+        GW->>TRK: verifyPin(kode)
+        TRK->>DB: Cocokkan hash + hitung percobaan
+        alt Kode salah - maksimal 5x lalu token terkunci
+            TRK-->>UIK: 401 sisa percobaan atau token terkunci
+        else Kode benar
+            Note over TRK,DB: Token baru terpakai di titik ini, bukan saat dipindai
+            TRK->>DB: UPDATE token = consumed, buat sesi lacak
+            TRK->>ORD: updateStatus(order, "Dikirim")
+            ORD->>DB: UPDATE status + event log append-only
+            ORD--)UIP: Push notif "Pesanan Dikirim"
+            TRK-->>GW: 200 + session_id
+            GW-->>UIK: Halaman pelacakan ringan
+        end
     end
 
     opt Izin lokasi ditolak Kurir

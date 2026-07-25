@@ -1,12 +1,15 @@
-# AgroUs — Entity Relationship Diagram (PostgreSQL + PostGIS)
+# AgroUs — Entity Relationship Diagram (PostgreSQL + PostGIS) — v2.1
 
-> Skema data v2.0. Menggunakan PostGIS untuk `geometry` (poligon lahan, titik GPS, geofence).
+> Skema data v2.1. Menggunakan PostGIS untuk `geometry` (poligon lahan, titik GPS, geofence).
 > Entitas kunci: append-only `TIMELINE_NODES` (rantai hash SHA-256), `SATELLITE_OBSERVATIONS`
 > (NDVI/NDMI), `ESCROW_LEDGER` (append-only), dan `DEMAND_AGGREGATES` (materialized view).
+>
+> **v2.1:** `SHIPMENTS` menambah `courier_pin_hash` + `pin_attempts` (Kode Antar, FR-6.1/6.3);
+> `BOX_QR_TOKENS.consumed_at` kini terisi **setelah kode terverifikasi** (FR-6.2), bukan saat dipindai.
 
 ```mermaid
 ---
-title: "AgroUs — Entity Relationship Diagram (PostgreSQL + PostGIS)"
+title: "AgroUs — Entity Relationship Diagram (PostgreSQL + PostGIS) — v2.1"
 ---
 erDiagram
     USERS {
@@ -174,6 +177,8 @@ erDiagram
         int dest_radius_m "default 100 - 5.6.3"
         text receiving_hours "jam operasional terima"
         text status "7 status termasuk DIBATALKAN - 5.6.1 dan FR-7.5"
+        text courier_pin_hash "Kode Antar 4 digit disimpan hash - FR-6.1"
+        int pin_attempts "maks 5 percobaan lalu terkunci - FR-6.3"
         text received_mode "BUYER_CONFIRM / AUTO_60MIN"
         text pod_photo_url "sinyal-2 dual-signal"
         timestamptz arrived_at
@@ -209,7 +214,7 @@ erDiagram
         uuid order_item_id FK
         text token UK "sekali pakai - FR-3.6"
         timestamptz printed_at "hanya pasca Panen"
-        timestamptz consumed_at
+        timestamptz consumed_at "terpakai setelah kode terverifikasi - FR-6.2"
     }
 
     TRACKING_SESSIONS {

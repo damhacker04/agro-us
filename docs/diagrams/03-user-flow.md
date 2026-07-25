@@ -1,11 +1,14 @@
-# AgroUs — User Flow: Tiga Persona dan Titik Interkoneksi
+# AgroUs — User Flow: Tiga Persona dan Titik Interkoneksi — v2.1
 
 > Alur Tenant (Desktop/Tablet), Pembeli (Mobile), dan Kurir (Zero-Install),
 > beserta titik interkoneksi antar persona (garis putus-putus).
+>
+> **v2.1:** alur Kurir menyisipkan layar **input Kode Antar** (`KP`/`KPD`, kunci setelah 5x salah → `KPE`).
+> Layar Tenant `T12` kini "Detail Pesanan Aktif: Cetak QR + Kode Antar".
 
 ```mermaid
 ---
-title: "AgroUs — User Flow: Tiga Persona dan Titik Interkoneksi"
+title: "AgroUs — User Flow: Tiga Persona dan Titik Interkoneksi — v2.1"
 ---
 flowchart TB
     subgraph FT["🧑‍🌾 ALUR TENANT — Desktop/Tablet"]
@@ -21,7 +24,7 @@ flowchart TB
         T8 --> T10["Input Node Timeline<br/>maksimal 3 ketukan + kamera"]
         T10 --> T11{"Node = Panen?"}
         T11 -- "Belum" --> T10
-        T11 -- "Ya" --> T12["Layar Cetak QR Box"]
+        T11 -- "Ya" --> T12["Detail Pesanan Aktif:<br/>Cetak QR + Kode Antar"]
     end
 
     subgraph FP["🏪 ALUR PEMBELI — Mobile"]
@@ -57,7 +60,11 @@ flowchart TB
         K1["Scan QR di box fisik<br/>kamera bawaan / Google Lens"]
         K1 --> K2{"Token valid?"}
         K2 -- "Tidak" --> K3["Halaman: QR tidak berlaku<br/>+ kontak Tenant"]
-        K2 -- "Ya" --> K4["Browser: prompt izin lokasi"]
+        K2 -- "Ya" --> KP["Layar input Kode Antar<br/>4 digit dari Tenant"]
+        KP --> KPD{"Kode benar?"}
+        KPD -- "Salah, maks 5x" --> KP
+        KPD -- "Terkunci setelah 5x" --> KPE["Layar token terkunci<br/>+ kontak Tenant"]
+        KPD -- "Ya" --> K4["Browser: prompt izin lokasi"]
         K4 --> K5{"Izin diberikan?"}
         K5 -- "Tidak" --> K6["Halaman instruksi aktifkan lokasi<br/>atau lanjut tanpa live-track"]
         K5 -- "Ya" --> K7["Halaman pelacakan ringan<br/>di bawah 150KB, biarkan tab terbuka"]
@@ -66,14 +73,14 @@ flowchart TB
 
     %% ===== TITIK INTERKONEKSI ANTAR PERSONA =====
     T9 -.->|"kuota tampil di katalog"| P4
-    T12 -.->|"QR ditempel di box"| K1
+    T12 -.->|"QR ditempel + kode diberikan"| K1
     K7 -.->|"geofence 100 m terpicu"| P15
     P18 -.->|"konfirmasi memutus sesi"| K8
 
     classDef error fill:#FEF2F2,color:#B91C1C,stroke:#B91C1C;
     classDef push fill:#FFFBEB,color:#B45309,stroke:#B45309;
     classDef done fill:#F0FDF4,color:#14532D,stroke:#14532D,stroke-width:2px;
-    class P8,P13,K3,K6,T7 error;
+    class P8,P13,K3,K6,KPE,T7 error;
     class P15,K8 push;
     class P22,PRF,T12 done;
 ```

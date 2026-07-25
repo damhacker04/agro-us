@@ -1,11 +1,13 @@
-# AgroUs — Use Case Diagram (UML 2.5)
+# AgroUs — Use Case Diagram (UML 2.5) — v2.1
 
 > Aktor primer: Tenant/Penjual, Pembeli HORECA, Kurir Pihak Ketiga.
 > Aktor sekunder & sistem eksternal: Operator AgroUs, Payment Gateway (Midtrans/Xendit), Copernicus Sentinel-2.
+>
+> **v2.1:** tambah **UC-9b Verifikasi Kode Antar** — `«include»` dari UC-9, dijalankan sebelum UC-9a.
 
 ```mermaid
 ---
-title: "AgroUs — Use Case Diagram (UML 2.5)"
+title: "AgroUs — Use Case Diagram (UML 2.5) — v2.1"
 ---
 flowchart LR
     %% ============ AKTOR PRIMER ============
@@ -44,6 +46,7 @@ flowchart LR
         subgraph ML["Modul Logistik dan Verifikasi"]
             UC9(["UC-9<br/>Aktivasi Pelacakan<br/>via Scan QR"])
             UC9a(["UC-9a<br/>Pancarkan Posisi dan<br/>Deteksi Geofence"])
+            UC9b(["UC-9b<br/>Verifikasi Kode Antar"])
             UC10(["UC-10<br/>Verifikasi Satelit<br/>Harian NDVI"])
             UC11(["UC-11<br/>Pencairan Escrow<br/>ke Tenant"])
             UC12(["UC-12<br/>Tinjau Klaim dan<br/>Legalitas Tenant"])
@@ -70,6 +73,7 @@ flowchart LR
     UC6 -.->|«include»| UC0
     UC6 -.->|«include»| UC6a
     UC6 -.->|«include»| UC6b
+    UC9 -.->|«include»| UC9b
     UC9 -.->|«include»| UC9a
     UC8 -.->|«include» sinyal-1| UC9a
     UC3a -.->|«extend»| UC3
@@ -83,5 +87,5 @@ flowchart LR
     classDef uc fill:#F0FDF4,stroke:#14532D,color:#14532D;
     class T,P,K,OP actor;
     class PG,CO ext;
-    class UC0,UC1,UC2,UC3,UC3a,UC4,UC5,UC6,UC6a,UC6b,UC7,UC7a,UC8,UC8a,UC9,UC9a,UC10,UC11,UC12 uc;
+    class UC0,UC1,UC2,UC3,UC3a,UC4,UC5,UC6,UC6a,UC6b,UC7,UC7a,UC8,UC8a,UC9,UC9a,UC9b,UC10,UC11,UC12 uc;
 ```
