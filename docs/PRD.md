@@ -422,6 +422,7 @@ Dokumen ini merupakan revisi strategis atas PRD AgroUs v1.0. Seluruh perubahan b
 
 ### Dokumen terkait
 
+- [Page Inventory (daftar halaman untuk UI/UX)](PAGE_INVENTORY.md)
 - [Use Case Diagram](diagrams/01-use-case.md)
 - [Activity Diagram](diagrams/02-activity.md)
 - [User Flow](diagrams/03-user-flow.md)
