@@ -1,0 +1,8 @@
+# satellite-worker — Sentinel-2 NDVI/NDMI daily verification (placeholder)
+# Pin versi saat scaffold nyata di Sprint 7-9.
+rasterio
+numpy
+shapely
+requests
+psycopg[binary]
+python-dotenv
