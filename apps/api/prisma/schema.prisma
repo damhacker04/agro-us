@@ -13,8 +13,9 @@
 //   - Materialized view demand_aggregates (FR-8.1)
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "cjs"
 }
 
 datasource db {
@@ -629,3 +630,20 @@ model TraceabilityReport {
 
 // DEMAND_AGGREGATES (FR-8.1) sengaja TIDAK dimodelkan di sini:
 // ia materialized view (lihat migration 0_init) dan dibaca via $queryRaw.
+
+// ============================== AUTH (OTP) ==============================
+// Infrastruktur login FR-1.3 — bukan bagian ERD domain. Baris boleh dihapus/expire.
+
+model OtpRequest {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phone      String // nomor ternormalisasi +62…
+  codeHash   String    @map("code_hash") // sha256(pepper|phone|kode) — kode TIDAK disimpan plaintext
+  attempts   Int       @default(0) // salah maks 3× lalu wajib minta kode baru (ER-19, node T3)
+  sentAt     DateTime  @default(now()) @map("sent_at") @db.Timestamptz(6) // cooldown kirim ulang 60 dtk
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6) // TTL 5 menit
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([phone, expiresAt])
+  @@map("otp_requests")
+}

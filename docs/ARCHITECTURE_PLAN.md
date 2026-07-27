@@ -177,6 +177,19 @@ Konvensi commit: Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`).
 ### 8b. Contract-first
 Definisikan kontrak API di `packages/shared` (types + enums + Zod) **sebelum** implementasi tiap fitur → FE kerja pakai mock, perubahan kontrak langsung ketahuan di kedua sisi.
 
+**Dua aturan teknis `packages/shared`** (ditetapkan saat `feat/auth-otp`):
+
+1. **Di-build ke `dist/` (CommonJS), bukan di-import sebagai `.ts` mentah.** NestJS meng-`require` package
+   ini saat runtime — kalau `main` menunjuk `src/index.ts`, Node gagal (`SyntaxError: Unexpected token 'export'`).
+   Urutan build dijamin turbo lewat `dependsOn: ["^build"]`.
+2. **Enum ditulis sebagai `const object + union type`, BUKAN `enum` TypeScript.** `enum` bertipe *nominal*
+   sehingga bentrok dengan enum hasil generate Prisma 7 (yang berupa string union) — `Type 'TENANT' is not
+   assignable to type 'UserRole'`. Pola `as const` tetap bisa dipakai sebagai nilai (`UserRole.TENANT`)
+   dan kompatibel secara struktural dengan Prisma.
+
+> Terkait: generator Prisma di `apps/api` diset **`moduleFormat = "cjs"`**. Default-nya menghasilkan
+> `import.meta` yang tidak bisa dijalankan di output CommonJS NestJS.
+
 ### 8c. Pembagian peran
 - **BE** (kamu): `apps/api` (NestJS, PostGIS, escrow, hash-chain), koordinasi `apps/satellite-worker`.
 - **FE**: `apps/web` (PWA, Mapbox, shadcn), konsumsi `packages/shared`.

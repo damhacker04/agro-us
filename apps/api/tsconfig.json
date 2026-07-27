@@ -1,7 +1,24 @@
 {
-  "extends": "../../tsconfig.base.json",
+  // Standalone (tidak extend tsconfig.base): NestJS butuh emitDecoratorMetadata
+  // (DI berbasis reflect-metadata) yang tidak dipakai workspace lain.
   "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "strict": true,
+    "strictPropertyInitialization": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": false,
+    "sourceMap": true,
+    "outDir": "./dist",
     "types": ["node"]
   },
-  "include": ["prisma/**/*.ts", "prisma.config.ts", "generated/**/*.ts"]
+  "include": ["src/**/*.ts", "prisma/**/*.ts", "prisma.config.ts", "generated/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
 }

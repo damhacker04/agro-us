@@ -16,85 +16,94 @@ export interface GpsCoordinate {
   lng: number;
 }
 
+// CATATAN GAYA: sengaja `as const` + union type, BUKAN TS `enum`.
+// TS enum bertipe nominal → bentrok dengan enum hasil generate Prisma 7 (string union).
+// Pola ini tetap bisa dipakai sebagai nilai (UserRole.TENANT) DAN kompatibel struktural.
+
 /** Peran pengguna (USERS.role). */
-export enum UserRole {
-  TENANT = "TENANT",
-  BUYER = "BUYER",
-  OPERATOR = "OPERATOR",
-}
+export const UserRole = {
+  TENANT: "TENANT",
+  BUYER: "BUYER",
+  OPERATOR: "OPERATOR",
+} as const;
+export type UserRole = (typeof UserRole)[keyof typeof UserRole];
 
 /** Kelas mutu produk (FR-5.1). */
-export enum Grade {
-  A = "A",
-  B = "B",
-  C = "C",
-}
+export const Grade = { A: "A", B: "B", C: "C" } as const;
+export type Grade = (typeof Grade)[keyof typeof Grade];
 
 /** Status produksi batch (BATCHES.production_status). */
-export enum ProductionStatus {
-  PLANNING = "PLANNING",
-  GROWING = "GROWING",
-  HARVESTED = "HARVESTED",
-  FAILED = "FAILED",
-}
+export const ProductionStatus = {
+  PLANNING: "PLANNING",
+  GROWING: "GROWING",
+  HARVESTED: "HARVESTED",
+  FAILED: "FAILED",
+} as const;
+export type ProductionStatus = (typeof ProductionStatus)[keyof typeof ProductionStatus];
 
 /** Status verifikasi batch (BATCHES.verification_status) — dari satellite-worker (FR-4.5). */
-export enum VerificationStatus {
-  TERVERIFIKASI = "TERVERIFIKASI",
-  FOTO_SAJA = "FOTO_SAJA",
-  PERLU_DITINJAU = "PERLU_DITINJAU",
-  TIDAK_DAPAT = "TIDAK_DAPAT",
-  TIDAK_SESUAI = "TIDAK_SESUAI",
-}
+export const VerificationStatus = {
+  TERVERIFIKASI: "TERVERIFIKASI",
+  FOTO_SAJA: "FOTO_SAJA",
+  PERLU_DITINJAU: "PERLU_DITINJAU",
+  TIDAK_DAPAT: "TIDAK_DAPAT",
+  TIDAK_SESUAI: "TIDAK_SESUAI",
+} as const;
+export type VerificationStatus = (typeof VerificationStatus)[keyof typeof VerificationStatus];
 
 /** Badge verifikasi yang tampil ke pembeli (FR-2.6). */
-export enum VerificationBadge {
-  TERVERIFIKASI_SATELIT = "TERVERIFIKASI_SATELIT",
-  BUKTI_FOTO_SAJA = "BUKTI_FOTO_SAJA",
-  BELUM_TERVERIFIKASI = "BELUM_TERVERIFIKASI",
-}
+export const VerificationBadge = {
+  TERVERIFIKASI_SATELIT: "TERVERIFIKASI_SATELIT",
+  BUKTI_FOTO_SAJA: "BUKTI_FOTO_SAJA",
+  BELUM_TERVERIFIKASI: "BELUM_TERVERIFIKASI",
+} as const;
+export type VerificationBadge = (typeof VerificationBadge)[keyof typeof VerificationBadge];
 
-/** Jenis kegiatan node timeline — 7 jenis terstruktur, bukan teks bebas (5.4.1). */
-export enum TimelineActivity {
-  PENYIAPAN_LAHAN = "PENYIAPAN_LAHAN",
-  PENANAMAN = "PENANAMAN",
-  PEMUPUKAN = "PEMUPUKAN",
-  PENGENDALIAN_HAMA = "PENGENDALIAN_HAMA",
-  PENGAIRAN = "PENGAIRAN",
-  PANEN = "PANEN",
+/** Jenis kegiatan node timeline — 7 jenis terstruktur, bukan teks bebas (5.4.1 + FR-4.9). */
+export const TimelineActivity = {
+  PENYIAPAN_LAHAN: "PENYIAPAN_LAHAN",
+  PENANAMAN: "PENANAMAN",
+  PEMUPUKAN: "PEMUPUKAN",
+  PENGENDALIAN_HAMA: "PENGENDALIAN_HAMA",
+  PENGAIRAN: "PENGAIRAN",
+  PANEN: "PANEN",
   /** Deklarasi gagal panen total maupun sebagian (FR-4.9). */
-  GAGAL_PANEN = "GAGAL_PANEN",
-}
+  GAGAL_PANEN: "GAGAL_PANEN",
+} as const;
+export type TimelineActivity = (typeof TimelineActivity)[keyof typeof TimelineActivity];
 
 /** Status pengiriman/pesanan (SHIPMENTS.status, 6 tahap + batal — 5.6.1). */
-export enum ShipmentStatus {
-  MENUNGGU_PANEN = "MENUNGGU_PANEN",
-  PANEN = "PANEN",
-  DIKIRIM = "DIKIRIM",
-  TIBA_DI_LOKASI = "TIBA_DI_LOKASI",
-  DITERIMA = "DITERIMA",
-  SELESAI = "SELESAI",
-  DIBATALKAN = "DIBATALKAN",
-}
+export const ShipmentStatus = {
+  MENUNGGU_PANEN: "MENUNGGU_PANEN",
+  PANEN: "PANEN",
+  DIKIRIM: "DIKIRIM",
+  TIBA_DI_LOKASI: "TIBA_DI_LOKASI",
+  DITERIMA: "DITERIMA",
+  SELESAI: "SELESAI",
+  DIBATALKAN: "DIBATALKAN",
+} as const;
+export type ShipmentStatus = (typeof ShipmentStatus)[keyof typeof ShipmentStatus];
 
 /** Jenis entri ledger escrow — append-only (ESCROW_LEDGER.entry_type, FR-7.*). */
-export enum EscrowEntryType {
-  HOLD = "HOLD",
-  RELEASE30 = "RELEASE30",
-  POTONG_KLAIM = "POTONG_KLAIM",
-  RELEASE = "RELEASE",
-  REFUND = "REFUND",
-  BIAYA_BATAL10 = "BIAYA_BATAL10",
-}
+export const EscrowEntryType = {
+  HOLD: "HOLD",
+  RELEASE30: "RELEASE30",
+  POTONG_KLAIM: "POTONG_KLAIM",
+  RELEASE: "RELEASE",
+  REFUND: "REFUND",
+  BIAYA_BATAL10: "BIAYA_BATAL10",
+} as const;
+export type EscrowEntryType = (typeof EscrowEntryType)[keyof typeof EscrowEntryType];
 
 /** Opsi Harvest Assurance saat gagal panen / shortfall (FR-7.4, FR-7.10). */
-export enum AssuranceOption {
-  SUBSTITUSI = "SUBSTITUSI",
-  JADWAL_ULANG = "JADWAL_ULANG",
-  REFUND = "REFUND",
+export const AssuranceOption = {
+  SUBSTITUSI: "SUBSTITUSI",
+  JADWAL_ULANG: "JADWAL_ULANG",
+  REFUND: "REFUND",
   /** Pembeli di perbatasan alokasi memilih terima porsi tersedia + refund sisa (FR-7.10). */
-  TERIMA_SEBAGIAN = "TERIMA_SEBAGIAN",
-}
+  TERIMA_SEBAGIAN: "TERIMA_SEBAGIAN",
+} as const;
+export type AssuranceOption = (typeof AssuranceOption)[keyof typeof AssuranceOption];
 
 export const APP_NAME = "AgroUs" as const;
 
@@ -128,3 +137,41 @@ export const QUOTA_MULTIPLIER_PENALTY = 0.5;
 
 /** Masa tenggang langganan sebelum fitur dikunci (FR-9.4). */
 export const SUBSCRIPTION_GRACE_DAYS = 14;
+
+// ============================== KONTRAK AUTH (FR-1.3) ==============================
+// Dipakai FE (mock/real) & BE. Endpoint: POST /auth/otp/request · POST /auth/otp/verify · GET /auth/me
+
+export const OTP_LENGTH = 6;
+export const OTP_TTL_MS = 5 * 60 * 1000; // kode kedaluwarsa 5 menit
+export const OTP_MAX_ATTEMPTS = 3; // salah 3× → wajib minta kode baru (node T3)
+export const OTP_RESEND_COOLDOWN_MS = 60 * 1000; // ER-19
+
+/** POST /auth/otp/request */
+export interface RequestOtpBody {
+  /** 08xx / 62xx / +62xx — dinormalisasi server ke +62. */
+  phone: string;
+}
+export interface RequestOtpResponse {
+  expiresInSec: number;
+  resendAfterSec: number;
+  /** HANYA muncul di non-production (SMS provider = console) untuk kebutuhan dev/demo. */
+  devOtp?: string;
+}
+
+/** POST /auth/otp/verify */
+export interface VerifyOtpBody {
+  phone: string;
+  code: string;
+  /** Wajib HANYA saat nomor belum terdaftar (registrasi). Diabaikan saat login. */
+  role?: Extract<UserRole, "TENANT" | "BUYER">;
+}
+export interface AuthUser {
+  id: string;
+  phone: string;
+  role: UserRole;
+}
+export interface VerifyOtpResponse {
+  accessToken: string; // Bearer JWT, exp 7 hari
+  isNewUser: boolean; // true → FE arahkan ke onboarding sesuai role
+  user: AuthUser;
+}
