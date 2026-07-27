@@ -1,0 +1,631 @@
+// AgroUs — Prisma schema (PostgreSQL + PostGIS)
+// Sumber kebenaran desain: docs/diagrams/05-erd.md (v2.2) + docs/PRD.md v2.2.
+//
+// Kolom geometry memakai `Unsupported(...)` — Prisma belum first-class untuk PostGIS.
+// Konsekuensi: INSERT/UPDATE pada model ber-geometry wajib lewat $queryRaw/$executeRaw
+// (ST_GeomFromGeoJSON dst). SELECT non-geometry tetap bisa via Prisma Client biasa.
+//
+// Aturan integritas yang TIDAK terlihat di file ini (hidup di prisma/migrations/0_init):
+//   - CREATE EXTENSION postgis
+//   - Trigger append-only: timeline_nodes, node_photos, escrow_ledger, hash_anchors (PRD §6.1)
+//   - CHECK constraints (kuota, pin_attempts, quota_multiplier, FAILED⟹fulfilled=0)
+//   - GiST index untuk semua kolom geometry
+//   - Materialized view demand_aggregates (FR-8.1)
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================== ENUMS ==============================
+// Selaras dengan packages/shared/src/index.ts — ubah keduanya bersamaan.
+
+enum UserRole {
+  TENANT
+  BUYER
+  OPERATOR
+}
+
+enum LegalityStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum CaptureMethod {
+  GAMBAR_PETA
+  WALK_AROUND
+}
+
+enum VerificationTier {
+  NORMAL
+  TERBATAS // poligon < 0,1 ha — FR-1.6
+}
+
+enum Grade {
+  A
+  B
+  C
+}
+
+enum CommodityCategory {
+  DAUN
+  BUAH_UMBI
+  KERING
+}
+
+enum ProductionStatus {
+  PLANNING
+  GROWING
+  HARVESTED
+  FAILED
+}
+
+enum VerificationStatus {
+  TERVERIFIKASI
+  FOTO_SAJA
+  PERLU_DITINJAU
+  TIDAK_DAPAT
+  TIDAK_SESUAI
+}
+
+enum TimelineActivity {
+  PENYIAPAN_LAHAN
+  PENANAMAN
+  PEMUPUKAN
+  PENGENDALIAN_HAMA
+  PENGAIRAN
+  PANEN
+  GAGAL_PANEN // FR-4.9 — deklarasi gagal/panen sebagian
+}
+
+enum PhotoType {
+  KEGIATAN
+  NOTA_INPUT // bukti sekunder pemupukan/pestisida — FR-4.7
+}
+
+enum CaptureSource {
+  IN_APP_CAMERA
+  GALLERY // ditandai berbeda, menurunkan kepercayaan node — §5.4.1
+}
+
+enum OrderStatus {
+  DRAFT
+  PAID
+  CLOSED
+}
+
+enum ShipmentStatus {
+  MENUNGGU_PANEN
+  PANEN
+  DIKIRIM
+  TIBA_DI_LOKASI
+  DITERIMA
+  SELESAI
+  DIBATALKAN // FR-7.5 — hanya dari MENUNGGU_PANEN
+}
+
+enum ReceivedMode {
+  BUYER_CONFIRM
+  AUTO_60MIN // fallback §5.6.4 — jendela klaim jadi 24 jam
+}
+
+enum PaymentGatewayKind {
+  MIDTRANS
+  XENDIT
+}
+
+enum PaymentMethod {
+  QRIS
+  VA
+  EWALLET
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  EXPIRED
+  FAILED
+}
+
+enum EscrowEntryType {
+  HOLD
+  RELEASE30 // pencairan sebagian maks 30% saat Panen — FR-7.3
+  POTONG_KLAIM
+  RELEASE
+  REFUND
+  BIAYA_BATAL10 // FR-7.5
+}
+
+enum SessionEndReason {
+  BUYER_CONFIRM
+  EXPIRED
+}
+
+enum ClaimRoute {
+  TOLAK_TOLERANSI // dalam toleransi susut — FR-5.2
+  AUTO_SETTLE // < 10% nilai order — FR-5.5
+  OPERATOR // > 10%, SLA 1 hari kerja — FR-5.6
+}
+
+enum AssuranceOption {
+  SUBSTITUSI
+  JADWAL_ULANG
+  REFUND
+  TERIMA_SEBAGIAN // FR-7.10 — pembeli di perbatasan alokasi
+}
+
+enum SubscriptionPlan {
+  VERIFIED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  GRACE // tenggang 14 hari — FR-9.4
+  EXPIRED
+}
+
+// ============================== IDENTITAS ==============================
+
+model User {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phone     String   @unique // login OTP — FR-1.3
+  email     String? // opsional
+  role      UserRole
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant          Tenant?  @relation("TenantProfile")
+  buyer           Buyer?
+  reviewedTenants Tenant[] @relation("TenantReviewer")
+  reviewedClaims  Claim[]  @relation("ClaimReviewer")
+
+  @@map("users")
+}
+
+model Tenant {
+  id                   String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId               String         @unique @map("user_id") @db.Uuid
+  companyName          String         @map("company_name")
+  logoUrl              String?        @map("logo_url")
+  legalityStatus       LegalityStatus @default(PENDING) @map("legality_status") // FR-1.7
+  reviewedById         String?        @map("reviewed_by") @db.Uuid
+  claimRatioCached     Decimal?       @map("claim_ratio_cached") @db.Decimal(5, 2) // tampil publik — FR-5.7
+  shortfallRatioCached Decimal?       @map("shortfall_ratio_cached") @db.Decimal(5, 2) // rolling 2 siklus — FR-7.12
+  quotaMultiplier      Decimal        @default(0.70) @map("quota_multiplier") @db.Decimal(3, 2) // 0.70 normal, 0.50 penalti — FR-7.12
+
+  user          User                @relation("TenantProfile", fields: [userId], references: [id])
+  reviewedBy    User?               @relation("TenantReviewer", fields: [reviewedById], references: [id])
+  landPlots     LandPlot[]
+  products      Product[]
+  subscriptions Subscription[]
+  tenantZones   TenantZone[]
+  escrowEntries EscrowLedgerEntry[]
+
+  @@map("tenants")
+}
+
+model Buyer {
+  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String  @unique @map("user_id") @db.Uuid
+  companyName  String  @map("company_name")
+  activeZoneId String? @map("active_zone_id") @db.Uuid // kota layanan — FR-2.1 (null sampai pilih kota)
+
+  user                User                 @relation(fields: [userId], references: [id])
+  activeZone          Zone?                @relation(fields: [activeZoneId], references: [id])
+  orders              Order[]
+  traceabilityReports TraceabilityReport[]
+
+  @@map("buyers")
+}
+
+// ============================== WILAYAH & KOMODITAS ==============================
+
+model Zone {
+  id            String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String @unique
+  city          String
+  minOrderValue Int    @map("min_order_value") // gerbang unit economics — Risiko 3
+
+  tenantZones TenantZone[]
+  buyers      Buyer[]
+  shipments   Shipment[]
+
+  @@map("zones")
+}
+
+model TenantZone {
+  tenantId String @map("tenant_id") @db.Uuid
+  zoneId   String @map("zone_id") @db.Uuid
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  zone   Zone   @relation(fields: [zoneId], references: [id])
+
+  @@id([tenantId, zoneId])
+  @@map("tenant_zones")
+}
+
+model Commodity {
+  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String            @unique
+  category           CommodityCategory
+  shrinkTolerancePct Decimal           @map("shrink_tolerance_pct") @db.Decimal(4, 2) // 5 daun / 3 buah-umbi — FR-5.2
+  avgYieldKgPerHa    Decimal           @map("avg_yield_kg_per_ha") @db.Decimal(10, 2) // basis pembatas kuota — FR-3.3 ⚠ validasi BPS
+  gradeStandards     Json              @map("grade_standards") // definisi A/B/C per komoditas — FR-5.1
+
+  products Product[]
+
+  @@map("commodities")
+}
+
+// ============================== LAHAN & PRODUK ==============================
+
+model LandPlot {
+  id               String                                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId         String                                 @map("tenant_id") @db.Uuid
+  polygon          Unsupported("geometry(Polygon, 4326)") // FR-1.5 — insert via ST_GeomFromGeoJSON
+  areaHa           Decimal                                @map("area_ha") @db.Decimal(8, 2)
+  captureMethod    CaptureMethod                          @map("capture_method")
+  verificationTier VerificationTier                       @default(NORMAL) @map("verification_tier") // TERBATAS jika < 0,1 ha — FR-1.6
+
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id])
+  batches               Batch[]
+  satelliteObservations SatelliteObservation[]
+
+  @@index([tenantId])
+  @@map("land_plots")
+}
+
+model Product {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  commodityId    String   @map("commodity_id") @db.Uuid
+  name           String
+  grade          Grade // FR-5.1
+  pricePerBox    Int      @map("price_per_box") // rupiah integer
+  qtyKgPerBox    Decimal  @map("qty_kg_per_box") @db.Decimal(6, 2)
+  stockBox       Int      @default(0) @map("stock_box")
+  estHarvestDate DateTime @map("est_harvest_date") @db.Date
+  description    String? // FR-3.2
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  commodity Commodity @relation(fields: [commodityId], references: [id])
+  batches   Batch[]
+
+  @@index([tenantId])
+  @@index([commodityId])
+  @@map("products")
+}
+
+model Batch {
+  id                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId           String             @map("product_id") @db.Uuid
+  landPlotId          String             @map("land_plot_id") @db.Uuid // satu batch satu poligon — FR-3.4
+  claimedPlantDate    DateTime?          @map("claimed_plant_date") @db.Date
+  claimedHarvestDate  DateTime           @map("claimed_harvest_date") @db.Date
+  quotaBoxTotal       Int                @map("quota_box_total") // CHECK ≤ 70% kapasitas dihitung aplikasi — FR-3.3
+  quotaBoxSold        Int                @default(0) @map("quota_box_sold")
+  quotaBoxFulfilled   Int?               @map("quota_box_fulfilled") // hasil panen aktual — FR-7.8; FAILED ⟹ 0 (CHECK di SQL)
+  lockedPrice         Int                @map("locked_price")
+  productionStatus    ProductionStatus   @default(PLANNING) @map("production_status")
+  // Panen sebagian TIDAK punya status sendiri: diturunkan dari quotaBoxFulfilled < quotaBoxSold (§5.7.2).
+  verificationStatus  VerificationStatus @default(FOTO_SAJA) @map("verification_status") // FR-4.5
+  detectedPlantDate   DateTime?          @map("detected_plant_date") @db.Date // hasil NDVI
+  detectedHarvestDate DateTime?          @map("detected_harvest_date") @db.Date
+
+  product                Product               @relation(fields: [productId], references: [id])
+  landPlot               LandPlot              @relation(fields: [landPlotId], references: [id])
+  timelineNodes          TimelineNode[]
+  hashAnchors            HashAnchor[]
+  orderItems             OrderItem[]
+  failedResolutions      AssuranceResolution[] @relation("FailedBatch")
+  replacementResolutions AssuranceResolution[] @relation("ReplacementBatch")
+
+  @@index([productId])
+  @@index([landPlotId])
+  @@map("batches")
+}
+
+// ============================== VERIFIED TIMELINE (APPEND-ONLY) ==============================
+
+model TimelineNode {
+  id                   String                               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  batchId              String                               @map("batch_id") @db.Uuid
+  seq                  Int // urutan dalam batch
+  activityType         TimelineActivity                     @map("activity_type") // 7 jenis — §5.4.1 + FR-4.9
+  description          String // maks 280 karakter (validasi aplikasi)
+  gpsPoint             Unsupported("geometry(Point, 4326)") @map("gps_point") // wajib dalam poligon — FR-4.3
+  deviceTs             DateTime                             @map("device_ts") @db.Timestamptz(6)
+  serverTs             DateTime                             @default(now()) @map("server_ts") @db.Timestamptz(6)
+  prevHash             String?                              @map("prev_hash") // null hanya untuk node pertama batch
+  nodeHash             String                               @unique @map("node_hash") // SHA-256 berantai — §5.4.1
+  ralatOfId            String?                              @map("ralat_of") @db.Uuid // node "Ralat" — FR-4.2
+  outsidePolygonReason String?                              @map("outside_polygon_reason") // tampil ke pembeli — FR-4.3
+
+  batch   Batch          @relation(fields: [batchId], references: [id])
+  ralatOf TimelineNode?  @relation("Ralat", fields: [ralatOfId], references: [id])
+  ralats  TimelineNode[] @relation("Ralat")
+  photos  NodePhoto[]
+
+  @@unique([batchId, seq])
+  @@map("timeline_nodes")
+}
+
+model NodePhoto {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nodeId        String        @map("node_id") @db.Uuid
+  objectUrl     String        @map("object_url")
+  photoType     PhotoType     @map("photo_type")
+  captureSource CaptureSource @map("capture_source")
+  exifLat       Decimal?      @map("exif_lat") @db.Decimal(9, 6)
+  exifLng       Decimal?      @map("exif_lng") @db.Decimal(9, 6)
+  exifTs        DateTime?     @map("exif_ts") @db.Timestamptz(6)
+  sha256        String
+
+  node TimelineNode @relation(fields: [nodeId], references: [id])
+
+  @@index([nodeId])
+  @@map("node_photos")
+}
+
+model SatelliteObservation {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  landPlotId String   @map("land_plot_id") @db.Uuid
+  sceneDate  DateTime @map("scene_date") @db.Date
+  cloudPct   Decimal  @map("cloud_pct") @db.Decimal(5, 2) // > 40% dibuang — §6.2
+  ndviMean   Decimal? @map("ndvi_mean") @db.Decimal(6, 4)
+  ndmiMean   Decimal? @map("ndmi_mean") @db.Decimal(6, 4)
+  usable     Boolean
+
+  landPlot LandPlot @relation(fields: [landPlotId], references: [id])
+
+  @@unique([landPlotId, sceneDate])
+  @@map("satellite_observations")
+}
+
+model HashAnchor {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  batchId     String    @map("batch_id") @db.Uuid
+  anchorDate  DateTime  @map("anchor_date") @db.Date
+  rootHash    String    @map("root_hash")
+  externalRef String?   @map("external_ref") // penyimpanan write-once eksternal — §6.1
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(6)
+
+  batch Batch @relation(fields: [batchId], references: [id])
+
+  @@unique([batchId, anchorDate])
+  @@map("hash_anchors")
+}
+
+model Subscription {
+  id          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String             @map("tenant_id") @db.Uuid
+  plan        SubscriptionPlan   @default(VERIFIED)
+  priceMonth  Int                @default(199000) @map("price_month") // Sumber 2 — FR-9.1
+  periodStart DateTime           @map("period_start") @db.Date
+  periodEnd   DateTime           @map("period_end") @db.Date
+  graceUntil  DateTime?          @map("grace_until") @db.Date // tenggang 14 hari — FR-9.4
+  status      SubscriptionStatus @default(ACTIVE)
+  // Gerbang verifikasi BATCH BARU saja; badge lama permanen — FR-9.2, FR-9.3.
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@map("subscriptions")
+}
+
+// ============================== TRANSAKSI ==============================
+
+model Order {
+  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  buyerId     String      @map("buyer_id") @db.Uuid
+  totalAmount Int         @map("total_amount")
+  orderStatus OrderStatus @default(DRAFT) @map("order_status")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  buyer         Buyer               @relation(fields: [buyerId], references: [id])
+  items         OrderItem[]
+  shipments     Shipment[]
+  payments      Payment[]
+  escrowEntries EscrowLedgerEntry[]
+
+  @@index([buyerId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId         String @map("order_id") @db.Uuid
+  shipmentId      String @map("shipment_id") @db.Uuid // rencana pengiriman terbentuk saat checkout — FR-2.4
+  batchId         String @map("batch_id") @db.Uuid
+  qtyBox          Int    @map("qty_box")
+  qtyBoxFulfilled Int?   @map("qty_box_fulfilled") // hasil alokasi FIFO — FR-7.9
+  unitPriceLocked Int    @map("unit_price_locked")
+  subtotal        Int
+
+  order               Order                @relation(fields: [orderId], references: [id])
+  shipment            Shipment             @relation(fields: [shipmentId], references: [id])
+  batch               Batch                @relation(fields: [batchId], references: [id])
+  boxQrTokens         BoxQrToken[]
+  assuranceResolution AssuranceResolution?
+
+  @@index([orderId])
+  @@index([shipmentId])
+  @@index([batchId])
+  @@map("order_items")
+}
+
+model Shipment {
+  id                String                               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId           String                               @map("order_id") @db.Uuid
+  zoneId            String                               @map("zone_id") @db.Uuid
+  destPoint         Unsupported("geometry(Point, 4326)") @map("dest_point") // snapshot titik checkout — FR-2.7
+  destRadiusM       Int                                  @default(100) @map("dest_radius_m") // §5.6.3
+  receivingHours    String                               @map("receiving_hours")
+  status            ShipmentStatus                       @default(MENUNGGU_PANEN)
+  courierPinHash    String?                              @map("courier_pin_hash") // Kode Antar di-hash — FR-6.1/6.3
+  pinAttempts       Int                                  @default(0) @map("pin_attempts") // maks 5 — FR-6.3 (CHECK di SQL)
+  receivedMode      ReceivedMode?                        @map("received_mode")
+  podPhotoUrl       String?                              @map("pod_photo_url") // sinyal-2 dual-signal
+  arrivedAt         DateTime?                            @map("arrived_at") @db.Timestamptz(6)
+  claimWindowEndsAt DateTime?                            @map("claim_window_ends_at") @db.Timestamptz(6) // 2 jam / 24 jam
+  completedAt       DateTime?                            @map("completed_at") @db.Timestamptz(6)
+
+  order               Order                @relation(fields: [orderId], references: [id])
+  zone                Zone                 @relation(fields: [zoneId], references: [id])
+  items               OrderItem[]
+  trackingSessions    TrackingSession[]
+  claims              Claim[]
+  escrowEntries       EscrowLedgerEntry[]
+  traceabilityReports TraceabilityReport[]
+
+  @@index([orderId])
+  @@index([zoneId])
+  @@map("shipments")
+}
+
+model Payment {
+  id         String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId    String             @map("order_id") @db.Uuid
+  gateway    PaymentGatewayKind
+  method     PaymentMethod
+  invoiceRef String             @unique @map("invoice_ref")
+  amount     Int
+  status     PaymentStatus      @default(PENDING)
+  expiresAt  DateTime           @map("expires_at") @db.Timestamptz(6)
+  paidAt     DateTime?          @map("paid_at") @db.Timestamptz(6) // ⚠ KUNCI URUTAN ALOKASI FIFO — FR-7.9
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@index([orderId])
+  @@map("payments")
+}
+
+model EscrowLedgerEntry {
+  id         String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId    String          @map("order_id") @db.Uuid
+  shipmentId String?         @map("shipment_id") @db.Uuid
+  tenantId   String          @map("tenant_id") @db.Uuid // tujuan pencairan per tenant
+  entryType  EscrowEntryType @map("entry_type")
+  amount     Int // selalu positif; arah dana ditentukan entryType
+  gatewayRef String?         @map("gateway_ref")
+  createdAt  DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  // APPEND-ONLY (trigger di SQL). Koreksi = entri baru, bukan edit.
+
+  order    Order     @relation(fields: [orderId], references: [id])
+  shipment Shipment? @relation(fields: [shipmentId], references: [id])
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@index([orderId])
+  @@index([tenantId])
+  @@map("escrow_ledger")
+}
+
+// ============================== LOGISTIK ZERO-INSTALL ==============================
+
+model BoxQrToken {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderItemId String    @map("order_item_id") @db.Uuid
+  token       String    @unique // sekali pakai — FR-3.6
+  printedAt   DateTime? @map("printed_at") @db.Timestamptz(6) // hanya pasca-Panen
+  consumedAt  DateTime? @map("consumed_at") @db.Timestamptz(6) // terisi SETELAH Kode Antar benar — FR-6.2
+
+  orderItem       OrderItem        @relation(fields: [orderItemId], references: [id])
+  trackingSession TrackingSession?
+
+  @@index([orderItemId])
+  @@map("box_qr_tokens")
+}
+
+model TrackingSession {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shipmentId        String            @map("shipment_id") @db.Uuid
+  activationTokenId String            @unique @map("activation_token_id") @db.Uuid
+  noGpsMode         Boolean           @default(false) @map("no_gps_mode") // izin lokasi ditolak — §6.3
+  startedAt         DateTime          @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt           DateTime?         @map("ended_at") @db.Timestamptz(6)
+  endedReason       SessionEndReason? @map("ended_reason")
+
+  shipment        Shipment           @relation(fields: [shipmentId], references: [id])
+  activationToken BoxQrToken         @relation(fields: [activationTokenId], references: [id])
+  positions       TrackingPosition[]
+
+  @@index([shipmentId])
+  @@map("tracking_sessions")
+}
+
+model TrackingPosition {
+  id          String                               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId   String                               @map("session_id") @db.Uuid
+  point       Unsupported("geometry(Point, 4326)")
+  deviceTs    DateTime                             @map("device_ts") @db.Timestamptz(6)
+  serverTs    DateTime                             @default(now()) @map("server_ts") @db.Timestamptz(6)
+  isPlausible Boolean                              @default(true) @map("is_plausible") // anti-spoof kecepatan & lompatan — §6.3
+
+  session TrackingSession @relation(fields: [sessionId], references: [id])
+
+  @@index([sessionId, serverTs])
+  @@map("tracking_positions")
+}
+
+// ============================== MUTU & ASSURANCE ==============================
+
+model Claim {
+  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shipmentId     String     @map("shipment_id") @db.Uuid
+  description    String
+  photoUrl       String     @map("photo_url")
+  actualWeightKg Decimal    @map("actual_weight_kg") @db.Decimal(8, 2) // hasil timbang — FR-5.4
+  claimValue     Int        @map("claim_value")
+  pctOfOrder     Decimal    @map("pct_of_order") @db.Decimal(5, 2)
+  route          ClaimRoute // FR-5.5 / FR-5.6
+  reviewedById   String?    @map("reviewed_by") @db.Uuid
+  slaDueAt       DateTime?  @map("sla_due_at") @db.Timestamptz(6) // 1 hari kerja — FR-5.6
+  finalStatus    String?    @map("final_status")
+
+  shipment   Shipment @relation(fields: [shipmentId], references: [id])
+  reviewedBy User?    @relation("ClaimReviewer", fields: [reviewedById], references: [id])
+
+  @@index([shipmentId])
+  @@map("claims")
+}
+
+model AssuranceResolution {
+  id                    String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderItemId           String          @unique @map("order_item_id") @db.Uuid
+  failedBatchId         String          @map("failed_batch_id") @db.Uuid
+  chosenOption          AssuranceOption @map("chosen_option") // FR-7.4 / FR-7.10
+  shortfallBox          Int             @default(0) @map("shortfall_box") // porsi tak terpenuhi — FR-7.10
+  priceGapBorneByTenant Int             @default(0) @map("price_gap_borne_by_tenant") // cap 10%; gugur bila tak terverifikasi — FR-7.11
+  replacementBatchId    String?         @map("replacement_batch_id") @db.Uuid
+  resolvedAt            DateTime        @default(now()) @map("resolved_at") @db.Timestamptz(6)
+
+  orderItem        OrderItem @relation(fields: [orderItemId], references: [id])
+  failedBatch      Batch     @relation("FailedBatch", fields: [failedBatchId], references: [id])
+  replacementBatch Batch?    @relation("ReplacementBatch", fields: [replacementBatchId], references: [id])
+
+  @@index([failedBatchId])
+  @@map("assurance_resolutions")
+}
+
+model TraceabilityReport {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  buyerId    String  @map("buyer_id") @db.Uuid
+  shipmentId String  @map("shipment_id") @db.Uuid
+  pdfUrl     String? @map("pdf_url")
+  price      Int     @default(25000) // Sumber 3; dibundel di tagihan checkout — FR-2.10
+  paidRef    String? @map("paid_ref")
+
+  buyer    Buyer    @relation(fields: [buyerId], references: [id])
+  shipment Shipment @relation(fields: [shipmentId], references: [id])
+
+  @@index([buyerId])
+  @@index([shipmentId])
+  @@map("traceability_reports")
+}
+
+// DEMAND_AGGREGATES (FR-8.1) sengaja TIDAK dimodelkan di sini:
+// ia materialized view (lihat migration 0_init) dan dibaca via $queryRaw.
