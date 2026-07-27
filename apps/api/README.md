@@ -72,3 +72,45 @@ pnpm --filter @agro-os/api run db:studio     # GUI browse data
 `verification` (Sentinel-2) · `order` (cross-tenant) · `payment` (Midtrans/Xendit) ·
 `escrow` (ledger append-only) · `logistics` (QR + Kode Antar + geofence + Dual-Signal PoD) ·
 `quality` (klaim) · `demand`.
+
+---
+
+## Modul Auth OTP (FR-1.3) — `feat/auth-otp`
+
+Endpoint (base `http://localhost:3001`):
+
+| Method | Route | Guard | Fungsi |
+|---|---|---|---|
+| `GET` | `/health` | — | Liveness check |
+| `POST` | `/auth/otp/request` | — | Kirim OTP 6 digit (TTL 5 mnt, cooldown kirim ulang 60 dtk) |
+| `POST` | `/auth/otp/verify` | — | Verifikasi → JWT (exp 7 hari). Nomor baru wajib sertakan `role` |
+| `GET` | `/auth/me` | Bearer JWT | Profil user + relasi tenant/buyer |
+
+**Kode error** (dipakai FE untuk menentukan layar — lihat PAGE_INVENTORY SH-03 & ER-19):
+
+| Kode | HTTP | Arti |
+|---|---|---|
+| `OTP_COOLDOWN` | 429 | Kirim ulang terlalu cepat; ada `retryAfterSec` |
+| `OTP_WRONG` | 401 | Kode salah; ada `remainingAttempts` |
+| `OTP_LOCKED` | 400 | Salah 3× — wajib minta kode baru |
+| `OTP_EXPIRED` | 400 | Kedaluwarsa / sudah terpakai |
+| `ROLE_REQUIRED` | 400 | Nomor belum terdaftar → FE tampilkan pilihan TENANT/BUYER |
+
+**Keamanan yang sudah diterapkan:**
+- Kode OTP **tidak pernah disimpan plaintext** — `sha256(OTP_PEPPER \| phone \| kode)`.
+- Kode dibuat dengan `crypto.randomInt` (CSPRNG), bukan `Math.random`.
+- Satu kode aktif per nomor; kode lama dihapus saat minta baru.
+- Anti double-submit: `updateMany(where consumedAt: null)` — hanya satu request yang menang.
+- Nomor dinormalisasi ke `+62` sebelum hash/simpan, jadi `08…`/`62…`/`+62…` diperlakukan sama.
+
+**Provider SMS:** `SmsService` abstract + `ConsoleSmsService` (OTP dicetak ke log).
+Ganti binding di `auth.module.ts` saat provider asli (WhatsApp/SMS) siap — lihat FR-10.1.
+
+> Di non-production, response `POST /auth/otp/request` menyertakan field **`devOtp`**
+> supaya FE/demo tidak perlu membaca log server. Field ini otomatis hilang saat `NODE_ENV=production`.
+
+### Coba cepat (butuh DB nyala)
+
+```bash
+curl -X POST http://localhost:3001/auth/otp/request -H "Content-Type: application/json" -d "{\"phone\":\"081234567890\"}"
+```
