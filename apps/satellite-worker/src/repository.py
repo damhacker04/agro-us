@@ -137,6 +137,21 @@ class Repository:
             cur.execute(sql, (land_plot_id, scene_date, cloud_pct, ndvi_mean, ndmi_mean, usable))
             conn.commit()
 
+    def last_observation_date(self, land_plot_id: str) -> date | None:
+        """Tanggal amatan terakhir yang sudah tersimpan.
+
+        Dipakai agar job harian hanya menarik scene BARU. Tanpa ini, tiap hari
+        seluruh riwayat dibaca ulang — pemborosan yang membuat job tidak terpakai
+        begitu jumlah lahan bertambah.
+        """
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT MAX(scene_date) AS d FROM satellite_observations WHERE land_plot_id = %s::uuid",
+                (land_plot_id,),
+            )
+            row = cur.fetchone()
+        return row["d"] if row else None
+
     def load_observations(self, land_plot_id: str) -> list[dict]:
         sql = """
             SELECT scene_date, ndvi_mean::float, ndmi_mean::float, cloud_pct::float, usable

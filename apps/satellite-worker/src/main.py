@@ -25,7 +25,8 @@ from dotenv import load_dotenv
 
 from .indices import MAX_CLOUD_PCT
 from .phenology import Observation, classify
-from .providers import CopernicusProvider, SceneProvider, SyntheticProvider, summarize
+from .providers import SceneProvider, SyntheticProvider, summarize
+from .stac_provider import StacCogProvider
 from .repository import ActiveBatch, Repository
 
 # Lahan < 0,1 ha ditandai TERBATAS saat onboarding (FR-1.6) — di bawah resolusi
@@ -41,14 +42,14 @@ log = logging.getLogger("satellite-worker")
 
 
 def build_provider(batch: ActiveBatch) -> SceneProvider:
-    """Pilih sumber citra. Mode sintetis hanya untuk pengembangan."""
+    """Pilih sumber citra. Default: citra Sentinel-2 NYATA lewat STAC + COG."""
     if os.getenv("SYNTHETIC_SCENES") == "1":
         # Kurva tiruan dibangun dari KLAIM Tenant supaya alur end-to-end bisa diuji.
         # Ini artinya mode sintetis SELALU cenderung "terverifikasi" — berguna untuk
         # menguji pipeline, TIDAK berguna untuk menguji kejujuran Tenant.
         plant = batch.claimed_plant_date or (batch.claimed_harvest_date - timedelta(days=90))
         return SyntheticProvider(plant_date=plant, harvest_date=batch.claimed_harvest_date)
-    return CopernicusProvider()
+    return StacCogProvider()
 
 
 def observation_window(batch: ActiveBatch) -> tuple[date, date]:
@@ -76,19 +77,37 @@ def process_batch(repo: Repository, batch: ActiveBatch) -> str:
         return status
 
     start, end = observation_window(batch)
+
+    # Inkremental: hanya tarik scene yang BELUM tersimpan. Riwayat lama tetap dipakai
+    # untuk analisis (dibaca dari DB di bawah), jadi tidak ada informasi yang hilang.
+    last_seen = repo.last_observation_date(batch.land_plot_id)
+    if last_seen is not None and os.getenv("SYNTHETIC_SCENES") != "1":
+        start = max(start, last_seen + timedelta(days=1))
+        if start > end:
+            log.info("  %s: tidak ada citra baru sejak %s", batch.batch_id[:8], last_seen)
+
     provider = build_provider(batch)
 
     try:
-        scenes = provider.fetch(batch.polygon_geojson, start, end)
+        scenes = provider.fetch(batch.polygon_geojson, start, end) if start <= end else []
     except (NotImplementedError, RuntimeError) as e:
         # Sumber citra belum siap — JANGAN menebak, dan jangan menurunkan status
         # batch yang sebelumnya sudah terverifikasi.
         log.warning("  %s: sumber citra tidak tersedia (%s)", batch.batch_id[:8], e)
         return "SKIPPED"
 
-    kept = 0
+    # Satu tanggal bisa punya lebih dari satu scene (tile/orbit berbeda). Simpan yang
+    # tutupan awannya paling rendah — bukan yang kebetulan terakhir diproses, karena
+    # upsert memakai kunci (land_plot_id, scene_date).
+    best: dict = {}
     for s in scenes:
         stats = summarize(s, MAX_CLOUD_PCT)
+        prev = best.get(stats.scene_date)
+        if prev is None or stats.cloud_pct < prev.cloud_pct:
+            best[stats.scene_date] = stats
+
+    kept = 0
+    for stats in sorted(best.values(), key=lambda x: x.scene_date):
         repo.upsert_observation(
             batch.land_plot_id, stats.scene_date, stats.cloud_pct, stats.ndvi_mean, stats.ndmi_mean, stats.usable
         )
