@@ -7,6 +7,8 @@ import { TenantModule } from "./modules/tenant/tenant.module";
 import { CatalogModule } from "./modules/catalog/catalog.module";
 import { OrderModule } from "./modules/order/order.module";
 import { TimelineModule } from "./modules/timeline/timeline.module";
+import { LogisticsModule } from "./modules/logistics/logistics.module";
+import { QualityModule } from "./modules/quality/quality.module";
 
 @Module({
   imports: [
@@ -17,6 +19,8 @@ import { TimelineModule } from "./modules/timeline/timeline.module";
     CatalogModule,
     OrderModule,
     TimelineModule,
+    LogisticsModule,
+    QualityModule,
   ],
   controllers: [HealthController],
 })

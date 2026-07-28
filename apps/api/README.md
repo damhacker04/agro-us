@@ -352,3 +352,152 @@ diterima tapi tercatat kosong (itu sendiri informasi).
 4. **`growing_days_min` di seed masih INDIKATIF** — validasi ke penyuluh sebelum produksi.
 5. **Alokasi FIFO panen sebagian** (FR-7.9/7.10) belum ada di sini — node `PANEN` baru
    mencatat `quotaBoxFulfilled`; pembagian ke pesanan menyusul di `feat/harvest-assurance`.
+
+---
+
+## Modul Logistik Zero-Install & Dual-Signal PoD (Fase 4) — `feat/logistics-tracking-pod`
+
+| Method | Route | Guard | Fungsi |
+|---|---|---|---|
+| `POST` | `/tenant/shipments/:id/qr` | TENANT | Terbitkan QR per box + Kode Antar (FR-3.6, FR-6.1) |
+| `GET` | `/tenant/shipments/:id/qr` | TENANT | Lembar cetak ulang — **tanpa** Kode Antar |
+| `POST` | `/tenant/shipments/:id/courier-code/reissue` | TENANT | Kode baru setelah terkunci (FR-6.3) |
+| `GET` | `/scan/:token` | — | Halaman pertama kurir. **Tidak mengonsumsi token** |
+| `POST` | `/scan/:token/verify` | — | Verifikasi Kode Antar → sesi aktif, status Dikirim |
+| `POST` | `/scan/session/:id/position` | — | Kirim posisi tiap 10 detik |
+| `POST` | `/scan/session/:id/no-gps` | — | Izin lokasi ditolak → mode tanpa peta |
+| `POST` | `/shipments/:id/receive` | BUYER | **Sinyal-2** PoD: 1 ketuk + foto |
+| `GET` | `/shipments/:id/track` | — | Data peta pembeli (BY-10a) |
+| `POST` | `/logistics/jobs/auto-accept` | — | Fallback 60 menit — **cron** |
+| `POST` | `/logistics/jobs/close-claim-windows` | — | Jendela klaim habis → Selesai — **cron** |
+
+WebSocket: namespace `/tracking`, room per pengiriman. Event `shipment:position` &
+`shipment:status` (nama event ada di `WS_EVENTS` pada `@agro-os/shared`).
+
+### Token QR baru terpakai SETELAH kode benar (FR-6.2)
+
+Ini inti perubahan v2.1. `GET /scan/:token` sengaja **tidak** mengonsumsi apa pun —
+pemindaian iseng oleh orang lewat tidak boleh menghanguskan QR sebelum kurir tiba.
+Token ditandai `consumed_at` hanya di dalam transaksi verifikasi kode.
+
+Kode Antar disimpan **hash** (`COURIER_PIN_PEPPER`), maksimal 5 percobaan lalu terkunci.
+Menerbitkan ulang kode **tidak membatalkan QR yang sudah tercetak** — Tenant tidak perlu
+menempel ulang seluruh box.
+
+### Anti-spoof: pembanding adalah posisi WAJAR terakhir
+
+Kewajaran dihitung terhadap posisi wajar terakhir, **bukan** posisi terakhir apa pun.
+
+> Versi pertama memakai posisi terakhir apa pun. Akibatnya satu bacaan buruk meracuni
+> seluruh rantai sesudahnya: posisi asli berikutnya ikut dinilai "melompat" dari titik
+> palsu itu, sehingga **geofence tidak pernah menyala walau kurir sudah sampai**.
+> Ini bukan sekadar kasus serangan — gangguan GPS biasa (terowongan, pantulan gedung)
+> menghasilkan lompatan serupa. Terbukti saat uji: lompat ke Jakarta lalu kembali ke
+> tujuan; sebelum diperbaiki `arrived` tetap `false` di jarak 8 m.
+
+Posisi tidak wajar **tetap disimpan** (`is_plausible = false`) — jejaknya justru bukti
+saat sengketa. Yang ditolak hanyalah perannya sebagai pemicu geofence dan sebagai pembanding.
+
+### Dual-Signal PoD (§5.6.4)
+
+| Sinyal | Membuktikan |
+|---|---|
+| 1 — geofence 100 m | kargo tiba **di lokasi** |
+| 2 — konfirmasi pembeli + foto | **siapa** menerima, **kapan**, **kondisi apa** |
+
+Geofence hanya mengubah status & memicu notifikasi; ia **tidak** menyelesaikan transaksi.
+Beban konfirmasi ada di pembeli karena dialah yang punya insentif — konfirmasi itu yang
+membuka jendela klaim mutunya.
+
+**Fallback:** tak ada respons 60 menit → `AUTO_60MIN`, dan jendela klaim **diperpanjang
+jadi 24 jam** sebagai kompensasi (pembeli kehilangan kesempatan memeriksa saat serah terima).
+
+### Notifikasi bertahap (FR-10.2)
+
+`DIKIRIM` → `MENDEKAT` (±1 km) → `TIBA_DI_LOKASI` (100 m). **Jam 60 menit baru mulai di
+tahap terakhir**, sehingga pembeli sudah bersiap sebelum hitungan berjalan.
+
+### ⚠️ Belum selesai
+
+1. **Room WebSocket belum diautentikasi** — siapa pun yang tahu `shipmentId` bisa ikut
+   memantau. ID-nya UUID acak, tetapi sebelum produksi perlu verifikasi JWT saat handshake.
+2. **Dua job cron belum dijadwalkan** (`auto-accept`, `close-claim-windows`). Tanpa itu
+   fallback 60 menit tidak pernah jalan dan pesanan tidak pernah berstatus Selesai.
+3. **Foto PoD masih berupa URL** — unggahan berkas memakai `StorageService` seperti
+   bukti timeline belum disambungkan.
+4. **Pencairan escrow saat Selesai** belum disambungkan (menyusul di modul klaim mutu).
+
+---
+
+## Modul Mutu, Susut & Klaim (§5.5, FR-5.1..5.7) — `feat/quality-claims`
+
+| Method | Route | Guard | Fungsi |
+|---|---|---|---|
+| `POST` | `/shipments/:id/claims` | BUYER | Ajukan klaim: foto + berat timbang (FR-5.4) |
+| `GET` | `/shipments/:id/claims` | BUYER | Status klaim (BY-15) |
+| `GET` | `/operator/claims` | OPERATOR | Antrean klaim >10%, urut SLA (OP-05) |
+| `POST` | `/operator/claims/:id/decide` | OPERATOR | Putusan + penyesuaian escrow (OP-06) |
+| `GET` | `/tenant/escrow` | TENANT | Saldo escrow & rincian (FR-3.5) |
+| `POST` | `/quality/jobs/settle` | — | Tutup jendela klaim → Selesai → **cairkan escrow** — cron |
+
+### Perhitungan klaim — semuanya di server
+
+Pembeli **tidak pernah** mengirim nilai klaim; ia hanya mengirim berat timbang. Server
+menghitung sendiri agar kerugian tidak bisa dikarang:
+
+```
+expectedKg   = boxDikirim × kgPerBox
+shortfallKg  = expectedKg − actualWeightKg
+toleratedKg  = expectedKg × toleransiSusut%      (5% daun, 3% buah-umbi — FR-5.2)
+claimableKg  = max(shortfallKg − toleratedKg, 0)
+claimValue   = claimableKg × (hargaTerkunci ÷ kgPerBox)
+```
+
+`boxDikirim` memakai `qtyBoxFulfilled` bila ada — supaya panen sebagian (FR-7.10) tidak
+salah dihitung sebagai kekurangan mutu.
+
+### Klaim menunjuk SATU item, bukan seluruh pengiriman
+
+Kolom `claims.order_item_id` ditambahkan di branch ini. Tanpa itu perhitungan toleransi
+mustahil benar: pembeli HORECA menerima puluhan SKU dan **tiap komoditas punya toleransi
+susut berbeda**. Menimbang seluruh muatan sebagai satu angka tidak bisa dipetakan ke
+toleransi mana pun. Satu item hanya boleh diklaim sekali.
+
+### Tiga jalur penyelesaian
+
+| Kondisi | Rute | Tindakan |
+|---|---|---|
+| Selisih ≤ toleransi susut | `TOLAK_TOLERANSI` | Ditolak otomatis — susut wajar bukan kesalahan Tenant (FR-5.2) |
+| Nilai ≤ 10% order | `AUTO_SETTLE` | Potong escrow langsung, tanpa peninjauan (FR-5.5) |
+| Nilai > 10% order | `OPERATOR` | Antrean operator, SLA 1 hari kerja (FR-5.6) |
+
+*Terbukti:* 400 kg dikirim, toleransi 20 kg → susut 15 kg **ditolak**; susut 40 kg
+(claimable 20 kg = Rp200.000 = 4,9%) **auto-settle**; susut 100 kg (claimable 80 kg =
+Rp800.000 = 19,6%) **masuk antrean operator**, lalu disetujui sebagian Rp600.000.
+
+### Pencairan escrow menunggu sengketa selesai
+
+`/quality/jobs/settle` **menahan** pencairan bila masih ada klaim berstatus
+`MENUNGGU_OPERATOR`. Mencairkan lebih dulu berarti uang sudah pindah ke Tenant sebelum
+sengketa diputus — dan ledger append-only membuatnya tidak bisa ditarik kembali, hanya
+bisa ditambah entri koreksi.
+
+Penutupan jendela klaim dan pencairan **digabung dalam satu job** (menggantikan
+`/logistics/jobs/close-claim-windows`). Kalau terpisah, status bisa menjadi Selesai tanpa
+ada proses yang mencairkan dananya.
+
+### Rasio klaim publik (FR-5.7)
+
+`tenants.claim_ratio_cached` = pengiriman yang diklaim ÷ total pengiriman Tenant.
+Klaim berstatus `DITOLAK_TOLERANSI` **tidak dihitung** — menghukum Tenant atas susut
+yang masih wajar akan membuat metrik reputasi ini menyesatkan.
+
+### ⚠️ Belum selesai
+
+1. **Instruksi pencairan ke payment gateway belum disambung.** Yang ada baru pembukuan
+   internal; dana sesungguhnya wajib lewat escrow mitra berizin (FR-7.1, §5.7.1).
+2. **`/quality/jobs/settle` belum dijadwalkan cron.**
+3. **Foto klaim masih URL** — belum lewat `StorageService`.
+4. **SLA 1 hari kerja dihitung 24 jam kalender** — belum memperhitungkan akhir pekan/libur.
+5. **Grade A/B/C belum divalidasi saat klaim** — `grade_standards` sudah ada di
+   `commodities`, tetapi klaim baru menilai berat, belum mutu/ukuran (FR-5.1).
