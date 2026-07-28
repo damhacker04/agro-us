@@ -502,6 +502,111 @@ export interface OrderSummary {
   }>;
 }
 
+// ============================== KONTRAK LOGISTIK ZERO-INSTALL (Fase 4) ==============================
+// FR-3.6, FR-6.1..6.4, §5.6. Kurir: nol instalasi, nol akun — hanya scan QR + 4 digit.
+
+/** Frekuensi kirim posisi. 10 detik, bukan real-time penuh — hemat baterai & kuota (§6.4). */
+export const POSITION_INTERVAL_MS = POSITION_PING_INTERVAL_MS;
+
+/** Ambang kewajaran anti-spoof (§6.3 Batasan 4). Di atas ini posisi ditandai tidak wajar. */
+export const MAX_PLAUSIBLE_SPEED_KMH = 150;
+export const MAX_PLAUSIBLE_JUMP_M = 5_000;
+
+/** Sesi dianggap kehilangan sinyal bila tak ada posisi selama ini (§6.3 Batasan 3). */
+export const SIGNAL_LOST_AFTER_MS = 3 * 60 * 1000;
+
+/** POST /tenant/shipments/:id/qr — FR-3.6, hanya setelah batch berstatus Panen. */
+export interface GenerateQrResponse {
+  shipmentId: string;
+  /** Kode Antar 4 digit — DITAMPILKAN SEKALI di sini dan di detail pesanan Tenant (FR-6.1). */
+  courierCode: string;
+  boxes: BoxQrItem[];
+}
+
+export interface BoxQrItem {
+  tokenId: string;
+  /** Ditempel pada box fisik. Kurir memindainya dengan kamera bawaan. */
+  scanUrl: string;
+  /** Data URL PNG QR — siap dicetak tanpa perlu library di FE. */
+  qrDataUrl: string;
+  consumedAt: string | null;
+}
+
+/** GET /scan/:token — halaman pertama kurir. TIDAK mengonsumsi token (FR-6.2). */
+export interface ScanTokenResponse {
+  valid: boolean;
+  /** Alasan bila tidak valid: sudah terpakai, tidak dikenal, atau terkunci. */
+  code?: "TOKEN_UNKNOWN" | "TOKEN_CONSUMED" | "TOKEN_LOCKED";
+  message?: string;
+  /** Hanya bila valid — ditampilkan agar kurir yakin box-nya benar. */
+  tenantName?: string;
+  destinationLabel?: string;
+  remainingAttempts?: number;
+}
+
+/** POST /scan/:token/verify — token baru terpakai SETELAH kode benar (FR-6.2). */
+export interface VerifyCourierCodeBody {
+  code: string;
+}
+export interface VerifyCourierCodeResponse {
+  sessionId: string;
+  shipmentId: string;
+  destination: GpsCoordinate;
+  /** Radius geofence tujuan, meter (§5.6.3). */
+  destRadiusM: number;
+  positionIntervalMs: number;
+}
+
+/** POST /scan/session/:sessionId/position */
+export interface ReportPositionBody {
+  lat: number;
+  lng: number;
+  /** Stempel waktu perangkat (ISO). Dipakai menghitung kewajaran kecepatan. */
+  deviceTs: string;
+}
+export interface ReportPositionResponse {
+  accepted: boolean;
+  /** false bila kecepatan/lompatan tidak wajar — tetap disimpan, tapi ditandai. */
+  plausible: boolean;
+  distanceToDestM: number;
+  /** true saat geofence terpicu; sesi tetap berjalan sampai pembeli konfirmasi. */
+  arrived: boolean;
+}
+
+/** Yang dilihat pembeli di peta (BY-10a). Dipancarkan juga lewat WebSocket. */
+export interface TrackingSnapshot {
+  shipmentId: string;
+  status: ShipmentStatus;
+  /** null bila kurir menolak izin lokasi (§6.3) — jalur konfirmasi manual tetap jalan. */
+  position: GpsCoordinate | null;
+  /** Stempel waktu JUJUR posisi terakhir, walau sudah lama (§6.3 Batasan 3). */
+  positionAt: string | null;
+  signalLost: boolean;
+  distanceToDestM: number | null;
+  arrivedAt: string | null;
+  noGpsMode: boolean;
+}
+
+/** POST /shipments/:id/receive — Sinyal-2 Dual-Signal PoD (§5.6.4). */
+export interface ConfirmReceiptBody {
+  /** URL foto kondisi barang. Wajib — inilah yang membuktikan diterima dalam keadaan apa. */
+  photoUrl: string;
+}
+export interface ConfirmReceiptResponse {
+  shipmentId: string;
+  status: ShipmentStatus;
+  receivedMode: "BUYER_CONFIRM" | "AUTO_60MIN";
+  /** Jendela klaim mutu berakhir kapan (FR-5.3). */
+  claimWindowEndsAt: string;
+}
+
+/** Nama event WebSocket — dipakai FE & BE, jangan ditulis ulang sebagai string lepas. */
+export const WS_EVENTS = {
+  SUBSCRIBE: "shipment:subscribe",
+  POSITION: "shipment:position",
+  STATUS: "shipment:status",
+} as const;
+
 export interface CatalogItem {
   batchId: string;
   productId: string;

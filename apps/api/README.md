@@ -352,3 +352,77 @@ diterima tapi tercatat kosong (itu sendiri informasi).
 4. **`growing_days_min` di seed masih INDIKATIF** — validasi ke penyuluh sebelum produksi.
 5. **Alokasi FIFO panen sebagian** (FR-7.9/7.10) belum ada di sini — node `PANEN` baru
    mencatat `quotaBoxFulfilled`; pembagian ke pesanan menyusul di `feat/harvest-assurance`.
+
+---
+
+## Modul Logistik Zero-Install & Dual-Signal PoD (Fase 4) — `feat/logistics-tracking-pod`
+
+| Method | Route | Guard | Fungsi |
+|---|---|---|---|
+| `POST` | `/tenant/shipments/:id/qr` | TENANT | Terbitkan QR per box + Kode Antar (FR-3.6, FR-6.1) |
+| `GET` | `/tenant/shipments/:id/qr` | TENANT | Lembar cetak ulang — **tanpa** Kode Antar |
+| `POST` | `/tenant/shipments/:id/courier-code/reissue` | TENANT | Kode baru setelah terkunci (FR-6.3) |
+| `GET` | `/scan/:token` | — | Halaman pertama kurir. **Tidak mengonsumsi token** |
+| `POST` | `/scan/:token/verify` | — | Verifikasi Kode Antar → sesi aktif, status Dikirim |
+| `POST` | `/scan/session/:id/position` | — | Kirim posisi tiap 10 detik |
+| `POST` | `/scan/session/:id/no-gps` | — | Izin lokasi ditolak → mode tanpa peta |
+| `POST` | `/shipments/:id/receive` | BUYER | **Sinyal-2** PoD: 1 ketuk + foto |
+| `GET` | `/shipments/:id/track` | — | Data peta pembeli (BY-10a) |
+| `POST` | `/logistics/jobs/auto-accept` | — | Fallback 60 menit — **cron** |
+| `POST` | `/logistics/jobs/close-claim-windows` | — | Jendela klaim habis → Selesai — **cron** |
+
+WebSocket: namespace `/tracking`, room per pengiriman. Event `shipment:position` &
+`shipment:status` (nama event ada di `WS_EVENTS` pada `@agro-os/shared`).
+
+### Token QR baru terpakai SETELAH kode benar (FR-6.2)
+
+Ini inti perubahan v2.1. `GET /scan/:token` sengaja **tidak** mengonsumsi apa pun —
+pemindaian iseng oleh orang lewat tidak boleh menghanguskan QR sebelum kurir tiba.
+Token ditandai `consumed_at` hanya di dalam transaksi verifikasi kode.
+
+Kode Antar disimpan **hash** (`COURIER_PIN_PEPPER`), maksimal 5 percobaan lalu terkunci.
+Menerbitkan ulang kode **tidak membatalkan QR yang sudah tercetak** — Tenant tidak perlu
+menempel ulang seluruh box.
+
+### Anti-spoof: pembanding adalah posisi WAJAR terakhir
+
+Kewajaran dihitung terhadap posisi wajar terakhir, **bukan** posisi terakhir apa pun.
+
+> Versi pertama memakai posisi terakhir apa pun. Akibatnya satu bacaan buruk meracuni
+> seluruh rantai sesudahnya: posisi asli berikutnya ikut dinilai "melompat" dari titik
+> palsu itu, sehingga **geofence tidak pernah menyala walau kurir sudah sampai**.
+> Ini bukan sekadar kasus serangan — gangguan GPS biasa (terowongan, pantulan gedung)
+> menghasilkan lompatan serupa. Terbukti saat uji: lompat ke Jakarta lalu kembali ke
+> tujuan; sebelum diperbaiki `arrived` tetap `false` di jarak 8 m.
+
+Posisi tidak wajar **tetap disimpan** (`is_plausible = false`) — jejaknya justru bukti
+saat sengketa. Yang ditolak hanyalah perannya sebagai pemicu geofence dan sebagai pembanding.
+
+### Dual-Signal PoD (§5.6.4)
+
+| Sinyal | Membuktikan |
+|---|---|
+| 1 — geofence 100 m | kargo tiba **di lokasi** |
+| 2 — konfirmasi pembeli + foto | **siapa** menerima, **kapan**, **kondisi apa** |
+
+Geofence hanya mengubah status & memicu notifikasi; ia **tidak** menyelesaikan transaksi.
+Beban konfirmasi ada di pembeli karena dialah yang punya insentif — konfirmasi itu yang
+membuka jendela klaim mutunya.
+
+**Fallback:** tak ada respons 60 menit → `AUTO_60MIN`, dan jendela klaim **diperpanjang
+jadi 24 jam** sebagai kompensasi (pembeli kehilangan kesempatan memeriksa saat serah terima).
+
+### Notifikasi bertahap (FR-10.2)
+
+`DIKIRIM` → `MENDEKAT` (±1 km) → `TIBA_DI_LOKASI` (100 m). **Jam 60 menit baru mulai di
+tahap terakhir**, sehingga pembeli sudah bersiap sebelum hitungan berjalan.
+
+### ⚠️ Belum selesai
+
+1. **Room WebSocket belum diautentikasi** — siapa pun yang tahu `shipmentId` bisa ikut
+   memantau. ID-nya UUID acak, tetapi sebelum produksi perlu verifikasi JWT saat handshake.
+2. **Dua job cron belum dijadwalkan** (`auto-accept`, `close-claim-windows`). Tanpa itu
+   fallback 60 menit tidak pernah jalan dan pesanan tidak pernah berstatus Selesai.
+3. **Foto PoD masih berupa URL** — unggahan berkas memakai `StorageService` seperti
+   bukti timeline belum disambungkan.
+4. **Pencairan escrow saat Selesai** belum disambungkan (menyusul di modul klaim mutu).
