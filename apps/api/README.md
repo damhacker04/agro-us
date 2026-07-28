@@ -114,3 +114,48 @@ Ganti binding di `auth.module.ts` saat provider asli (WhatsApp/SMS) siap — lih
 ```bash
 curl -X POST http://localhost:3001/auth/otp/request -H "Content-Type: application/json" -d "{\"phone\":\"081234567890\"}"
 ```
+
+---
+
+## Modul Tenant Onboarding (FR-1.4 s.d. FR-1.7) — `feat/tenant-onboarding`
+
+| Method | Route | Guard | Fungsi |
+|---|---|---|---|
+| `GET` | `/zones` | — | Daftar zona layanan (dipakai onboarding Tenant & pilih kota Pembeli, FR-2.1) |
+| `POST` | `/tenant/profile` | TENANT | Buat profil: nama perusahaan, logo, zona layanan (FR-1.4) |
+| `GET` | `/tenant/profile` | TENANT | Profil + zona + jumlah lahan + rasio reputasi |
+| `PATCH` | `/tenant/profile` | TENANT | Ubah nama/logo/zona |
+| `PUT` | `/tenant/legality` | TENANT | Unggah NIB/KTP → antrean operator (FR-1.7) |
+| `POST` | `/tenant/land-plots` | TENANT | Daftarkan poligon lahan (FR-1.5) |
+| `GET` | `/tenant/land-plots` | TENANT | Daftar lahan milik sendiri |
+| `GET` | `/tenant/land-plots/:id` | TENANT | Detail satu lahan |
+
+### Aturan penting
+
+**Luas lahan TIDAK PERNAH dikirim klien.** Server menghitungnya sendiri dengan
+`ST_Area(polygon::geography) / 10000`. Angka ini yang membatasi kuota PO 70% (FR-3.3) —
+kalau klien boleh mengirim, Tenant bisa mengarang kapasitas lahannya.
+
+**Tier verifikasi otomatis (FR-1.6):** `areaHa < 0,1` → `TERBATAS` (di bawah resolusi andal
+Sentinel-2). Lahan tetap boleh didaftarkan, tapi ditandai apa adanya.
+
+**Validasi poligon** dilakukan PostGIS (`ST_IsValid`), lalu alasannya **diterjemahkan ke bahasa
+manusia** — jangan pernah membocorkan teks exception mentah ke Tenant (PRD §9):
+
+| Kode | Pesan ke Tenant |
+|---|---|
+| `POLYGON_NOT_CLOSED` | Batas lahan belum tersambung. Pastikan titik terakhir kembali ke titik awal. |
+| `POLYGON_SELF_INTERSECT` | Garis batas lahan saling berpotongan. Gambar ulang tanpa menyilang. |
+| `POLYGON_TOO_FEW_POINTS` | Titik batas terlalu sedikit. Butuh minimal 3 sudut lahan. |
+| `POLYGON_INVALID` | Bentuk batas lahan tidak wajar. Silakan gambar ulang. |
+| `ZONE_UNKNOWN` | Zona tidak dikenal (mencegah tenant "melayani" zona hantu) |
+| `TENANT_EXISTS` / `TENANT_NOT_FOUND` | Guard onboarding ganda / belum onboarding |
+| `ROLE_FORBIDDEN` | Peran salah (RolesGuard) |
+
+> **Koordinat GeoJSON adalah `[lng, lat]`, bukan `[lat, lng]`.** Salah urutan → lahan Malang
+> mendarat di Samudra Hindia dan luasnya kacau. Mapbox GL JS sudah memakai urutan ini.
+
+### Isolasi data
+
+Semua query lahan difilter `tenant_id` dari JWT — Tenant lain mengakses lahan bukan miliknya
+mendapat **404**, bukan 403 (tidak membocorkan keberadaan resource).

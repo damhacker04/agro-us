@@ -193,6 +193,7 @@ model Tenant {
   companyName          String         @map("company_name")
   logoUrl              String?        @map("logo_url")
   legalityStatus       LegalityStatus @default(PENDING) @map("legality_status") // FR-1.7
+  legalityDocUrl       String?        @map("legality_doc_url") // unggahan NIB / KTP pemilik — FR-1.7
   reviewedById         String?        @map("reviewed_by") @db.Uuid
   claimRatioCached     Decimal?       @map("claim_ratio_cached") @db.Decimal(5, 2) // tampil publik — FR-5.7
   shortfallRatioCached Decimal?       @map("shortfall_ratio_cached") @db.Decimal(5, 2) // rolling 2 siklus — FR-7.12

@@ -175,3 +175,84 @@ export interface VerifyOtpResponse {
   isNewUser: boolean; // true → FE arahkan ke onboarding sesuai role
   user: AuthUser;
 }
+
+// ============================== KONTRAK TENANT ONBOARDING (FR-1.4 s.d. 1.7) ==============================
+// Endpoint: /tenant/profile · /tenant/zones · /tenant/land-plots · /tenant/legality
+
+/** GeoJSON Polygon (RFC 7946). Koordinat [lng, lat] — URUTAN INI PENTING, bukan [lat, lng]. */
+export interface GeoJsonPolygon {
+  type: "Polygon";
+  /** Ring pertama = batas luar. Titik pertama & terakhir HARUS sama (ring tertutup). */
+  coordinates: [number, number][][];
+}
+
+export const LegalityStatus = {
+  PENDING: "PENDING",
+  APPROVED: "APPROVED",
+  REJECTED: "REJECTED",
+} as const;
+export type LegalityStatus = (typeof LegalityStatus)[keyof typeof LegalityStatus];
+
+/** Cara poligon direkam (LAND_PLOTS.capture_method) — FR-1.5. */
+export const CaptureMethod = {
+  GAMBAR_PETA: "GAMBAR_PETA",
+  WALK_AROUND: "WALK_AROUND",
+} as const;
+export type CaptureMethod = (typeof CaptureMethod)[keyof typeof CaptureMethod];
+
+/** Tier verifikasi lahan — TERBATAS bila < 0,1 ha (FR-1.6). */
+export const VerificationTier = {
+  NORMAL: "NORMAL",
+  TERBATAS: "TERBATAS",
+} as const;
+export type VerificationTier = (typeof VerificationTier)[keyof typeof VerificationTier];
+
+/** POST /tenant/profile — FR-1.4 (dipanggil sekali setelah registrasi TENANT). */
+export interface CreateTenantProfileBody {
+  companyName: string;
+  logoUrl?: string;
+  /** Zona layanan (minimal 1). Ambil daftarnya dari GET /zones. */
+  zoneIds: string[];
+}
+
+export interface TenantProfileResponse {
+  id: string;
+  companyName: string;
+  logoUrl: string | null;
+  legalityStatus: LegalityStatus;
+  /** Rasio publik (FR-5.7 / FR-7.12) — null bila belum ada riwayat. */
+  claimRatioCached: number | null;
+  shortfallRatioCached: number | null;
+  quotaMultiplier: number;
+  zones: ZoneSummary[];
+  landPlotCount: number;
+}
+
+export interface ZoneSummary {
+  id: string;
+  name: string;
+  city: string;
+  minOrderValue: Rupiah;
+}
+
+/** POST /tenant/land-plots — FR-1.5. Luas TIDAK dikirim klien; dihitung server via PostGIS. */
+export interface CreateLandPlotBody {
+  polygon: GeoJsonPolygon;
+  captureMethod: CaptureMethod;
+}
+
+export interface LandPlotResponse {
+  id: string;
+  polygon: GeoJsonPolygon;
+  /** Hasil hitung server: ST_Area(polygon::geography) / 10000. */
+  areaHa: number;
+  captureMethod: CaptureMethod;
+  /** TERBATAS bila areaHa < MIN_LAND_PLOT_HA — batch di lahan ini tak bisa terverifikasi satelit. */
+  verificationTier: VerificationTier;
+}
+
+/** PUT /tenant/legality — FR-1.7 (ditinjau operator, UC-12). */
+export interface SubmitLegalityBody {
+  /** URL dokumen NIB atau KTP pemilik pada object storage. */
+  documentUrl: string;
+}
