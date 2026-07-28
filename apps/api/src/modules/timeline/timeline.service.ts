@@ -2,11 +2,19 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import exifr from "exifr";
 import { PrismaService } from "../../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
+import { AllocationService } from "../assurance/allocation.service";
 import { computeNodeHash, computeRootHash, sha256, type NodeHashInput } from "./hash.util";
 import type { CreateNodeDto } from "./timeline.dto";
 
 /** Node yang menyertakan bukti nota input pembelian (FR-4.7). */
 const ALLOWS_INPUT_RECEIPT = ["PEMUPUKAN", "PENGENDALIAN_HAMA"] as const;
+
+/**
+ * Batas kelonggaran jam perangkat. Cukup longgar untuk ponsel yang jamnya meleset
+ * atau salah zona waktu, tapi jauh lebih pendek daripada umur tanam komoditas
+ * mana pun — jadi tidak bisa dipakai memotong masa tanam.
+ */
+const DEVICE_CLOCK_SKEW_TOLERANCE_MS = 24 * 60 * 60 * 1000;
 
 export interface UploadedPhoto {
   buffer: Buffer;
@@ -20,6 +28,7 @@ export class TimelineService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly allocation: AllocationService,
   ) {}
 
   /**
@@ -48,6 +57,19 @@ export class TimelineService {
     }
 
     const deviceTs = new Date(dto.deviceTs);
+
+    // `deviceTs` datang dari perangkat Tenant, jadi tidak boleh dipercaya sebagai
+    // penanda waktu ke DEPAN. Tanpa pagar ini, pagar umur tanam di bawah bisa
+    // dilewati begitu saja: tanam hari ini, lalu kirim PANEN bertanggal tiga bulan
+    // ke depan — persis skenario "panen fiktif" yang mau dicegah.
+    // Toleransi disediakan untuk jam ponsel yang meleset/salah zona waktu.
+    if (deviceTs.getTime() > Date.now() + DEVICE_CLOCK_SKEW_TOLERANCE_MS) {
+      throw new BadRequestException({
+        code: "DEVICE_TS_IN_FUTURE",
+        message: "Waktu di perangkat Anda lebih maju dari waktu server. Perbaiki jam ponsel lalu coba lagi.",
+      });
+    }
+
     await this.validateActivityRules(batch, dto, deviceTs);
 
     // FR-4.3 — GPS wajib di dalam poligon lahan, kecuali ada alasan tertulis.
@@ -136,19 +158,24 @@ export class TimelineService {
 
       // Efek samping status batch — hanya untuk node penutup.
       if (dto.activityType === "PANEN") {
+        // Hasil panen tidak boleh melebihi yang dijanjikan — CHECK di DB juga menjaganya.
+        const fulfilled = Math.min(dto.fulfilledBox ?? batch.quotaBoxSold, batch.quotaBoxSold);
         await tx.batch.update({
           where: { id: batchId },
-          data: {
-            productionStatus: "HARVESTED",
-            ...(dto.fulfilledBox !== undefined && { quotaBoxFulfilled: dto.fulfilledBox }),
-          },
+          data: { productionStatus: "HARVESTED", quotaBoxFulfilled: fulfilled },
         });
+        // FR-7.9 — bagi hasil panen ke pesanan secara FIFO menurut waktu bayar.
+        // Tanpa langkah ini, panen sebagian hanya tercatat di batch dan pesanan
+        // pembeli tidak pernah tahu porsinya berkurang.
+        await this.allocation.apply(tx, batchId, fulfilled);
       } else if (dto.activityType === "GAGAL_PANEN") {
         await tx.batch.update({
           where: { id: batchId },
           // CHECK di DB mewajibkan FAILED ⟹ fulfilled = 0.
           data: { productionStatus: "FAILED", quotaBoxFulfilled: 0 },
         });
+        // Seluruh pesanan kehilangan porsinya → semuanya masuk Harvest Assurance.
+        await this.allocation.apply(tx, batchId, 0);
       } else if (dto.activityType === "PENANAMAN" && batch.productionStatus === "PLANNING") {
         await tx.batch.update({
           where: { id: batchId },
@@ -158,6 +185,12 @@ export class TimelineService {
 
       return id;
     });
+
+    // FR-7.12 — penalti kuota dihitung ulang setelah siklus ditutup. Sengaja di luar
+    // transaksi: kegagalan menghitung penalti tidak boleh membatalkan pencatatan panen.
+    if (dto.activityType === "PANEN" || dto.activityType === "GAGAL_PANEN") {
+      await this.allocation.applyShortfallPenalty(batch.product.tenantId);
+    }
 
     return this.getNode(batchId, nodeId);
   }

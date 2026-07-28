@@ -45,16 +45,4 @@ export class EscrowService {
     return rows.length;
   }
 
-  /** Saldo tertahan per Tenant — dipakai dashboard Tenant (FR-3.5). */
-  async balanceForTenant(tenantId: string) {
-    const rows = await this.prisma.$queryRaw<Array<{ entry_type: string; total: bigint }>>`
-      SELECT entry_type::text, SUM(amount)::bigint AS total
-      FROM escrow_ledger WHERE tenant_id = ${tenantId}::uuid
-      GROUP BY entry_type
-    `;
-    const by = Object.fromEntries(rows.map((r) => [r.entry_type, Number(r.total)]));
-    const held = by.HOLD ?? 0;
-    const out = (by.RELEASE ?? 0) + (by.RELEASE30 ?? 0) + (by.POTONG_KLAIM ?? 0) + (by.REFUND ?? 0);
-    return { held, released: out, balance: held - out, breakdown: by };
-  }
 }

@@ -677,6 +677,96 @@ export interface DecideClaimBody {
   note: string;
 }
 
+// ============================== KONTRAK HARVEST ASSURANCE (§5.7.2, FR-7.4..7.12) ==============================
+// Panen sebagian, alokasi FIFO, dan tiga opsi bagi pembeli yang tidak terpenuhi.
+
+/** Biaya pembatalan sepihak pembeli, diteruskan penuh ke Tenant (FR-7.5). */
+export const CANCELLATION_FEE_PCT = 10;
+
+/** Hasil alokasi FIFO saat Tenant menandai panen (FR-7.8/7.9). */
+export interface AllocationPreview {
+  batchId: string;
+  quotaBoxSold: number;
+  fulfilledBox: number;
+  /** Pesanan yang terpenuhi UTUH — dipenuhi berurutan menurut waktu bayar. */
+  fullyFulfilled: AllocationLine[];
+  /** Pesanan di perbatasan: kebagian sebagian. Pembeli MEMILIH, tidak dipaksa (FR-7.10). */
+  partial: AllocationLine[];
+  /** Pesanan yang tidak kebagian sama sekali. */
+  unfulfilled: AllocationLine[];
+}
+
+export interface AllocationLine {
+  orderItemId: string;
+  buyerName: string;
+  /** Waktu pembayaran masuk escrow — INILAH kunci urutan FIFO, bukan waktu order dibuat. */
+  paidAt: string;
+  qtyBox: number;
+  allocatedBox: number;
+  shortfallBox: number;
+}
+
+/** Item yang menunggu keputusan pembeli (layar BY-11). */
+export interface PendingAssurance {
+  orderItemId: string;
+  shipmentId: string;
+  productName: string;
+  tenantName: string;
+  qtyBox: number;
+  allocatedBox: number;
+  shortfallBox: number;
+  unitPriceLocked: Rupiah;
+  /** Nilai porsi yang tidak terpenuhi — inilah yang direfund/disubstitusi. */
+  shortfallValue: Rupiah;
+  /** false bila porsi terpenuhi jatuh di bawah minimum zona — tawarkan tolak-semua dulu. */
+  partialMeetsMinimum: boolean;
+  /** Kosong bila substitusi tidak ditawarkan (lihat `substitutionBlockedReason`). */
+  substitutes: SubstituteOption[];
+  substitutionBlockedReason?: string;
+}
+
+export interface SubstituteOption {
+  batchId: string;
+  productName: string;
+  tenantId: string;
+  tenantName: string;
+  lockedPrice: Rupiah;
+  availableBox: number;
+  claimedHarvestDate: string;
+  /** Selisih harga yang ditanggung Tenant gagal. 0 bila pengganti lebih murah. */
+  priceGapBorneByTenant: Rupiah;
+}
+
+/** POST /assurance/:orderItemId/resolve — FR-7.4, FR-7.10. */
+export interface ResolveAssuranceBody {
+  option: AssuranceOption;
+  /** Wajib untuk SUBSTITUSI. */
+  replacementBatchId?: string;
+}
+
+export interface ResolveAssuranceResponse {
+  orderItemId: string;
+  option: AssuranceOption;
+  shortfallBox: number;
+  refundedValue: Rupiah;
+  priceGapBorneByTenant: Rupiah;
+  message: string;
+}
+
+/** POST /orders/:id/cancel — FR-7.5, hanya selama Menunggu Panen. */
+export interface CancelOrderResponse {
+  orderId: string;
+  refundedValue: Rupiah;
+  /**
+   * 10% nilai BARANG (di luar ongkir), diteruskan ke Tenant sebagai kompensasi
+   * biaya input yang sudah terlanjur dikeluarkan.
+   */
+  cancellationFee: Rupiah;
+  /** Dasar perhitungan denda — layar konfirmasi menampilkan rinciannya. */
+  goodsValue: Rupiah;
+  message: string;
+}
+
 export interface CatalogItem {
   batchId: string;
   productId: string;
