@@ -219,3 +219,75 @@ menyandingkan klaim Tenant dengan hasil satelit.
 
 > `/catalog` **sengaja tanpa guard** — pembeli boleh menelusuri sebelum login (seperti marketplace
 > umum). `zoneId` wajib karena FR-2.1 mengharuskan pilih kota layanan lebih dulu.
+
+---
+
+## Modul Verified Timeline (FR-4.1 s.d. 4.9, §5.4, §6.1) — `feat/verified-timeline`
+
+| Method | Route | Guard | Fungsi |
+|---|---|---|---|
+| `POST` | `/tenant/batches/:batchId/timeline` | TENANT | **Tambah node** (multipart + foto). Satu-satunya cara menulis |
+| `GET` | `/tenant/batches/:batchId/timeline` | TENANT | Timeline milik sendiri |
+| `GET` | `/batches/:batchId/timeline` | — | **Publik** — Verified Timeline yang dilihat pembeli (BY-03a) |
+| `GET` | `/batches/:batchId/timeline/verify` | — | **Hitung ulang rantai** + bandingkan dgn jangkar |
+| `GET` | `/batches/:batchId/anchors` | — | Riwayat root hash harian |
+| `POST` | `/anchors/run` | — | Hitung & simpan jangkar harian — **target cron** |
+
+**Tidak ada endpoint UPDATE/DELETE — sesuai FR-4.1.** Koreksi memakai node `Ralat` (FR-4.2);
+node asli tetap tampil.
+
+### Rantai hash
+
+```
+nodeHash = SHA-256( batchId|seq|activityType|description|lng|lat|deviceTs|photoHashes|ralatOf + "|" + prevHash )
+rootHash = SHA-256( gabungan seluruh nodeHash terurut )
+```
+
+SHA-256 tiap foto **ikut di-hash**, sehingga foto bukti tidak bisa ditukar tanpa memutus rantai.
+Format kanonik (`hash.util.ts`) **wajib stabil selamanya** — mengubahnya membatalkan seluruh
+rantai tersimpan.
+
+> ⚠️ **Pelajaran desain:** `verifyChain` menghitung root dari hash **hasil hitung ulang**,
+> bukan dari kolom `node_hash`. Versi pertama memakai nilai tersimpan — akibatnya penyerang
+> yang mengubah isi baris tapi membiarkan kolom hash menghasilkan root yang **sama**, sehingga
+> jangkar eksternal terlihat cocok padahal data sudah dipalsukan. Jangan dikembalikan.
+
+### Terbukti tamper-evident
+
+Diuji dengan mematikan trigger lalu mengubah `description` node seq 1 langsung lewat SQL
+(mensimulasikan orang dalam ber-superuser, skenario yang diakui PRD §6.1):
+
+| | Sebelum dipalsukan | Setelah dipalsukan |
+|---|---|---|
+| `intact` | `true` | **`false`** |
+| `matchesAnchor` | `true` | **`false`** |
+| node rusak | 0 | **9** (efek beruntun seq 1→5) |
+
+Satu perubahan merusak seluruh node sesudahnya — persis sifat yang dijanjikan §6.1.
+
+### Aturan yang ditegakkan
+
+| Kode | Aturan |
+|---|---|
+| `PHOTO_REQUIRED` | Minimal 1 foto bukti (§5.4.1) |
+| `GPS_OUTSIDE_POLYGON` | GPS di luar poligon → wajib alasan tertulis, **ditampilkan ke pembeli** (FR-4.3) |
+| `HARVEST_WITHOUT_PLANTING` | PANEN wajib didahului node PENANAMAN (FR-4.8) |
+| `HARVEST_TOO_EARLY` | Jarak tanam→panen < `commodities.growing_days_min` (FR-4.8) |
+| `RALAT_TARGET_INVALID` | Node ralat menunjuk node yang tidak ada |
+| `BATCH_CLOSED` | Batch sudah HARVESTED/FAILED → timeline ditutup |
+
+`captureSource` `GALLERY` disimpan apa adanya — menurunkan tingkat kepercayaan node (§5.4.1).
+EXIF diekstrak server-side dari buffer **asli sebelum kompresi** (§6.4); foto tanpa EXIF tetap
+diterima tapi tercatat kosong (itu sendiri informasi).
+
+### ⚠️ Belum selesai
+
+1. **`externalRef` masih null** — publikasi root hash ke penyimpanan write-once eksternal
+   BELUM terpasang. Tanpa itu jangkar baru catatan internal, dan klaim §6.1 belum bisa
+   dipertahankan pada pemeriksaan teknis. Kandidat: OpenTimestamps / S3 Object Lock.
+2. **Storage masih disk lokal** — ephemeral, hilang tiap redeploy. Ganti ke S3/R2/GCS
+   (antarmuka `StorageService` sudah disiapkan untuk itu).
+3. **`/anchors/run` belum dijadwalkan** — pasang cron harian.
+4. **`growing_days_min` di seed masih INDIKATIF** — validasi ke penyuluh sebelum produksi.
+5. **Alokasi FIFO panen sebagian** (FR-7.9/7.10) belum ada di sini — node `PANEN` baru
+   mencatat `quotaBoxFulfilled`; pembagian ke pesanan menyusul di `feat/harvest-assurance`.
