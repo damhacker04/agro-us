@@ -1,34 +1,35 @@
-# AgroOS — Rencana Arsitektur & Setup Repo
+# AgroUs — Rencana Arsitektur & Setup Repo (v2.2)
 
-> B2B Agro-Logistics SaaS (White-Label) — "Shopee khusus sayur & buah" dengan:
-> linimasa produksi immutable, progress tracker PO (bisa pesan sebelum panen),
-> bulk QR code per box, dan live map tracking kurir secara real-time.
+> Selaras dengan [`PRD.md`](PRD.md) v2.2. **PRD adalah sumber kebenaran** untuk requirement;
+> dokumen ini adalah keputusan teknis & workflow repo.
 >
-> Status: **RENCANA (belum ada kode)** — dokumen ini acuan sebelum scaffolding.
+> Produk: B2B Agro-Logistics **PWA** — supply chain berbasis permintaan yang **terverifikasi**:
+> Verified Timeline (hash chain + foto EXIF + cross-check satelit Sentinel-2), keranjang lintas-Tenant,
+> escrow + Harvest Assurance, Dual-Signal PoD, dan Demand Intelligence.
 >
-> **Konteks tim:** 3 orang (FE · BE · PM), metode **Agile**. Scope MVP masih bisa
-> berubah/bertambah → arsitektur sengaja dibuat **ramping dulu, naik kelas saat perlu.**
+> **Konteks tim:** 3 orang (FE · BE · PM), metode **Agile**. Arsitektur ramping dulu, naik kelas saat perlu.
 
 ---
 
-## 1. Tech Stack Final
+## 1. Tech Stack Final (PRD §6.4)
 
-| Layer | Teknologi | Alasan |
+| Layer | Teknologi | Catatan v2.0 |
 |---|---|---|
-| **Monorepo** | pnpm workspaces + **Turborepo** | 1 repo, share types antara FE & BE, build cepat |
-| **Frontend** | **Next.js 15 (App Router)** + TypeScript | SSR untuk portal publik tenant (SEO katalog) |
-| **UI** | TailwindCSS + **shadcn/ui** + lucide-react | Cepat, konsisten, white-label friendly (theming per tenant) |
-| **State/Data FE** | TanStack Query + Zustand | Server-state cache + client-state ringan |
-| **Backend** | **NestJS** (modular, DI) | Struktur paling pas untuk Clean/Hexagonal Architecture |
-| **Real-time** | **Socket.IO** (gateway NestJS) | Live GPS kurir → pembeli |
-| **Database** | **PostgreSQL** | Relasional, cocok multi-tenant + append-only timeline |
-| **ORM** | **Prisma** | Type-safe, migrations, cocok dengan TS monorepo |
-| **Auth** | JWT (tenant admin) — kurir & pembeli-scan **tanpa login** | Sesuai use-case dokumen |
-| **Map** | **Leaflet + OpenStreetMap** (gratis) / opsi Mapbox | Live tracking |
-| **QR Code** | `qrcode` (generate) + `html5-qrcode` (scan di browser kurir) | Bulk generate + scan tanpa app native |
-| **Validation** | Zod (shared) + class-validator (Nest DTO) | Validasi konsisten FE/BE |
-| **Payment** | **Mock service** (klik bayar → langsung `PAID`) | Sesuai permintaan (belum integrasi real) |
-| **Deploy (nanti)** | FE: Vercel · BE+DB: Railway/Render/VPS | — |
+| **Monorepo** | pnpm workspaces + Turborepo | share types FE↔BE |
+| **Frontend** | Next.js 15 (App Router) **sebagai PWA** + Tailwind | 1 basis kode semua persona; halaman kurir < 150KB |
+| **UI** | shadcn/ui + lucide-react | Font: **Fredoka** (heading) + **Poppins** (body) |
+| **Backend** | **NestJS** (Node.js) | PRD: "Node.js atau Go" → pilih Node demi 1 bahasa dengan FE |
+| **Database** | PostgreSQL + **PostGIS** | poligon lahan, geofence (`ST_DWithin`), titik GPS |
+| **ORM** | Prisma (+ raw SQL untuk PostGIS/geometry) | Prisma belum first-class untuk `geometry` → pakai `Unsupported` + raw query |
+| **Real-time** | **WebSocket** (Socket.IO), **SSE** cadangan | posisi kurir tiap 10 detik (hemat baterai) |
+| **Peta** | **Mapbox GL JS** | render poligon lahan + live map |
+| **Satelit** | **Python worker** (rasterio, numpy) + Copernicus Data Space | job harian NDVI/NDMI, **bukan** sinkron |
+| **Pembayaran** | **Midtrans / Xendit** + penahanan dana (escrow mitra) | WAJIB escrow mitra, bukan mandiri |
+| **Auth** | **OTP telepon** (semua persona); kurir & scan **tanpa login** | email opsional |
+| **QR** | `qrcode` (generate) + kamera bawaan / Google Lens (scan) | token sekali pakai |
+| **Storage** | Object storage foto bukti; **EXIF diekstrak & disimpan terpisah** | foto tidak dikompresi ulang sebelum ekstraksi |
+| **Integritas** | rantai hash SHA-256 + **root hash write-once eksternal** harian | bukan blockchain (PRD §6.1) |
+| **Deploy** | FE → Vercel · BE → Railway/Render · Satellite worker → cron host | 3 target (WebSocket & Python long-running tak muat Vercel) |
 
 ---
 
@@ -37,271 +38,178 @@
 ```
 agro-os/
 ├── apps/
-│   ├── web/                  # Next.js — portal tenant admin + portal publik pembeli
-│   └── api/                  # NestJS — REST + WebSocket gateway
+│   ├── web/                # Next.js PWA — tenant dashboard, buyer storefront, halaman kurir
+│   ├── api/                # NestJS — REST + WebSocket + escrow + hash-chain
+│   └── satellite-worker/   # Python — job harian Sentinel-2 NDVI/NDMI (BUKAN paket pnpm)
 ├── packages/
-│   ├── shared/               # Types, Zod schemas, enums (dipakai FE & BE)
-│   ├── ui/                   # Komponen shadcn/ui reusable (opsional)
-│   └── config/               # eslint, tsconfig, tailwind preset bersama
-├── docs/
-│   └── ARCHITECTURE_PLAN.md  # dokumen ini
-├── turbo.json
-├── pnpm-workspace.yaml
-└── package.json
+│   └── shared/             # Types + enums kontrak FE↔BE (contract-first)
+├── docs/                   # PRD.md + diagrams/
+├── turbo.json · pnpm-workspace.yaml · tsconfig.base.json
 ```
+
+> `apps/satellite-worker` berbahasa Python (punya `requirements.txt`, tanpa `package.json`) sehingga
+> otomatis diabaikan oleh pnpm workspace. Dijalankan sebagai cron/scheduled job terpisah.
 
 ---
 
-## 3. Clean Architecture — Backend (`apps/api`) — *Pragmatic, bukan dogmatic*
+## 3. Clean Architecture — Backend (`apps/api`)
 
-Prinsipnya tetap **Hexagonal / Onion** (dependency mengarah ke dalam, domain tidak tahu soal DB/HTTP),
-tapi untuk tim agile kecil kita **mulai ramping** dan **naik ke 4 layer penuh hanya saat modul benar-benar kompleks**.
-Refactor ke arah clean architecture itu murah asal boundary-nya sudah benar sejak awal.
+Prinsip Hexagonal (domain murni, akses DB via interface). **Ramping dulu**, naik ke 4 layer penuh
+hanya saat modul kompleks (kandidat: `timeline`, `escrow`, `logistics`).
 
-### 3a. Bentuk DEFAULT (ramping) — dipakai untuk mayoritas modul
-
+### 3a. Bentuk ramping default per modul
 ```
-apps/api/src/
-├── modules/
-│   ├── tenant/               # Perusahaan penyewa OS (white-label)
-│   ├── catalog/              # Produk komoditas
-│   ├── timeline/             # Linimasa produksi (IMMUTABLE / append-only)
-│   ├── order/                # PO, progress tracker, pembayaran mock
-│   ├── shipment/             # Box, QR code, kurir, live tracking
-│   └── auth/                 # JWT tenant admin
-│
-│   └── <module>/             # bentuk ramping default:
-│       ├── order.domain.ts       # entity + aturan bisnis (murni TS)
-│       ├── order.service.ts      # use-cases (CreatePO, ...)
-│       ├── order.repository.ts   # interface + impl Prisma (pisah kalau sudah ramai)
-│       ├── order.controller.ts   # REST
-│       └── order.dto.ts          # DTO + validasi
-├── shared/                   # exceptions, guards, interceptors
-├── prisma/                   # schema.prisma + migrations
-└── main.ts
+modules/<module>/
+├── <m>.domain.ts       # entity + aturan bisnis murni TS
+├── <m>.service.ts      # use-cases
+├── <m>.repository.ts   # interface + impl Prisma/raw-SQL
+├── <m>.controller.ts   # REST
+└── <m>.dto.ts          # DTO + validasi (Zod/class-validator)
 ```
 
-### 3b. Bentuk PENUH (4 layer) — hanya saat modul kompleks (mis. `shipment`)
-
-Kalau sebuah modul mulai ribet (banyak use-case, banyak adapter — contoh: `shipment` = QR + GPS + tracking),
-**baru** pecah ke Hexagonal penuh:
-
-```
-modules/shipment/
-├── domain/              # entities, value-objects (GpsCoordinate, QrToken), interface repository
-├── application/         # use-cases (ScanQr, RecordGpsPing, ...) + dto
-├── infrastructure/      # Prisma repo impl + services (QrGenerator, GpsGateway)
-└── presentation/        # http/ (controller) + ws/ (socket gateway)
-```
-
-**Aturan emas (berlaku di kedua bentuk):**
-- `domain`/logika bisnis **tidak boleh** import Prisma / NestJS / Express.
-- Akses DB hanya lewat **interface repository** yang diimplementasi di layer infrastructure.
-- **Immutable timeline**: `TimelineEntry` hanya punya use-case `AppendTimelineEntry` — **tidak ada** `UpdateTimelineEntry` / `DeleteTimelineEntry`. DB pakai kolom `created_at` + tanpa endpoint edit. (Opsional: koreksi via row baru berstatus `CORRECTION`, bukan mengubah row lama.)
-
-> **Pedoman naik-kelas:** mulai dari 3a. Pindah ke 3b **hanya** jika satu modul sudah punya
-> >5 use-case ATAU >1 adapter eksternal. Jangan pecah preventif — itu boilerplate sia-sia untuk MVP.
-
----
-
-## 4. Struktur Frontend (`apps/web`)
-
-```
-apps/web/src/
-├── app/
-│   ├── (tenant)/             # Dashboard perusahaan penyewa OS
-│   │   ├── dashboard/            # Evaluasi kinerja ekspedisi
-│   │   ├── products/            # CRUD katalog + tambah linimasa
-│   │   ├── orders/              # Kelola PO masuk, update progress
-│   │   └── qr/                  # Bulk generate QR per box
-│   ├── (public)/             # Portal publik pembeli (white-label per tenant)
-│   │   └── [tenantSlug]/         # agroos.id/pt-sayur
-│   │       ├── page.tsx             # Katalog produk tenant
-│   │       ├── product/[id]/        # Detail + timeline produksi
-│   │       └── orders/              # "Pesanan Saya" + progress + live map
-│   ├── scan/[qrToken]/       # Halaman kurir: scan QR → kirim GPS pasif
-│   └── api/                  # (kalau ada BFF ringan; utama tetap di NestJS)
-├── features/                 # Per-fitur: components + hooks + api-client
-│   ├── catalog/
-│   ├── orders/
-│   ├── timeline/
-│   └── live-tracking/           # Leaflet map + socket listener
-├── lib/                      # api client, socket client, utils
-└── components/ui/            # shadcn/ui
-```
-
----
-
-## 5. Data Model Inti (highlight Prisma)
-
-Fokus pada 3 hal unik: **multi-tenant**, **immutable timeline**, **live tracking**.
-
-```prisma
-model Tenant {              // Perusahaan penyewa OS
-  id        String  @id @default(cuid())
-  slug      String  @unique   // "pt-sayur" → agroos.id/pt-sayur
-  name      String
-  logoUrl   String?           // white-label
-  products  Product[]
-}
-
-model Product {
-  id        String  @id @default(cuid())
-  tenantId  String
-  name      String
-  unit      String            // skala "box", bukan satuan
-  price     Int               // dalam rupiah (integer, hindari float)
-  timeline  TimelineEntry[]
-}
-
-model TimelineEntry {        // APPEND-ONLY, tak bisa diedit setelah save
-  id         String   @id @default(cuid())
-  productId  String
-  orderId    String?          // bisa spesifik per PO
-  label      String           // "Sedang ditanam", "Panen", "Packing"...
-  createdAt  DateTime @default(now())
-  // sengaja TIDAK ada updatedAt / kolom yang mendorong edit
-}
-
-model Order {                // PO — bisa sebelum panen
-  id         String   @id @default(cuid())
-  buyerName  String
-  productId  String
-  qty        Int
-  status     OrderStatus @default(PENDING_PAYMENT)
-  payment    Payment?
-  shipment   Shipment?
-}
-
-enum OrderStatus { PENDING_PAYMENT PAID IN_PRODUCTION HARVESTED PACKED SHIPPING DELIVERED }
-
-model Payment {              // MOCK — langsung success
-  id        String  @id @default(cuid())
-  orderId   String  @unique
-  status    String  @default("SUCCESS")
-  paidAt    DateTime @default(now())
-}
-
-model Shipment {
-  id         String   @id @default(cuid())
-  orderId    String   @unique
-  qrToken    String   @unique   // dicetak di box, discan kurir tanpa login
-  status     String   @default("READY")
-  gpsPings   GpsPing[]
-}
-
-model GpsPing {              // live tracking
-  id          String   @id @default(cuid())
-  shipmentId  String
-  lat         Float
-  lng         Float
-  at          DateTime @default(now())
-}
-```
-
----
-
-## 6. Alur End-to-End (ringkas)
-
-1. **Tenant** buat produk + tambah entri linimasa (immutable saat save).
-2. **Pembeli** buka `agroos.id/[slug]` → lihat katalog + timeline → buat **PO** (walau belum panen).
-3. **Pembeli** klik "Bayar Sekarang" → `PaymentMock` set `SUCCESS` → redirect ke **Pesanan Saya**.
-4. **Tenant** update linimasa seiring progress (Tanam → Panen → Packing). Pembeli lihat progress real-time.
-5. Saat **Packed**: tenant **bulk generate QR** → cetak → tempel di box.
-6. **Kurir** scan QR → buka `/scan/[qrToken]` → browser kirim **GPS pasif** via Socket.IO.
-7. **Pembeli** di "Pesanan Saya" lihat **live map** posisi kurir (Leaflet + socket).
-
----
-
-## 7. Strategi Branch Git (Trunk-Based — cocok tim kecil)
-
-Untuk 3 orang, `main` + `develop` + 10 long-lived branch itu **kelebihan** dan bikin konflik merge.
-Kita pakai **trunk-based**: satu batang `main` yang selalu deploy-able, dengan feature branch **pendek** (< 2–3 hari).
-
-```
-main                    → selalu deploy-able (protected, merge HANYA via PR)
-├── feat/monorepo-setup     # branch pendek, langsung PR ke main
-├── feat/catalog
-├── feat/order-po
-├── fix/timeline-validation
-└── ...                     # branch mati setelah di-merge, jangan dibiarkan hidup lama
-```
-
-**Kenapa buang `develop`?** Di tim kecil, branch yang hidup berminggu-minggu = neraka konflik.
-Merge sering & kecil jauh lebih aman. Rilis cukup ditandai **git tag** (`v0.1.0`) di `main`.
-
-**Konvensi:**
-- Branch: `feat/…`, `fix/…`, `chore/…`, `docs/…` — **umur pendek**, hapus setelah merge.
-- Commit: **Conventional Commits** (`feat:`, `fix:`, `chore:`) → enak untuk changelog otomatis.
-- PR: semua branch → **`main`**, wajib **1 reviewer** (BE review FE, FE review BE; PM cek fungsional).
-- **Branch protection** di `main`: wajib PR + minimal 1 approval + CI hijau. Direct push dilarang.
-- Rilis: `git tag vX.Y.Z` di `main` (tidak perlu branch `develop`/`release`).
-
-> Urutan pengerjaan **tidak lagi per-modul**, tapi **per vertical slice / sprint** — lihat §10.
-
----
-
-## 8. CI/CD & Deployment (rencana, `.github/workflows/`)
-
-- `ci.yml`: lint + type-check + build (turbo) di setiap PR.
-- **Deploy (2 target, sengaja):**
-  - **FE** (`apps/web`) → **Vercel** (SSR portal publik, gratis, otomatis dari git).
-  - **BE** (`apps/api`) → **Railway / Render / VPS** — server long-running.
-
-> **Kenapa BE tidak ikut Vercel?** Vercel serverless tidak bisa menjalankan server nonstop
-> (`node main.js`) maupun memegang **koneksi WebSocket Socket.IO** yang selalu terbuka untuk
-> live GPS kurir. Karena itu NestJS + Socket.IO wajib di host yang mendukung proses long-running.
-> Ini keputusan sadar demi kontrol penuh atas realtime — konsekuensinya ada 2 target deploy.
-
----
-
-## 9. Langkah Selanjutnya (setelah dokumen ini di-ACC)
-
-1. Init monorepo (pnpm + turborepo) di branch `feat/monorepo-setup`.
-2. Scaffold `apps/web` (Next.js) & `apps/api` (NestJS) + `packages/shared`.
-3. Buat `prisma/schema.prisma` sesuai §5, jalankan migration awal.
-4. Set **branch protection `main`** di GitHub + siapkan PR/issue template & GitHub Projects (board).
-5. Mulai implementasi **per vertical slice / sprint** sesuai §10 (bukan per-modul).
-
----
-
-## 10. Agile Working Model (tim 3: FE · BE · PM)
-
-### 10a. Prinsip: kerja per **vertical slice**, bukan per layer
-Tiap sprint hasilkan **1 fitur utuh yang bisa didemo** (FE↔BE↔DB nyambung), bukan "BE bikin semua API dulu".
-Fitur berisiko/tak pasti (timeline, live-map) ditaruh **belakang** setelah fondasi stabil.
-
-| Sprint | Vertical slice (target demo) | Cakupan |
+### 3b. Peta modul v2.0 (dari PRD & Use Case)
+| Modul | Cakupan (FR) | Immutability? |
 |---|---|---|
-| **0** | Setup | Monorepo, CI, prisma schema, branch protection, board |
-| **1** | **Walking skeleton** | Login tenant → tambah 1 produk → pembeli lihat katalog publik |
-| **2** | PO + bayar | Buat PO (sebelum panen) → mock payment `SUCCESS` → "Pesanan Saya" |
-| **3** | Timeline + progress | Tenant append linimasa (immutable) → pembeli lihat progress |
-| **4** | QR + kurir | Bulk generate QR → cetak → kurir scan `/scan/[token]` |
-| **5** | Live tracking | Socket GPS ping → Leaflet live map di "Pesanan Saya" |
-| **6+** | Polish / fitur baru | Dashboard evaluasi ekspedisi, white-label theming, dst (dari backlog) |
+| `auth` | OTP telepon, sesi (FR-1.3) | — |
+| `tenant` | onboarding, legalitas, **poligon lahan PostGIS** (FR-1.4–1.7) | — |
+| `catalog` | produk, grade, komoditas, **buka kuota PO** (FR-2.2, 3.2–3.3) | — |
+| `batch` | batch ↔ poligon, status produksi & verifikasi (FR-3.4) | — |
+| `timeline` | **Verified Timeline**: node append-only, hash chain, foto EXIF (FR-4.\*) | **INSERT-ONLY** |
+| `verification` | konsumsi hasil satellite-worker, set badge (FR-4.4–4.6) | — |
+| `order` | keranjang lintas-Tenant, rencana pengiriman terkonsolidasi (FR-2.3–2.4) | — |
+| `payment` | Midtrans/Xendit, validasi otomatis (FR-2.8) | — |
+| `escrow` | **ledger append-only** HOLD/RELEASE/REFUND, Harvest Assurance (FR-7.\*) | **append-only** |
+| `logistics` | QR token sekali pakai, **Kode Antar 4 digit** (FR-6.\*), tracking session, geofence, **Dual-Signal PoD** (FR-3.6, 5.6) | — |
+| `quality` | grade, toleransi susut, **jendela klaim**, routing operator (FR-5.\*) | — |
+| `demand` | agregasi PO → Rekomendasi Tanam (materialized view) (FR-8.\*) | — |
 
-> Scope bisa bertambah — fitur baru **masuk backlog dulu** (dikelola PM), bukan langsung dikerjakan.
+### 3c. Tiga hal yang WAJIB benar sejak awal (integritas — PRD §6.1)
+1. **Timeline INSERT-ONLY** — di 3 lapis: API (tanpa endpoint UPDATE/DELETE), DB (hak akses + trigger tolak UPDATE/DELETE), dan **root hash harian ke storage write-once eksternal**.
+2. **Escrow ledger append-only** — tiap mutasi = row baru (`entry_type`), tidak ada edit.
+3. **Foto EXIF** — ekstrak metadata **sebelum** kompresi apa pun; simpan terpisah dari file.
+4. **Kode Antar (v2.1)** — PIN disimpan **hash** (bukan plaintext), maks 5 percobaan lalu token terkunci,
+   dan `consumed_at` token QR diisi **setelah PIN benar** — bukan saat scan (FR-6.2). Salah urutan di sini
+   = celah yang justru mau ditutup v2.1.
+5. **Alokasi FIFO (v2.2)** — urutkan berdasarkan **`PAYMENTS.paid_at`**, bukan `ORDERS.created_at`.
+   Salah kolom = celah *gaming* (booking duluan, bayar belakangan). Alokasi harus **transaksional**
+   agar tidak ada double-allocation saat panen dideklarasikan bersamaan (FR-7.9).
+6. **Panen sebagian diturunkan, bukan disimpan ganda** — `quota_box_fulfilled < quota_box_sold`
+   adalah satu-satunya penanda shortfall. **Jangan** menambah nilai `production_status` baru;
+   dua sumber kebenaran akan tidak sinkron (§5.7.2).
 
-### 10b. Contract-first — kunci FE & BE jalan paralel
-Tiap awal fitur, **definisikan kontrak API di `packages/shared` DULUAN** (types + Zod schema).
-- FE langsung kerja pakai **mock** dari types itu — tidak perlu nunggu API BE jadi.
-- Kalau kontrak berubah (pasti, namanya agile) → TypeScript teriak di FE **dan** BE. Tidak ada miskomunikasi nama field.
+### 3d. Seed data yang WAJIB ada sebelum Fase 1 selesai
 
-### 10c. Pembagian peran
-| Role | Fokus |
+`COMMODITIES` (grade standards, toleransi susut, **rendemen rata-rata**) dan `ZONES` (nilai minimum pesanan)
+**memblokir** FR-3.2, FR-3.3, FR-5.1, dan FR-5.2 — tanpa keduanya produk tidak bisa punya grade dan kuota
+tidak bisa dibatasi. Cukup **file seed di migration**; konsol CRUD operator (OP-09/OP-10) baru perlu Fase 4.
+
+> ⚠️ **`avg_yield_kg_per_ha` langsung menentukan batas kuota 70%.** Angka yang salah membuat Tenant
+> bisa menjual melebihi kapasitas lahannya. **Wajib divalidasi ke penyuluh pertanian / data BPS**
+> sebelum produksi — jangan pakai angka perkiraan untuk komitmen bisnis.
+
+---
+
+## 4. Struktur Frontend (`apps/web`, PWA)
+
+```
+src/app/
+├── (tenant)/          # Desktop/Tablet — dashboard, katalog, batch, pesanan, rekomendasi tanam
+├── (buyer)/           # Mobile — pilih kota, katalog terpadu, keranjang lintas-tenant,
+│   │                  #   checkout, Pesanan Saya (timeline + NDVI + live map + Harvest Assurance)
+│   └── ...
+├── scan/[qrToken]/    # Halaman kurir ZERO-INSTALL — < 150KB, tanpa font kustom/framework berat
+└── manifest / sw      # konfigurasi PWA
+src/features/          # per-fitur: components + hooks + api-client (konsumsi packages/shared)
+```
+
+> Halaman kurir dibuat sebagai route paling ringan (target < 150KB, buka cepat di 3G). Pertimbangkan
+> route group terpisah tanpa dependency berat / Mapbox penuh.
+
+---
+
+## 5. Data Model → lihat ERD
+
+Skema lengkap ada di [`diagrams/05-erd.md`](diagrams/05-erd.md) (25+ entitas, PostgreSQL + PostGIS).
+Highlight kolom `geometry` (PostGIS): `LAND_PLOTS.polygon`, `TIMELINE_NODES.gps_point`,
+`SHIPMENTS.dest_point`, `TRACKING_POSITIONS.point`. Entitas append-only: `TIMELINE_NODES`,
+`ESCROW_LEDGER`, `HASH_ANCHORS`.
+
+---
+
+## 6. Strategi Branch Git (Trunk-Based)
+
+`main` selalu deploy-able; feature branch **pendek** (< 2-3 hari) → PR → `main` (1 reviewer). Rilis = git tag.
+
+**Branch v2.0** (selaras 5 fase roadmap PRD §11.1):
+
+| Fase PRD | Branch |
 |---|---|
-| **BE** (kamu) | `apps/api` (NestJS), `prisma/`, kontrak di `packages/shared`, socket GPS |
-| **FE** | `apps/web` (Next.js), UI shadcn, konsumsi kontrak `packages/shared` |
-| **PM** | Backlog (GitHub Projects), prioritas sprint, definisi "done", cek fungsional saat review PR |
+| Fase 1 — Fondasi | `feat/db-schema-postgis` · `feat/auth-otp` · `feat/tenant-onboarding` · `feat/catalog-crosstenant` |
+| Fase 2 — Transaksi | `feat/cart-checkout-escrow` |
+| Fase 3 — Verifikasi | `feat/verified-timeline` · `feat/satellite-verification` |
+| Fase 4 — Logistik | `feat/logistics-tracking-pod` · `feat/quality-claims` · `feat/harvest-assurance` |
+| Fase 5 — Intelijen | `feat/demand-intelligence` |
 
-### 10d. Ritual ringan (jangan berat)
-- **Sprint** 1–2 minggu. Planning singkat di awal, demo + retro di akhir.
-- **Daily** cukup async (update singkat di chat / board).
-- **Board** GitHub Projects: kolom `Backlog → Todo → In Progress → Review → Done`.
-- **Definition of Done:** merged ke `main` + CI hijau + fitur bisa didemo.
+Konvensi commit: Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`).
 
-### 10e. Yang wajib benar sejak awal (walau agile suka refactor)
-- **Timeline immutable** (append-only) — desain benar dari awal supaya data historis tak pernah rusak.
-- **Kontrak `packages/shared`** — jadi sumber kebenaran FE↔BE.
-- **Harga = integer rupiah** — hindari bug pembulatan float.
+---
+
+## 7. CI/CD & Deployment (3 target)
+
+- `ci.yml`: lint + type-check + build (turbo) tiap PR; untuk `satellite-worker` tambah lint Python (ruff) + test.
+- **FE** (`apps/web`) → Vercel. **BE** (`apps/api`) → Railway/Render (WebSocket long-running).
+  **Satellite worker** → scheduled/cron host (job harian), bukan Vercel serverless.
+
+---
+
+## 8. Agile Working Model (tim 3: FE · BE · PM)
+
+### 8a. Vertical slice per sprint (peta ke fase PRD §11.1)
+| Sprint | Target demo | Branch utama |
+|---|---|---|
+| 0 | Setup: monorepo, CI, PostGIS, branch protection, board | (main) |
+| 1-3 (Fase 1) | Auth OTP → onboarding + poligon lahan → katalog + buka kuota PO | `feat/auth-otp`, `feat/tenant-onboarding`, `feat/catalog-crosstenant`, `feat/db-schema-postgis` |
+| 4-6 (Fase 2) | Keranjang lintas-tenant → checkout → payment gateway → escrow HOLD | `feat/cart-checkout-escrow` |
+| 7-9 (Fase 3) | Verified Timeline (hash chain + foto) → pipeline Sentinel-2 → badge | `feat/verified-timeline`, `feat/satellite-verification` |
+| 10-11 (Fase 4) | QR + tracking + geofence + Dual-Signal PoD + klaim mutu + Harvest Assurance | `feat/logistics-tracking-pod`, `feat/quality-claims`, `feat/harvest-assurance` |
+| 12 (Fase 5) | Agregasi permintaan + Rekomendasi Tanam | `feat/demand-intelligence` |
+
+### 8b. Contract-first
+Definisikan kontrak API di `packages/shared` (types + enums + Zod) **sebelum** implementasi tiap fitur → FE kerja pakai mock, perubahan kontrak langsung ketahuan di kedua sisi.
+
+**Dua aturan teknis `packages/shared`** (ditetapkan saat `feat/auth-otp`):
+
+1. **Di-build ke `dist/` (CommonJS), bukan di-import sebagai `.ts` mentah.** NestJS meng-`require` package
+   ini saat runtime — kalau `main` menunjuk `src/index.ts`, Node gagal (`SyntaxError: Unexpected token 'export'`).
+   Urutan build dijamin turbo lewat `dependsOn: ["^build"]`.
+2. **Enum ditulis sebagai `const object + union type`, BUKAN `enum` TypeScript.** `enum` bertipe *nominal*
+   sehingga bentrok dengan enum hasil generate Prisma 7 (yang berupa string union) — `Type 'TENANT' is not
+   assignable to type 'UserRole'`. Pola `as const` tetap bisa dipakai sebagai nilai (`UserRole.TENANT`)
+   dan kompatibel secara struktural dengan Prisma.
+
+> Terkait: generator Prisma di `apps/api` diset **`moduleFormat = "cjs"`**. Default-nya menghasilkan
+> `import.meta` yang tidak bisa dijalankan di output CommonJS NestJS.
+
+### 8c. Pembagian peran
+- **BE** (kamu): `apps/api` (NestJS, PostGIS, escrow, hash-chain), koordinasi `apps/satellite-worker`.
+- **FE**: `apps/web` (PWA, Mapbox, shadcn), konsumsi `packages/shared`.
+- **PM**: backlog (GitHub Projects), prioritas sprint, definisi "done", cek fungsional saat review PR.
+
+### 8d. Ritual ringan
+Sprint 1-2 minggu; daily async; board `Backlog → Todo → In Progress → Review → Done`;
+DoD = merged ke `main` + CI hijau + bisa didemo.
+
+---
+
+## 9. Catatan Kepatuhan (PRD §5.7.1) — jangan dilanggar saat implementasi
+- Dana **selalu** di rekening escrow mitra berizin, **tidak pernah** masuk rekening operasional AgroUs.
+- Tidak ada janji imbal hasil; pembeli = badan usaha (bukan investor).
+- AgroUs **tidak** membangun unit pembiayaan sendiri.
+
+---
+
+## 10. Langkah Selanjutnya
+1. `feat/db-schema-postgis` — Prisma schema + PostGIS + migration + trigger tolak UPDATE/DELETE pada timeline & ledger.
+2. `feat/auth-otp` — OTP telepon.
+3. Set branch protection `main` + GitHub Projects board (via web).
+4. Lanjut per sprint sesuai §8a.

@@ -1,0 +1,14 @@
+{
+  // Output CommonJS supaya bisa di-require NestJS (apps/api pakai NodeNext/CJS).
+  // Next.js (apps/web) tetap bisa mengonsumsi CJS tanpa masalah.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "declaration": true,
+    "declarationMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*"]
+}

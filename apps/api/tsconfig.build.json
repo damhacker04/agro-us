@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  // Build hanya src (+ generated client yang ter-import). Seed & config tidak ikut dist.
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "prisma", "prisma.config.ts"]
+}

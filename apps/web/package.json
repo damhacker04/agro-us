@@ -3,12 +3,23 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "echo \"[web] placeholder — scaffold Next.js belum dibuat (lihat README)\"",
-    "build": "echo \"[web] placeholder build\"",
-    "lint": "echo \"[web] placeholder lint\"",
-    "type-check": "echo \"[web] placeholder type-check\""
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
   },
   "dependencies": {
-    "@agro-os/shared": "workspace:*"
+    "@agro-os/shared": "workspace:*",
+    "lucide-react": "^1.27.0",
+    "next": "^16.2.12",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.1",
+    "@types/react": "19.2.17",
+    "autoprefixer": "^10.5.4",
+    "postcss": "^8.5.23",
+    "tailwindcss": "^3.4.19"
   }
 }
