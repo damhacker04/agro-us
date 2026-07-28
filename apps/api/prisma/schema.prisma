@@ -140,6 +140,9 @@ enum EscrowEntryType {
   RELEASE
   REFUND
   BIAYA_BATAL10 // FR-7.5
+  // Dana pindah ke Tenant pengganti saat pembeli memilih SUBSTITUSI (FR-7.4).
+  // Bukan REFUND: pembeli tidak menerima uang, barangnya yang diganti.
+  ALIH_SUBSTITUSI
 }
 
 enum SessionEndReason {
