@@ -358,6 +358,150 @@ export interface CatalogQuery {
   search?: string;
 }
 
+// ============================== KONTRAK KERANJANG · CHECKOUT · ESCROW ==============================
+// Fase 2 (FR-2.3, 2.4, 2.7, 2.8, 7.1). Endpoint: /buyer/profile · /orders/preview · /orders/checkout · /orders
+
+/**
+ * Ongkir per Rencana Pengiriman. PLACEHOLDER — PRD §8.2 memakai Rp85.000
+ * (konsolidasi dalam kota, rata-rata 18 km). Ganti dengan rate card nyata
+ * sebelum produksi; angka ini menentukan apakah unit economics positif.
+ */
+export const SHIPPING_COST_PER_PLAN: Rupiah = 85_000;
+
+/** Batas waktu bayar sebelum reservasi kuota dilepas (activity D3 → A5). */
+export const PAYMENT_EXPIRY_MS = 60 * 60 * 1000; // 1 jam
+
+export const PaymentMethod = { QRIS: "QRIS", VA: "VA", EWALLET: "EWALLET" } as const;
+export type PaymentMethod = (typeof PaymentMethod)[keyof typeof PaymentMethod];
+
+export const PaymentStatus = {
+  PENDING: "PENDING",
+  PAID: "PAID",
+  EXPIRED: "EXPIRED",
+  FAILED: "FAILED",
+} as const;
+export type PaymentStatus = (typeof PaymentStatus)[keyof typeof PaymentStatus];
+
+export const OrderStatus = { DRAFT: "DRAFT", PAID: "PAID", CLOSED: "CLOSED" } as const;
+export type OrderStatus = (typeof OrderStatus)[keyof typeof OrderStatus];
+
+/** POST /buyer/profile — pembeli institusional (BUYERS). */
+export interface CreateBuyerProfileBody {
+  companyName: string;
+  /** Kota layanan aktif (FR-2.1). */
+  activeZoneId: string;
+}
+
+export interface BuyerProfileResponse {
+  id: string;
+  companyName: string;
+  activeZone: ZoneSummary | null;
+}
+
+/** Satu baris keranjang. Keranjang disimpan di sisi klien; server hanya menerima isinya. */
+export interface CartLine {
+  batchId: string;
+  qtyBox: number;
+}
+
+/** Detail penerima — snapshot saat checkout (FR-2.7). */
+export interface DeliveryDetail {
+  recipientName: string;
+  phone: string;
+  /** Titik peta tujuan. Geofence 100 m dihitung terhadap koordinat ini. */
+  point: GpsCoordinate;
+  /** Patokan alamat — opsional. */
+  landmark?: string;
+  /** Jam operasional penerimaan, mis. "08:00-16:00". */
+  receivingHours: string;
+}
+
+/**
+ * Satu Rencana Pengiriman (FR-2.4). Item dikelompokkan per **minggu panen** —
+ * batch yang panen di minggu berbeda tidak mungkin dikirim bersamaan.
+ */
+export interface ShipmentPlan {
+  /** Senin dari minggu panen (ISO date) — kunci pengelompokan. */
+  harvestWeek: string;
+  /** Tanggal panen terakhir dalam grup; pengiriman menunggu item paling lambat. */
+  readyDate: string;
+  lines: ShipmentPlanLine[];
+  subtotal: Rupiah;
+  shippingCost: Rupiah;
+  /** Nilai minimum zona (Risiko 3) — dicek PER RENCANA, bukan per order. */
+  minOrderValue: Rupiah;
+  meetsMinimum: boolean;
+  /** Kekurangan agar memenuhi minimum; 0 bila sudah terpenuhi. */
+  shortfallToMinimum: Rupiah;
+}
+
+export interface ShipmentPlanLine {
+  batchId: string;
+  productName: string;
+  tenantName: string;
+  grade: Grade;
+  qtyBox: number;
+  unitPriceLocked: Rupiah;
+  subtotal: Rupiah;
+  qtyKgPerBox: number;
+  claimedHarvestDate: string;
+}
+
+/** POST /orders/preview — hitung rencana pengiriman TANPA menyimpan (layar BY-05). */
+export interface PreviewOrderBody {
+  lines: CartLine[];
+}
+
+export interface PreviewOrderResponse {
+  plans: ShipmentPlan[];
+  itemsTotal: Rupiah;
+  shippingTotal: Rupiah;
+  grandTotal: Rupiah;
+  /** true bila SEMUA rencana memenuhi minimum — checkout diblokir bila false (activity D1). */
+  canCheckout: boolean;
+}
+
+/** POST /orders/checkout — reservasi kuota + terbitkan tagihan. */
+export interface CheckoutBody {
+  lines: CartLine[];
+  delivery: DeliveryDetail;
+  paymentMethod: PaymentMethod;
+  /** FR-2.10 — Laporan Ketertelusuran dibundel di tagihan yang sama (BY-06a). */
+  includeTraceabilityReport?: boolean;
+}
+
+export interface CheckoutResponse {
+  orderId: string;
+  totalAmount: Rupiah;
+  payment: PaymentInstruction;
+  shipmentIds: string[];
+}
+
+export interface PaymentInstruction {
+  id: string;
+  method: PaymentMethod;
+  status: PaymentStatus;
+  amount: Rupiah;
+  invoiceRef: string;
+  expiresAt: string; // ISO datetime
+  /** Payload yang ditampilkan ke pembeli: string QRIS, nomor VA, atau URL redirect e-wallet. */
+  payload: string;
+}
+
+export interface OrderSummary {
+  id: string;
+  orderStatus: OrderStatus;
+  totalAmount: Rupiah;
+  createdAt: string;
+  payment: { status: PaymentStatus; method: PaymentMethod; expiresAt: string } | null;
+  shipments: Array<{
+    id: string;
+    status: ShipmentStatus;
+    readyDate: string;
+    itemCount: number;
+  }>;
+}
+
 export interface CatalogItem {
   batchId: string;
   productId: string;
