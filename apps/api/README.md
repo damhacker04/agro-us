@@ -426,3 +426,78 @@ tahap terakhir**, sehingga pembeli sudah bersiap sebelum hitungan berjalan.
 3. **Foto PoD masih berupa URL** — unggahan berkas memakai `StorageService` seperti
    bukti timeline belum disambungkan.
 4. **Pencairan escrow saat Selesai** belum disambungkan (menyusul di modul klaim mutu).
+
+---
+
+## Modul Mutu, Susut & Klaim (§5.5, FR-5.1..5.7) — `feat/quality-claims`
+
+| Method | Route | Guard | Fungsi |
+|---|---|---|---|
+| `POST` | `/shipments/:id/claims` | BUYER | Ajukan klaim: foto + berat timbang (FR-5.4) |
+| `GET` | `/shipments/:id/claims` | BUYER | Status klaim (BY-15) |
+| `GET` | `/operator/claims` | OPERATOR | Antrean klaim >10%, urut SLA (OP-05) |
+| `POST` | `/operator/claims/:id/decide` | OPERATOR | Putusan + penyesuaian escrow (OP-06) |
+| `GET` | `/tenant/escrow` | TENANT | Saldo escrow & rincian (FR-3.5) |
+| `POST` | `/quality/jobs/settle` | — | Tutup jendela klaim → Selesai → **cairkan escrow** — cron |
+
+### Perhitungan klaim — semuanya di server
+
+Pembeli **tidak pernah** mengirim nilai klaim; ia hanya mengirim berat timbang. Server
+menghitung sendiri agar kerugian tidak bisa dikarang:
+
+```
+expectedKg   = boxDikirim × kgPerBox
+shortfallKg  = expectedKg − actualWeightKg
+toleratedKg  = expectedKg × toleransiSusut%      (5% daun, 3% buah-umbi — FR-5.2)
+claimableKg  = max(shortfallKg − toleratedKg, 0)
+claimValue   = claimableKg × (hargaTerkunci ÷ kgPerBox)
+```
+
+`boxDikirim` memakai `qtyBoxFulfilled` bila ada — supaya panen sebagian (FR-7.10) tidak
+salah dihitung sebagai kekurangan mutu.
+
+### Klaim menunjuk SATU item, bukan seluruh pengiriman
+
+Kolom `claims.order_item_id` ditambahkan di branch ini. Tanpa itu perhitungan toleransi
+mustahil benar: pembeli HORECA menerima puluhan SKU dan **tiap komoditas punya toleransi
+susut berbeda**. Menimbang seluruh muatan sebagai satu angka tidak bisa dipetakan ke
+toleransi mana pun. Satu item hanya boleh diklaim sekali.
+
+### Tiga jalur penyelesaian
+
+| Kondisi | Rute | Tindakan |
+|---|---|---|
+| Selisih ≤ toleransi susut | `TOLAK_TOLERANSI` | Ditolak otomatis — susut wajar bukan kesalahan Tenant (FR-5.2) |
+| Nilai ≤ 10% order | `AUTO_SETTLE` | Potong escrow langsung, tanpa peninjauan (FR-5.5) |
+| Nilai > 10% order | `OPERATOR` | Antrean operator, SLA 1 hari kerja (FR-5.6) |
+
+*Terbukti:* 400 kg dikirim, toleransi 20 kg → susut 15 kg **ditolak**; susut 40 kg
+(claimable 20 kg = Rp200.000 = 4,9%) **auto-settle**; susut 100 kg (claimable 80 kg =
+Rp800.000 = 19,6%) **masuk antrean operator**, lalu disetujui sebagian Rp600.000.
+
+### Pencairan escrow menunggu sengketa selesai
+
+`/quality/jobs/settle` **menahan** pencairan bila masih ada klaim berstatus
+`MENUNGGU_OPERATOR`. Mencairkan lebih dulu berarti uang sudah pindah ke Tenant sebelum
+sengketa diputus — dan ledger append-only membuatnya tidak bisa ditarik kembali, hanya
+bisa ditambah entri koreksi.
+
+Penutupan jendela klaim dan pencairan **digabung dalam satu job** (menggantikan
+`/logistics/jobs/close-claim-windows`). Kalau terpisah, status bisa menjadi Selesai tanpa
+ada proses yang mencairkan dananya.
+
+### Rasio klaim publik (FR-5.7)
+
+`tenants.claim_ratio_cached` = pengiriman yang diklaim ÷ total pengiriman Tenant.
+Klaim berstatus `DITOLAK_TOLERANSI` **tidak dihitung** — menghukum Tenant atas susut
+yang masih wajar akan membuat metrik reputasi ini menyesatkan.
+
+### ⚠️ Belum selesai
+
+1. **Instruksi pencairan ke payment gateway belum disambung.** Yang ada baru pembukuan
+   internal; dana sesungguhnya wajib lewat escrow mitra berizin (FR-7.1, §5.7.1).
+2. **`/quality/jobs/settle` belum dijadwalkan cron.**
+3. **Foto klaim masih URL** — belum lewat `StorageService`.
+4. **SLA 1 hari kerja dihitung 24 jam kalender** — belum memperhitungkan akhir pekan/libur.
+5. **Grade A/B/C belum divalidasi saat klaim** — `grade_standards` sudah ada di
+   `commodities`, tetapi klaim baru menilai berat, belum mutu/ukuran (FR-5.1).

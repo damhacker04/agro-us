@@ -110,19 +110,6 @@ export class PodService {
     this.gateway.emitStatus(shipmentId, "DITERIMA");
   }
 
-  /**
-   * Jendela klaim berakhir tanpa klaim → Selesai (§5.6.1 status 6).
-   * Pencairan escrow menyusul di modul escrow — di sini hanya transisi status.
-   */
-  async closeExpiredClaimWindows() {
-    const res = await this.prisma.shipment.updateMany({
-      where: { status: "DITERIMA", claimWindowEndsAt: { lt: new Date() } },
-      data: { status: "SELESAI", completedAt: new Date() },
-    });
-    if (res.count) this.log.log(`${res.count} pengiriman SELESAI — jendela klaim berakhir`);
-    return { completed: res.count };
-  }
-
   /** Data peta pembeli (BY-10a). Posisi lama tetap ditampilkan dengan waktu jujur. */
   async snapshot(shipmentId: string): Promise<TrackingSnapshot> {
     const shipment = await this.prisma.shipment.findUnique({

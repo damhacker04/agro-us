@@ -114,10 +114,7 @@ export class LogisticsJobsController {
     return this.pod.autoAcceptStale();
   }
 
-  /** Jendela klaim habis → Selesai (§5.6.1 status 6). */
-  @Post("close-claim-windows")
-  @HttpCode(200)
-  closeWindows() {
-    return this.pod.closeExpiredClaimWindows();
-  }
+  // Penutupan jendela klaim + pencairan escrow pindah ke POST /quality/jobs/settle.
+  // Keduanya HARUS satu langkah: kalau status jadi Selesai tanpa pencairan, dana
+  // Tenant menggantung tanpa ada proses yang akan mengambilnya.
 }
