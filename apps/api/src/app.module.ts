@@ -9,6 +9,7 @@ import { OrderModule } from "./modules/order/order.module";
 import { TimelineModule } from "./modules/timeline/timeline.module";
 import { LogisticsModule } from "./modules/logistics/logistics.module";
 import { QualityModule } from "./modules/quality/quality.module";
+import { AssuranceModule } from "./modules/assurance/assurance.module";
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { QualityModule } from "./modules/quality/quality.module";
     TimelineModule,
     LogisticsModule,
     QualityModule,
+    AssuranceModule,
   ],
   controllers: [HealthController],
 })

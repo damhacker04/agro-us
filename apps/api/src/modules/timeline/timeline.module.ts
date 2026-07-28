@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { TenantModule } from "../tenant/tenant.module";
+import { AssuranceModule } from "../assurance/assurance.module";
 import { LocalDiskStorageService, StorageService } from "../storage/storage.service";
 import {
   AnchorController,
@@ -10,7 +11,7 @@ import { TimelineService } from "./timeline.service";
 import { AnchorService } from "./anchor.service";
 
 @Module({
-  imports: [TenantModule],
+  imports: [TenantModule, AssuranceModule],
   controllers: [TenantTimelineController, PublicTimelineController, AnchorController],
   providers: [
     TimelineService,
