@@ -502,6 +502,181 @@ export interface OrderSummary {
   }>;
 }
 
+// ============================== KONTRAK LOGISTIK ZERO-INSTALL (Fase 4) ==============================
+// FR-3.6, FR-6.1..6.4, §5.6. Kurir: nol instalasi, nol akun — hanya scan QR + 4 digit.
+
+/** Frekuensi kirim posisi. 10 detik, bukan real-time penuh — hemat baterai & kuota (§6.4). */
+export const POSITION_INTERVAL_MS = POSITION_PING_INTERVAL_MS;
+
+/** Ambang kewajaran anti-spoof (§6.3 Batasan 4). Di atas ini posisi ditandai tidak wajar. */
+export const MAX_PLAUSIBLE_SPEED_KMH = 150;
+export const MAX_PLAUSIBLE_JUMP_M = 5_000;
+
+/** Sesi dianggap kehilangan sinyal bila tak ada posisi selama ini (§6.3 Batasan 3). */
+export const SIGNAL_LOST_AFTER_MS = 3 * 60 * 1000;
+
+/** POST /tenant/shipments/:id/qr — FR-3.6, hanya setelah batch berstatus Panen. */
+export interface GenerateQrResponse {
+  shipmentId: string;
+  /** Kode Antar 4 digit — DITAMPILKAN SEKALI di sini dan di detail pesanan Tenant (FR-6.1). */
+  courierCode: string;
+  boxes: BoxQrItem[];
+}
+
+export interface BoxQrItem {
+  tokenId: string;
+  /** Ditempel pada box fisik. Kurir memindainya dengan kamera bawaan. */
+  scanUrl: string;
+  /** Data URL PNG QR — siap dicetak tanpa perlu library di FE. */
+  qrDataUrl: string;
+  consumedAt: string | null;
+}
+
+/** GET /scan/:token — halaman pertama kurir. TIDAK mengonsumsi token (FR-6.2). */
+export interface ScanTokenResponse {
+  valid: boolean;
+  /** Alasan bila tidak valid: sudah terpakai, tidak dikenal, atau terkunci. */
+  code?: "TOKEN_UNKNOWN" | "TOKEN_CONSUMED" | "TOKEN_LOCKED";
+  message?: string;
+  /** Hanya bila valid — ditampilkan agar kurir yakin box-nya benar. */
+  tenantName?: string;
+  destinationLabel?: string;
+  remainingAttempts?: number;
+}
+
+/** POST /scan/:token/verify — token baru terpakai SETELAH kode benar (FR-6.2). */
+export interface VerifyCourierCodeBody {
+  code: string;
+}
+export interface VerifyCourierCodeResponse {
+  sessionId: string;
+  shipmentId: string;
+  destination: GpsCoordinate;
+  /** Radius geofence tujuan, meter (§5.6.3). */
+  destRadiusM: number;
+  positionIntervalMs: number;
+}
+
+/** POST /scan/session/:sessionId/position */
+export interface ReportPositionBody {
+  lat: number;
+  lng: number;
+  /** Stempel waktu perangkat (ISO). Dipakai menghitung kewajaran kecepatan. */
+  deviceTs: string;
+}
+export interface ReportPositionResponse {
+  accepted: boolean;
+  /** false bila kecepatan/lompatan tidak wajar — tetap disimpan, tapi ditandai. */
+  plausible: boolean;
+  distanceToDestM: number;
+  /** true saat geofence terpicu; sesi tetap berjalan sampai pembeli konfirmasi. */
+  arrived: boolean;
+}
+
+/** Yang dilihat pembeli di peta (BY-10a). Dipancarkan juga lewat WebSocket. */
+export interface TrackingSnapshot {
+  shipmentId: string;
+  status: ShipmentStatus;
+  /** null bila kurir menolak izin lokasi (§6.3) — jalur konfirmasi manual tetap jalan. */
+  position: GpsCoordinate | null;
+  /** Stempel waktu JUJUR posisi terakhir, walau sudah lama (§6.3 Batasan 3). */
+  positionAt: string | null;
+  signalLost: boolean;
+  distanceToDestM: number | null;
+  arrivedAt: string | null;
+  noGpsMode: boolean;
+}
+
+/** POST /shipments/:id/receive — Sinyal-2 Dual-Signal PoD (§5.6.4). */
+export interface ConfirmReceiptBody {
+  /** URL foto kondisi barang. Wajib — inilah yang membuktikan diterima dalam keadaan apa. */
+  photoUrl: string;
+}
+export interface ConfirmReceiptResponse {
+  shipmentId: string;
+  status: ShipmentStatus;
+  receivedMode: "BUYER_CONFIRM" | "AUTO_60MIN";
+  /** Jendela klaim mutu berakhir kapan (FR-5.3). */
+  claimWindowEndsAt: string;
+}
+
+/** Nama event WebSocket — dipakai FE & BE, jangan ditulis ulang sebagai string lepas. */
+export const WS_EVENTS = {
+  SUBSCRIBE: "shipment:subscribe",
+  POSITION: "shipment:position",
+  STATUS: "shipment:status",
+} as const;
+
+// ============================== KONTRAK MUTU, SUSUT & KLAIM (§5.5) ==============================
+
+/** Ambang klaim yang diselesaikan otomatis tanpa peninjauan operator (FR-5.5/5.6). */
+export const CLAIM_AUTO_SETTLE_MAX_PCT = 10;
+
+/** SLA peninjauan operator untuk klaim di atas ambang (FR-5.6). */
+export const CLAIM_REVIEW_SLA_HOURS = 24;
+
+export const ClaimRoute = {
+  /** Selisih masih dalam toleransi susut — ditolak otomatis (FR-5.2). */
+  TOLAK_TOLERANSI: "TOLAK_TOLERANSI",
+  /** ≤10% nilai order — potong escrow otomatis (FR-5.5). */
+  AUTO_SETTLE: "AUTO_SETTLE",
+  /** >10% — antrean operator, SLA 1 hari kerja (FR-5.6). */
+  OPERATOR: "OPERATOR",
+} as const;
+export type ClaimRoute = (typeof ClaimRoute)[keyof typeof ClaimRoute];
+
+export const ClaimFinalStatus = {
+  DITOLAK_TOLERANSI: "DITOLAK_TOLERANSI",
+  DISETUJUI_OTOMATIS: "DISETUJUI_OTOMATIS",
+  MENUNGGU_OPERATOR: "MENUNGGU_OPERATOR",
+  DISETUJUI_OPERATOR: "DISETUJUI_OPERATOR",
+  DITOLAK_OPERATOR: "DITOLAK_OPERATOR",
+} as const;
+export type ClaimFinalStatus = (typeof ClaimFinalStatus)[keyof typeof ClaimFinalStatus];
+
+/** POST /shipments/:id/claims — FR-5.4: wajib foto + berat hasil timbang. */
+export interface FileClaimBody {
+  /** Klaim menunjuk SATU item — tiap komoditas punya toleransi susut berbeda. */
+  orderItemId: string;
+  /** Berat aktual hasil timbang, kg. */
+  actualWeightKg: number;
+  photoUrl: string;
+  description: string;
+}
+
+export interface ClaimResponse {
+  id: string;
+  shipmentId: string;
+  orderItemId: string;
+  productName: string;
+  /** Berat yang seharusnya diterima: jumlah box × kg per box. */
+  expectedKg: number;
+  actualWeightKg: number;
+  /** Selisih kotor sebelum dipotong toleransi. */
+  shortfallKg: number;
+  /** Toleransi susut komoditas ini (5% daun, 3% buah-umbi — FR-5.2). */
+  shrinkTolerancePct: number;
+  toleratedKg: number;
+  /** Kekurangan yang benar-benar bisa diklaim = shortfall − toleransi. */
+  claimableKg: number;
+  claimValue: Rupiah;
+  pctOfOrder: number;
+  route: ClaimRoute;
+  finalStatus: ClaimFinalStatus;
+  settledValue: Rupiah;
+  slaDueAt: string | null;
+  reviewNote: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+/** POST /operator/claims/:id/decide — FR-5.6. */
+export interface DecideClaimBody {
+  /** Nilai yang disetujui. 0 = klaim ditolak. Tidak boleh melebihi nilai klaim. */
+  approvedValue: Rupiah;
+  note: string;
+}
+
 export interface CatalogItem {
   batchId: string;
   productId: string;
