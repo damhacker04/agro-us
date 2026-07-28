@@ -607,6 +607,76 @@ export const WS_EVENTS = {
   STATUS: "shipment:status",
 } as const;
 
+// ============================== KONTRAK MUTU, SUSUT & KLAIM (§5.5) ==============================
+
+/** Ambang klaim yang diselesaikan otomatis tanpa peninjauan operator (FR-5.5/5.6). */
+export const CLAIM_AUTO_SETTLE_MAX_PCT = 10;
+
+/** SLA peninjauan operator untuk klaim di atas ambang (FR-5.6). */
+export const CLAIM_REVIEW_SLA_HOURS = 24;
+
+export const ClaimRoute = {
+  /** Selisih masih dalam toleransi susut — ditolak otomatis (FR-5.2). */
+  TOLAK_TOLERANSI: "TOLAK_TOLERANSI",
+  /** ≤10% nilai order — potong escrow otomatis (FR-5.5). */
+  AUTO_SETTLE: "AUTO_SETTLE",
+  /** >10% — antrean operator, SLA 1 hari kerja (FR-5.6). */
+  OPERATOR: "OPERATOR",
+} as const;
+export type ClaimRoute = (typeof ClaimRoute)[keyof typeof ClaimRoute];
+
+export const ClaimFinalStatus = {
+  DITOLAK_TOLERANSI: "DITOLAK_TOLERANSI",
+  DISETUJUI_OTOMATIS: "DISETUJUI_OTOMATIS",
+  MENUNGGU_OPERATOR: "MENUNGGU_OPERATOR",
+  DISETUJUI_OPERATOR: "DISETUJUI_OPERATOR",
+  DITOLAK_OPERATOR: "DITOLAK_OPERATOR",
+} as const;
+export type ClaimFinalStatus = (typeof ClaimFinalStatus)[keyof typeof ClaimFinalStatus];
+
+/** POST /shipments/:id/claims — FR-5.4: wajib foto + berat hasil timbang. */
+export interface FileClaimBody {
+  /** Klaim menunjuk SATU item — tiap komoditas punya toleransi susut berbeda. */
+  orderItemId: string;
+  /** Berat aktual hasil timbang, kg. */
+  actualWeightKg: number;
+  photoUrl: string;
+  description: string;
+}
+
+export interface ClaimResponse {
+  id: string;
+  shipmentId: string;
+  orderItemId: string;
+  productName: string;
+  /** Berat yang seharusnya diterima: jumlah box × kg per box. */
+  expectedKg: number;
+  actualWeightKg: number;
+  /** Selisih kotor sebelum dipotong toleransi. */
+  shortfallKg: number;
+  /** Toleransi susut komoditas ini (5% daun, 3% buah-umbi — FR-5.2). */
+  shrinkTolerancePct: number;
+  toleratedKg: number;
+  /** Kekurangan yang benar-benar bisa diklaim = shortfall − toleransi. */
+  claimableKg: number;
+  claimValue: Rupiah;
+  pctOfOrder: number;
+  route: ClaimRoute;
+  finalStatus: ClaimFinalStatus;
+  settledValue: Rupiah;
+  slaDueAt: string | null;
+  reviewNote: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+/** POST /operator/claims/:id/decide — FR-5.6. */
+export interface DecideClaimBody {
+  /** Nilai yang disetujui. 0 = klaim ditolak. Tidak boleh melebihi nilai klaim. */
+  approvedValue: Rupiah;
+  note: string;
+}
+
 export interface CatalogItem {
   batchId: string;
   productId: string;
