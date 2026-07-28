@@ -2,6 +2,11 @@
 node_modules/
 .pnpm-store/
 
+# Lockfile manajer lain — repo ini WAJIB pakai pnpm (lihat preinstall guard).
+# Kalau file ini muncul, berarti ada yang menjalankan npm/yarn install.
+package-lock.json
+yarn.lock
+
 # Build output
 dist/
 build/
@@ -31,3 +36,6 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Foto bukti timeline (storage dev lokal — lihat storage.service.ts)
+apps/api/uploads/

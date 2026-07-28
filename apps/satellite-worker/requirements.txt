@@ -1,0 +1,13 @@
+# satellite-worker — job harian verifikasi Sentinel-2 (PRD §6.2)
+numpy>=2.0
+psycopg[binary]>=3.2
+python-dotenv>=1.0
+requests>=2.32
+
+# Hanya dibutuhkan CopernicusProvider (pembacaan & clipping raster).
+# Mode SYNTHETIC_SCENES=1 tidak memerlukan keduanya.
+rasterio>=1.4
+shapely>=2.0
+
+# Pengembangan
+pytest>=8.0
