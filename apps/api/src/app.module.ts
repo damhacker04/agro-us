@@ -5,6 +5,7 @@ import { PrismaModule } from "./prisma/prisma.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { TenantModule } from "./modules/tenant/tenant.module";
 import { CatalogModule } from "./modules/catalog/catalog.module";
+import { OrderModule } from "./modules/order/order.module";
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { CatalogModule } from "./modules/catalog/catalog.module";
     AuthModule,
     TenantModule,
     CatalogModule,
+    OrderModule,
   ],
   controllers: [HealthController],
 })

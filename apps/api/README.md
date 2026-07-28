@@ -219,3 +219,64 @@ menyandingkan klaim Tenant dengan hasil satelit.
 
 > `/catalog` **sengaja tanpa guard** — pembeli boleh menelusuri sebelum login (seperti marketplace
 > umum). `zoneId` wajib karena FR-2.1 mengharuskan pilih kota layanan lebih dulu.
+
+---
+
+## Modul Keranjang · Checkout · Escrow (Fase 2) — `feat/cart-checkout-escrow`
+
+| Method | Route | Guard | Fungsi |
+|---|---|---|---|
+| `POST/GET/PATCH` | `/buyer/profile` | BUYER | Profil pembeli + kota layanan (FR-2.1) |
+| `POST` | `/orders/preview` | BUYER | Hitung Rencana Pengiriman + cek minimum, **tanpa menyimpan** (BY-05) |
+| `POST` | `/orders/checkout` | BUYER | Reservasi kuota + terbitkan tagihan (FR-2.3, 2.4, 2.7, 2.8) |
+| `GET` | `/orders` | BUYER | Pesanan Saya (BY-09) |
+| `POST` | `/payments/webhook` | — | Callback gateway → escrow HOLD (FR-7.1) |
+| `POST` | `/payments/expire-stale` | — | Lepas reservasi kuota kedaluwarsa (activity A5) — **target cron** |
+
+### Keranjang tidak disimpan di server
+
+Keranjang hidup di sisi klien; server hanya menerima `lines[]`. Alasannya `ORDER_ITEMS.shipment_id`
+bersifat NOT NULL — sedangkan rencana pengiriman baru terbentuk saat checkout. Order tercipta
+pertama kali justru pada saat checkout, bukan saat "tambah ke keranjang".
+
+### Rencana Pengiriman dikelompokkan per MINGGU panen (FR-2.4)
+
+Batch yang panen di minggu berbeda mustahil dikirim bersamaan. Pengelompokan memakai minggu
+(bukan tanggal persis) supaya konsolidasi maksimal — sejalan dengan `demand_aggregates` yang
+juga memakai `date_trunc('week', …)`. `readyDate` = tanggal panen **terlambat** dalam grup.
+
+### Minimum order dicek PER RENCANA, bukan per order
+
+Ongkir timbul per pengiriman. Kalau minimum dicek dari total order, pesanan Rp3jt yang pecah
+jadi 3 pengiriman @Rp1jt tetap lolos padahal tiap pengirimannya merugi (Risiko 3, PRD §8.2:
+marjin negatif di bawah Rp2,2jt). Error `MIN_ORDER_NOT_MET` menyebutkan rencana mana yang kurang.
+
+### Reservasi kuota bersifat atomik
+
+```sql
+UPDATE batches SET quota_box_sold = quota_box_sold + $qty
+WHERE id = $id AND quota_box_sold + $qty <= quota_box_total
+```
+
+Syarat kapasitas ikut di `WHERE`, sehingga dua pembeli yang checkout **bersamaan** tidak bisa
+sama-sama menang; yang kalah menerima `QUOTA_RACE_LOST`. CHECK di level DB jadi jaring pengaman
+terakhir. *Teruji: 2 checkout paralel @200 box atas stok 230 → tepat 1 berhasil, sisa 30 (tidak minus).*
+
+### Escrow
+
+Saat webhook `PAID`: order → `PAID`, lalu **satu entri `HOLD` per Tenant** (order lintas-Tenant
+punya beberapa penerima pencairan). Ongkir dan biaya laporan **tidak** masuk escrow Tenant —
+itu porsi platform. Ledger append-only; koreksi = entri baru.
+
+Webhook bersifat **idempoten** (gateway lazim mengirim callback berulang).
+
+### ⚠️ Yang masih simulasi — WAJIB diganti sebelum produksi
+
+1. **Payment gateway.** Payload QRIS/VA/E-Wallet dibuat lokal; `POST /payments/webhook`
+   **belum memverifikasi signature**. Tanpa itu siapa pun bisa menandai tagihan LUNAS.
+2. **Escrow.** Yang ada baru pembukuan internal. Penahanan dana sesungguhnya wajib memakai
+   fitur escrow mitra berizin — dana tidak boleh mampir ke rekening operasional AgroUs
+   (FR-7.1, kepatuhan §5.7.1).
+3. **Ongkir** `SHIPPING_COST_PER_PLAN` = Rp85.000 flat (PRD §8.2). Ganti dengan rate card nyata.
+4. **`expire-stale`** belum dijadwalkan — pasang cron harian, jangan hanya mengandalkan
+   pemanggilan lazy saat checkout.
