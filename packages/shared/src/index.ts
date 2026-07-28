@@ -256,3 +256,125 @@ export interface SubmitLegalityBody {
   /** URL dokumen NIB atau KTP pemilik pada object storage. */
   documentUrl: string;
 }
+
+// ============================== KONTRAK KATALOG & KUOTA PO ==============================
+// Tenant: /commodities · /tenant/products · /tenant/batches
+// Pembeli: /catalog (lintas-Tenant, FR-2.2)
+
+export const CommodityCategory = {
+  DAUN: "DAUN",
+  BUAH_UMBI: "BUAH_UMBI",
+  KERING: "KERING",
+} as const;
+export type CommodityCategory = (typeof CommodityCategory)[keyof typeof CommodityCategory];
+
+export interface CommoditySummary {
+  id: string;
+  name: string;
+  category: CommodityCategory;
+  /** Toleransi susut yang berlaku saat klaim mutu (FR-5.2). */
+  shrinkTolerancePct: number;
+  /** Rendemen rata-rata kg/ha — basis pembatas kuota (FR-3.3). */
+  avgYieldKgPerHa: number;
+  /** Definisi grade A/B/C per komoditas (FR-5.1). */
+  gradeStandards: unknown;
+}
+
+/** POST /tenant/products — FR-3.2. */
+export interface CreateProductBody {
+  commodityId: string;
+  name: string;
+  grade: Grade;
+  pricePerBox: Rupiah;
+  qtyKgPerBox: number;
+  stockBox?: number;
+  estHarvestDate: string; // ISO date (YYYY-MM-DD)
+  description?: string;
+}
+
+export interface ProductResponse {
+  id: string;
+  name: string;
+  grade: Grade;
+  pricePerBox: Rupiah;
+  qtyKgPerBox: number;
+  stockBox: number;
+  estHarvestDate: string;
+  description: string | null;
+  commodity: CommoditySummary;
+}
+
+/**
+ * GET /tenant/land-plots/:id/capacity?commodityId=&qtyKgPerBox=
+ * Dipakai layar Buka Kuota PO (TN-16) untuk menampilkan batas sebelum Tenant mengetik.
+ */
+export interface LandPlotCapacityResponse {
+  landPlotId: string;
+  areaHa: number;
+  avgYieldKgPerHa: number;
+  qtyKgPerBox: number;
+  /** Pengali kapasitas: 0,70 normal · 0,50 bila kena penalti shortfall (FR-7.12). */
+  quotaMultiplier: number;
+  /** floor(areaHa × avgYieldKgPerHa ÷ qtyKgPerBox × quotaMultiplier). */
+  maxQuotaBox: number;
+  /** false bila lahan sudah dipakai batch aktif — satu lahan satu batch aktif. */
+  available: boolean;
+  blockingBatchId?: string;
+}
+
+/** POST /tenant/products/:id/batches — buka kuota PO (FR-3.3, FR-3.4). */
+export interface OpenQuotaBody {
+  landPlotId: string;
+  quotaBoxTotal: number;
+  lockedPrice: Rupiah;
+  claimedHarvestDate: string; // ISO date
+  claimedPlantDate?: string;
+}
+
+export interface BatchResponse {
+  id: string;
+  productId: string;
+  landPlotId: string;
+  quotaBoxTotal: number;
+  quotaBoxSold: number;
+  quotaBoxFulfilled: number | null;
+  lockedPrice: Rupiah;
+  claimedPlantDate: string | null;
+  claimedHarvestDate: string;
+  productionStatus: ProductionStatus;
+  verificationStatus: VerificationStatus;
+  detectedPlantDate: string | null;
+  detectedHarvestDate: string | null;
+}
+
+/** GET /catalog — katalog terpadu lintas-Tenant (FR-2.1, FR-2.2). */
+export interface CatalogQuery {
+  /** Wajib: pembeli memilih kota layanan lebih dulu (FR-2.1). */
+  zoneId: string;
+  commodityId?: string;
+  grade?: Grade;
+  /** true → hanya batch berbadge Terverifikasi Satelit. */
+  verifiedOnly?: boolean;
+  search?: string;
+}
+
+export interface CatalogItem {
+  batchId: string;
+  productId: string;
+  productName: string;
+  grade: Grade;
+  /** Harga terkunci batch — inilah yang dibayar pembeli, bukan harga katalog produk. */
+  lockedPrice: Rupiah;
+  qtyKgPerBox: number;
+  quotaBoxAvailable: number;
+  claimedHarvestDate: string;
+  commodity: { id: string; name: string; category: CommodityCategory };
+  tenant: { id: string; companyName: string; logoUrl: string | null };
+  /** FR-2.6 — tiga status badge. */
+  badge: VerificationBadge;
+  /**
+   * Status mentah dari pipeline satelit. Sengaja diekspos supaya FE bisa menampilkan
+   * ketidaksesuaian secara terbuka (FR-4.6), bukan menyembunyikannya di balik badge.
+   */
+  verificationStatus: VerificationStatus;
+}

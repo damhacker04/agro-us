@@ -159,3 +159,63 @@ manusia** — jangan pernah membocorkan teks exception mentah ke Tenant (PRD §9
 
 Semua query lahan difilter `tenant_id` dari JWT — Tenant lain mengakses lahan bukan miliknya
 mendapat **404**, bukan 403 (tidak membocorkan keberadaan resource).
+
+---
+
+## Modul Katalog & Kuota PO (FR-2.1, 2.2, 2.5, 2.6, 3.2, 3.3, 3.4) — `feat/catalog-crosstenant`
+
+| Method | Route | Guard | Fungsi |
+|---|---|---|---|
+| `GET` | `/commodities` | — | Daftar komoditas + rendemen + standar grade |
+| `POST/GET/PATCH` | `/tenant/products[/:id]` | TENANT | Kelola katalog produk (FR-3.2) |
+| `GET` | `/tenant/land-plots/:id/capacity` | TENANT | **Pratinjau batas kuota** sebelum Tenant mengetik (layar TN-16) |
+| `POST` | `/tenant/products/:id/batches` | TENANT | Buka kuota PO (FR-3.3, FR-3.4) |
+| `GET` | `/tenant/batches[/:id]` | TENANT | Batch milik sendiri |
+| `GET` | `/catalog?zoneId=…` | — | **Katalog terpadu lintas-Tenant** (FR-2.2) |
+| `GET` | `/catalog/:batchId` | — | Detail produk pembeli (BY-03) |
+
+### Rumus batas kuota (FR-3.3)
+
+```
+maxQuotaBox = floor( areaHa × avgYieldKgPerHa ÷ qtyKgPerBox × quotaMultiplier )
+```
+
+Contoh nyata: `0,6 ha × 7.000 kg/ha × 0,70 ÷ 10 kg = 294 box`.
+
+`quotaMultiplier` merangkap **dua peran**: bantalan 70% terhadap gagal panen (Risiko 2)
+sekaligus penalti shortfall yang menurunkannya ke 0,50 (FR-7.12). Tidak perlu konstanta terpisah.
+
+`areaHa` berasal dari hasil ukur PostGIS, **bukan angka kiriman Tenant** — lihat catatan di modul
+tenant onboarding.
+
+### Satu lahan, satu batch aktif
+
+Batch berstatus `PLANNING`/`GROWING` **mengunci** poligonnya. Tanpa aturan ini Tenant bisa
+membuka 10 batch di atas lahan 1 ha yang sama dan menjual 10× kapasitas — pembatas 70% jadi
+tidak ada artinya. Ingin menanam beberapa komoditas sekaligus? Petakan poligon terpisah (FR-1.5).
+
+### Badge verifikasi (FR-2.6) & transparansi (FR-4.6)
+
+| `verificationStatus` (mentah) | `badge` yang tampil |
+|---|---|
+| `TERVERIFIKASI` | `TERVERIFIKASI_SATELIT` |
+| `FOTO_SAJA` | `BUKTI_FOTO_SAJA` |
+| `PERLU_DITINJAU` · `TIDAK_DAPAT` · `TIDAK_SESUAI` | `BELUM_TERVERIFIKASI` |
+
+Respons **selalu mengirim keduanya**. Badge menyederhanakan untuk daftar katalog, sementara
+`verificationStatus` mentah memungkinkan FE menampilkan ketidaksesuaian secara terbuka —
+PRD §5.4.2 FR-4.6 mewajibkan ketidaksesuaian ditampilkan, bukan disembunyikan.
+Endpoint detail juga mengirim `detectedPlantDate`/`detectedHarvestDate` agar FE bisa
+menyandingkan klaim Tenant dengan hasil satelit.
+
+### Kode error
+
+| Kode | Arti |
+|---|---|
+| `QUOTA_EXCEEDS_CAPACITY` | Kuota > kapasitas lahan; menyertakan `maxQuotaBox` + rincian perhitungan |
+| `LAND_PLOT_BUSY` | Lahan masih dipakai batch aktif; menyertakan `blockingBatchId` |
+| `DATE_ORDER_INVALID` | Tanggal panen tidak setelah tanggal tanam |
+| `COMMODITY_UNKNOWN` / `ZONE_UNKNOWN` | Referensi tidak dikenal |
+
+> `/catalog` **sengaja tanpa guard** — pembeli boleh menelusuri sebelum login (seperti marketplace
+> umum). `zoneId` wajib karena FR-2.1 mengharuskan pilih kota layanan lebih dulu.
