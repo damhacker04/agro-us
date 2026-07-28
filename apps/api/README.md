@@ -96,7 +96,23 @@ Endpoint (base `http://localhost:3001`):
 | `OTP_EXPIRED` | 400 | Kedaluwarsa / sudah terpakai |
 | `ROLE_REQUIRED` | 400 | Nomor belum terdaftar → FE tampilkan pilihan TENANT/BUYER |
 
-**Keamanan yang sudah diterapkan:**
+**Rahasia WAJIB dari environment — tanpa nilai cadangan:**
+
+`JWT_SECRET` (min 32 karakter) dan `OTP_PEPPER` (min 16 karakter) harus diset; API
+**menolak boot** bila kosong atau terlalu pendek. Ini sengaja.
+
+Versi awal memakai secret bawaan yang hanya ditolak saat `NODE_ENV=production`.
+Masalahnya `NODE_ENV` gampang lupa diset di Railway/Render — dan begitu itu terjadi,
+API berjalan memakai secret yang **terpampang publik di repositori**: siapa pun bisa
+memalsukan JWT ber-`role: OPERATOR`. Untuk `OTP_PEPPER` lebih parah lagi: ruang kode
+OTP hanya 10^6, jadi pepper yang diketahui membuat seluruh hash bisa dihitung habis
+dalam hitungan detik. Gagal saat boot jauh lebih murah daripada dibobol.
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+```
+
+**Keamanan lain yang sudah diterapkan:**
 - Kode OTP **tidak pernah disimpan plaintext** — `sha256(OTP_PEPPER \| phone \| kode)`.
 - Kode dibuat dengan `crypto.randomInt` (CSPRNG), bukan `Math.random`.
 - Satu kode aktif per nomor; kode lama dihapus saat minta baru.
