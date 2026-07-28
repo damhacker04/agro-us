@@ -501,3 +501,130 @@ yang masih wajar akan membuat metrik reputasi ini menyesatkan.
 4. **SLA 1 hari kerja dihitung 24 jam kalender** — belum memperhitungkan akhir pekan/libur.
 5. **Grade A/B/C belum divalidasi saat klaim** — `grade_standards` sudah ada di
    `commodities`, tetapi klaim baru menilai berat, belum mutu/ukuran (FR-5.1).
+
+---
+
+## Modul Harvest Assurance & Alokasi Panen (§5.7.2, FR-7.4 s.d. 7.12) — `feat/harvest-assurance`
+
+Gagal panen adalah kejadian **normal** dalam agrikultur, bukan pengecualian. Tanpa
+mekanisme ini tidak ada pembeli institusional yang mau membayar di muka — dan seluruh
+model pra-panen runtuh.
+
+| Endpoint | Peran | Fungsi |
+| --- | --- | --- |
+| `GET /tenant/batches/:id/allocation-preview?fulfilledBox=` | Tenant | Dampak sebelum menandai panen (TN-19a) |
+| `GET /assurance/pending` | Pembeli | Item yang menunggu keputusan (BY-11) |
+| `POST /assurance/:orderItemId/resolve` | Pembeli | Pilih salah satu dari 4 opsi |
+| `POST /orders/:id/cancel` | Pembeli | Pembatalan sepihak selama Menunggu Panen (FR-7.5) |
+
+### Alokasi FIFO, bukan pro-rata
+
+Pesanan dipenuhi **utuh secara berurutan** sampai stok habis. Alasannya bukan sekadar
+"adil": kalau komitmen lebih awal tidak memberi keuntungan apa pun saat pasokan kurang,
+insentif memesan lebih dulu ikut hilang — padahal itu seluruh tesis produk ini. Pro-rata
+juga membuat SEMUA pembeli kekurangan sedikit-sedikit, dan bagi restoran 70% pesanan
+sering sama tidak bergunanya dengan 0% karena menunya tetap tidak bisa jalan.
+
+Urutan memakai **`payments.paid_at`**, bukan `orders.created_at`. Kalau memakai waktu order
+dibuat, siapa pun bisa memesan lebih dulu lalu membayar belakangan dan tetap menang antrean.
+
+### Empat opsi, dan ke mana uangnya pergi
+
+| Opsi | Pembeli | Escrow |
+| --- | --- | --- |
+| `TERIMA_SEBAGIAN` | Terima porsi tersedia | `REFUND` sebesar kekurangan |
+| `REFUND` | Tolak semua | `REFUND` penuh, `qty_box_fulfilled` → 0 |
+| `JADWAL_ULANG` | Tunggu siklus berikutnya | Tidak ada entri — dana tetap ditahan |
+| `SUBSTITUSI` | Barang dari Tenant lain, **harga kunci semula** | `ALIH_SUBSTITUSI` + `POTONG_KLAIM` keluar dari Tenant gagal; `HOLD` baru di Tenant pengganti |
+
+Pembeli "di perbatasan" (yang cuma kebagian sebagian box) **tidak dipaksa** menerima
+parsial — `partialMeetsMinimum` memberi tahu FE apakah porsi yang terpenuhi masih di atas
+minimum order zona; kalau tidak, tolak-semua ditawarkan lebih dulu (FR-7.10).
+
+### Substitusi harus benar-benar memindahkan pemenuhan
+
+Mengunci kuota di batch pengganti saja tidak cukup. `resolve()` juga **membuat
+`order_item` baru** pada batch pengganti beserta shipment-nya, karena alokasi FIFO
+membaca `order_items` — tanpa baris itu, saat Tenant pengganti panen tidak ada seorang
+pun yang tercatat sebagai pemilik kuota tersebut, dan pembeli yang sudah membayar tidak
+pernah menerima barang.
+
+Uang ikut pindah dalam transaksi yang sama:
+
+```
+Tenant gagal    : HOLD 4.500.000, ALIH_SUBSTITUSI 4.500.000, POTONG_KLAIM 300.000  → saldo −300.000
+Tenant pengganti: HOLD 4.800.000                                                   → saldo 4.800.000
+Pembeli         : bayar 4.500.000, terima 30 box, tidak menambah sepeser pun
+```
+
+Saldo negatif itu **benar**: Tenant yang gagal memang berutang selisih harga, dan
+utang itu ditutup dari escrow-nya yang lain. `ALIH_SUBSTITUSI` sengaja dibedakan dari
+`REFUND` karena pembeli tidak menerima uang — barangnya yang diganti.
+
+### Cap tanggungan 10% (FR-7.11)
+
+Selisih harga pengganti ditanggung Tenant yang gagal, maksimal **10% nilai PO yang gagal**.
+
+- **Gagal panen TERVERIFIKASI satelit** → cap berlaku. Pengganti yang selisihnya melampaui
+  cap **tidak ditampilkan sama sekali**, dan pembeli diberi tahu alasannya. Lebih jujur
+  daripada menawarkan pengganti yang tidak ada yang sanggup membiayainya.
+- **Gagal panen TIDAK terverifikasi** (indikasi side-selling) → **cap gugur**, Tenant
+  menanggung selisih penuh.
+
+### Penalti kuota (FR-7.12)
+
+Ambang **15% shortfall**, dihitung **rolling 2 siklus**. Kuota sudah dibatasi 70%
+kapasitas lahan, jadi Tenant punya bantalan 30%; kalau dengan bantalan itu ia masih gagal
+mengirim lebih dari 15% kuota terjual, realisasi panennya meleset 40%+ dari estimasi —
+itu bukan cuaca lagi. Melewati ambang → `quota_multiplier` turun **0,70 → 0,50**.
+
+Cukup **satu** siklus tak terverifikasi untuk menggugurkan perlindungan ambang: shortfall
+yang tidak terverifikasi dihukum tanpa ambang sama sekali. Itulah yang memberi mitigasi
+side-selling gigi finansial, bukan sekadar penalti reputasi.
+
+### Pembatalan pembeli (FR-7.5)
+
+Denda 10% dihitung dari **nilai barang saja, bukan `total_amount`**. Ongkir belum menjadi
+biaya siapa pun — kurir belum berangkat — jadi ongkir dikembalikan utuh; kalau ikut
+didenda, Tenant justru kebagian uang kurir. Kuota yang sempat direservasi dilepas kembali,
+dan ledger ditutup penuh (`HOLD` = `BIAYA_BATAL10` + `REFUND`, sisa tertahan nol).
+
+Setelah panen pesanan **mengikat** — pembatalan ditolak dengan `ALREADY_HARVESTED` dan
+sengketa dialihkan ke jalur klaim mutu (FR-7.6).
+
+### `deviceTs` tidak boleh mendahului waktu server
+
+Pagar umur tanam (`HARVEST_TOO_EARLY`) membandingkan `deviceTs` node PANEN dengan
+`deviceTs` node PENANAMAN — dua-duanya berasal dari perangkat Tenant. Tanpa pagar
+tambahan, pagar itu bisa dilewati begitu saja: tanam hari ini, lalu kirim PANEN
+bertanggal tiga bulan ke depan. `DEVICE_TS_IN_FUTURE` menolaknya, dengan toleransi 24 jam
+untuk jam ponsel yang meleset atau salah zona waktu.
+
+### Kode error
+
+| Kode | Arti |
+| --- | --- |
+| `NO_SHORTFALL` | Item terpenuhi seluruhnya, tidak ada yang perlu diputuskan |
+| `NOTHING_ALLOCATED` | `TERIMA_SEBAGIAN` dipilih padahal alokasi nol |
+| `ALREADY_RESOLVED` | Pilihan sudah pernah dikirim |
+| `REPLACEMENT_REQUIRED` | `SUBSTITUSI` tanpa `replacementBatchId` |
+| `REPLACEMENT_UNAVAILABLE` | Batch pengganti tidak ada di daftar yang sah |
+| `REPLACEMENT_QUOTA_GONE` | Kuota pengganti keburu direbut permintaan lain |
+| `NOT_CANCELLABLE` | Pesanan belum dibayar atau sudah ditutup |
+| `ALREADY_HARVESTED` | Pembatalan setelah panen — pakai jalur klaim mutu |
+| `DEVICE_TS_IN_FUTURE` | Jam perangkat lebih maju dari server |
+
+### ⚠️ Belum selesai
+
+1. **Pemindahan dana masih pembukuan internal.** `ALIH_SUBSTITUSI` belum menghasilkan
+   instruksi transfer nyata ke escrow mitra berizin (FR-7.1).
+2. **Saldo escrow Tenant boleh negatif tanpa penagihan.** Tenant yang menanggung selisih
+   substitusi bisa bersaldo minus; belum ada mekanisme menagih kalau escrow-nya yang lain
+   tidak cukup menutup.
+3. **`JADWAL_ULANG` belum menunjuk batch siklus berikutnya.** Keputusannya tercatat dan
+   dana tetap ditahan, tetapi pemetaan ke batch pengganti berikutnya masih manual.
+4. **Shipment lama tidak otomatis dibatalkan** ketika seluruh itemnya gagal dan pembeli
+   memilih SUBSTITUSI — shipment baru dibuat, yang lama tetap `MENUNGGU_PANEN`.
+5. **Penalti kuota belum punya jalur pemulihan otomatis.** `quota_multiplier` naik lagi
+   hanya kalau `applyShortfallPenalty` dipanggil ulang setelah 2 siklus bersih — dan itu
+   baru terjadi saat ada panen berikutnya, belum ada cron yang menjadwalkannya.

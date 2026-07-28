@@ -102,13 +102,19 @@ export class SettlementService {
     `;
     const by = Object.fromEntries(rows.map((r) => [r.entry_type, Number(r.total)]));
     const hold = by.HOLD ?? 0;
-    const keluar = (by.RELEASE ?? 0) + (by.RELEASE30 ?? 0) + (by.POTONG_KLAIM ?? 0) + (by.REFUND ?? 0);
+    // HOLD adalah SATU-SATUNYA arus masuk; sisanya apa pun jenisnya adalah uang yang
+    // sudah keluar dari escrow Tenant. Dihitung sebagai "selain HOLD" dan bukan
+    // daftar putih, karena daftar putih inilah yang bikin BIAYA_BATAL10 dan
+    // ALIH_SUBSTITUSI sempat terhitung sebagai dana yang masih dipegang Tenant.
+    const keluar = Object.entries(by).reduce((s, [k, v]) => (k === "HOLD" ? s : s + v), 0);
     return {
       tertahan: hold - keluar,
       totalDitahan: hold,
       totalDicairkan: (by.RELEASE ?? 0) + (by.RELEASE30 ?? 0),
       totalPotonganKlaim: by.POTONG_KLAIM ?? 0,
       totalRefund: by.REFUND ?? 0,
+      totalBiayaBatal: by.BIAYA_BATAL10 ?? 0,
+      totalAlihSubstitusi: by.ALIH_SUBSTITUSI ?? 0,
       rincian: by,
     };
   }
