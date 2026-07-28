@@ -256,6 +256,7 @@ model Commodity {
   category           CommodityCategory
   shrinkTolerancePct Decimal           @map("shrink_tolerance_pct") @db.Decimal(4, 2) // 5 daun / 3 buah-umbi — FR-5.2
   avgYieldKgPerHa    Decimal           @map("avg_yield_kg_per_ha") @db.Decimal(10, 2) // basis pembatas kuota — FR-3.3 ⚠ validasi BPS
+  growingDaysMin     Int               @default(30) @map("growing_days_min") // umur tanam minimal — kewajaran panen FR-4.8 ⚠ validasi penyuluh
   gradeStandards     Json              @map("grade_standards") // definisi A/B/C per komoditas — FR-5.1
 
   products Product[]

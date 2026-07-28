@@ -41,24 +41,26 @@ type SeedCommodity = {
   category: CommodityCategory;
   /** kg/ha per musim — PLACEHOLDER, lihat peringatan di atas. */
   avgYieldKgPerHa: number;
+  /** Umur tanam minimal (hari) — dipakai cek kewajaran panen FR-4.8. PLACEHOLDER juga. */
+  growingDaysMin: number;
   catatan: string;
 };
 
 const COMMODITIES: SeedCommodity[] = [
   // ---- DAUN (susut 5%) ----
-  { name: "Sawi Hijau (Caisim)", category: "DAUN", avgYieldKgPerHa: 15_000, catatan: "Grade by kesegaran daun & bebas lubang hama" },
-  { name: "Bayam", category: "DAUN", avgYieldKgPerHa: 8_000, catatan: "Umur simpan pendek — prioritas pengiriman pagi" },
-  { name: "Kangkung", category: "DAUN", avgYieldKgPerHa: 10_000, catatan: "Grade by panjang batang & kesegaran" },
-  { name: "Kubis", category: "DAUN", avgYieldKgPerHa: 25_000, catatan: "Grade by kepadatan krop & berat per krop" },
-  { name: "Selada", category: "DAUN", avgYieldKgPerHa: 12_000, catatan: "Sensitif suhu — utamakan rantai dingin" },
+  { name: "Sawi Hijau (Caisim)", category: "DAUN", avgYieldKgPerHa: 15_000, growingDaysMin: 25, catatan: "Grade by kesegaran daun & bebas lubang hama" },
+  { name: "Bayam", category: "DAUN", avgYieldKgPerHa: 8_000, growingDaysMin: 20, catatan: "Umur simpan pendek — prioritas pengiriman pagi" },
+  { name: "Kangkung", category: "DAUN", avgYieldKgPerHa: 10_000, growingDaysMin: 21, catatan: "Grade by panjang batang & kesegaran" },
+  { name: "Kubis", category: "DAUN", avgYieldKgPerHa: 25_000, growingDaysMin: 70, catatan: "Grade by kepadatan krop & berat per krop" },
+  { name: "Selada", category: "DAUN", avgYieldKgPerHa: 12_000, growingDaysMin: 40, catatan: "Sensitif suhu — utamakan rantai dingin" },
   // ---- BUAH & UMBI (susut 3%) ----
-  { name: "Cabai Rawit", category: "BUAH_UMBI", avgYieldKgPerHa: 7_000, catatan: "Grade by tingkat kematangan merah & keseragaman" },
-  { name: "Cabai Merah Besar", category: "BUAH_UMBI", avgYieldKgPerHa: 10_000, catatan: "Grade by panjang buah & kilap kulit" },
-  { name: "Tomat", category: "BUAH_UMBI", avgYieldKgPerHa: 25_000, catatan: "Grade by diameter & kematangan seragam" },
-  { name: "Kentang", category: "BUAH_UMBI", avgYieldKgPerHa: 17_000, catatan: "Grade by ukuran umbi (knol) & bebas hijau" },
-  { name: "Wortel", category: "BUAH_UMBI", avgYieldKgPerHa: 15_000, catatan: "Grade by panjang-diameter & bebas cabang" },
-  { name: "Bawang Merah", category: "BUAH_UMBI", avgYieldKgPerHa: 10_000, catatan: "Grade by diameter umbi & tingkat kering askip" },
-  { name: "Apel Batu", category: "BUAH_UMBI", avgYieldKgPerHa: 15_000, catatan: "Khas Kota Batu — rendemen per tahun, siklus beda dgn sayur" },
+  { name: "Cabai Rawit", category: "BUAH_UMBI", avgYieldKgPerHa: 7_000, growingDaysMin: 80, catatan: "Grade by tingkat kematangan merah & keseragaman" },
+  { name: "Cabai Merah Besar", category: "BUAH_UMBI", avgYieldKgPerHa: 10_000, growingDaysMin: 85, catatan: "Grade by panjang buah & kilap kulit" },
+  { name: "Tomat", category: "BUAH_UMBI", avgYieldKgPerHa: 25_000, growingDaysMin: 65, catatan: "Grade by diameter & kematangan seragam" },
+  { name: "Kentang", category: "BUAH_UMBI", avgYieldKgPerHa: 17_000, growingDaysMin: 90, catatan: "Grade by ukuran umbi (knol) & bebas hijau" },
+  { name: "Wortel", category: "BUAH_UMBI", avgYieldKgPerHa: 15_000, growingDaysMin: 90, catatan: "Grade by panjang-diameter & bebas cabang" },
+  { name: "Bawang Merah", category: "BUAH_UMBI", avgYieldKgPerHa: 10_000, growingDaysMin: 60, catatan: "Grade by diameter umbi & tingkat kering askip" },
+  { name: "Apel Batu", category: "BUAH_UMBI", avgYieldKgPerHa: 15_000, growingDaysMin: 150, catatan: "Khas Kota Batu — rendemen per tahun, siklus beda dgn sayur" },
 ];
 
 async function main() {
@@ -76,6 +78,7 @@ async function main() {
       category: c.category,
       shrinkTolerancePct: SHRINK[c.category],
       avgYieldKgPerHa: c.avgYieldKgPerHa,
+      growingDaysMin: c.growingDaysMin,
       gradeStandards: gradeStandards(c.catatan),
     };
     await prisma.commodity.upsert({

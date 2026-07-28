@@ -17,7 +17,9 @@
     "declaration": false,
     "sourceMap": true,
     "outDir": "./dist",
-    "types": ["node"]
+    // "multer" perlu disebut eksplisit: dia meng-augment namespace global Express
+    // (Express.Multer.File) yang dipakai upload foto bukti timeline.
+    "types": ["node", "express", "multer"]
   },
   "include": ["src/**/*.ts", "prisma/**/*.ts", "prisma.config.ts", "generated/**/*.ts"],
   "exclude": ["node_modules", "dist"]

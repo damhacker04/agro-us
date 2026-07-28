@@ -36,3 +36,6 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Foto bukti timeline (storage dev lokal — lihat storage.service.ts)
+apps/api/uploads/

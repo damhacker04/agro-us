@@ -6,6 +6,7 @@ import { AuthModule } from "./modules/auth/auth.module";
 import { TenantModule } from "./modules/tenant/tenant.module";
 import { CatalogModule } from "./modules/catalog/catalog.module";
 import { OrderModule } from "./modules/order/order.module";
+import { TimelineModule } from "./modules/timeline/timeline.module";
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { OrderModule } from "./modules/order/order.module";
     TenantModule,
     CatalogModule,
     OrderModule,
+    TimelineModule,
   ],
   controllers: [HealthController],
 })
