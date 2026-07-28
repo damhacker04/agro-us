@@ -115,6 +115,19 @@ export class AuthService {
       });
     }
 
+    // Kode BENAR. Cek kelengkapan registrasi SEBELUM menghanguskan kode —
+    // kalau ROLE_REQUIRED dilempar setelah consume, user kehilangan kode yang
+    // sebenarnya valid dan terpaksa menunggu cooldown 60 dtk tanpa salah apa pun.
+    let user = await this.prisma.user.findUnique({ where: { phone } });
+    const isNewUser = !user;
+    if (!user && !role) {
+      // FE tampilkan pilihan peran, lalu kirim ulang verify dengan kode yang sama.
+      throw new BadRequestException({
+        code: "ROLE_REQUIRED",
+        message: "Nomor belum terdaftar — sertakan role (TENANT/BUYER).",
+      });
+    }
+
     // Tandai terpakai — guard double-submit: hanya menang kalau masih belum consumed.
     const consumed = await this.prisma.otpRequest.updateMany({
       where: { id: row.id, consumedAt: null },
@@ -124,14 +137,8 @@ export class AuthService {
       throw new BadRequestException({ code: "OTP_EXPIRED", message: "Kode sudah terpakai. Minta kode baru." });
     }
 
-    let user = await this.prisma.user.findUnique({ where: { phone } });
-    const isNewUser = !user;
     if (!user) {
-      if (!role) {
-        // FE tahu harus tampilkan pilihan peran (CTA landing menentukan default).
-        throw new BadRequestException({ code: "ROLE_REQUIRED", message: "Nomor belum terdaftar — sertakan role (TENANT/BUYER)." });
-      }
-      user = await this.prisma.user.create({ data: { phone, role } });
+      user = await this.prisma.user.create({ data: { phone, role: role! } });
     }
 
     const payload: JwtPayload = { sub: user.id, phone: user.phone, role: user.role };
