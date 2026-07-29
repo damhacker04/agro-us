@@ -9,6 +9,7 @@ import {
   type ShipmentPlan,
   type ShipmentPlanLine,
 } from "@agro-os/shared";
+import { DemandSignalService } from "../intelligence/demand-signal.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { BuyerService } from "../buyer/buyer.service";
 import { PaymentService } from "./payment.service";
@@ -20,6 +21,8 @@ const SELLABLE = ["PLANNING", "GROWING"] as const;
 interface ResolvedLine extends ShipmentPlanLine {
   tenantId: string;
   harvestWeek: string;
+  /** Dibawa sampai checkout supaya kekalahan rebutan kuota bisa dicatat (FR-8.1). */
+  commodityId: string;
 }
 
 @Injectable()
@@ -28,6 +31,7 @@ export class OrderService {
     private readonly prisma: PrismaService,
     private readonly buyers: BuyerService,
     private readonly payments: PaymentService,
+    private readonly signals: DemandSignalService,
   ) {}
 
   /** Senin dari minggu panen — kunci pengelompokan Rencana Pengiriman (FR-2.4). */
@@ -84,6 +88,13 @@ export class OrderService {
       }
       const available = b.quotaBoxTotal - b.quotaBoxSold;
       if (line.qtyBox > available) {
+        // Permintaan yang tidak terlayani — dicatat sebagai sinyal sebelum ditolak,
+        // karena inilah bukti paling langsung bahwa pasokan zona ini kurang (FR-8.1).
+        void this.signals.recordQuotaRaceLost(
+          zoneId,
+          b.product.commodityId,
+          (line.qtyBox - available) * Number(b.product.qtyKgPerBox),
+        );
         throw new ConflictException({
           code: "QUOTA_INSUFFICIENT",
           message: `Kuota "${b.product.name}" tinggal ${available} box, diminta ${line.qtyBox}.`,
@@ -101,6 +112,7 @@ export class OrderService {
         unitPriceLocked: b.lockedPrice,
         subtotal: b.lockedPrice * line.qtyBox,
         qtyKgPerBox: Number(b.product.qtyKgPerBox),
+        commodityId: b.product.commodityId,
         claimedHarvestDate: b.claimedHarvestDate.toISOString().slice(0, 10),
         harvestWeek: this.harvestWeekOf(b.claimedHarvestDate),
       };
@@ -130,7 +142,7 @@ export class OrderService {
           harvestWeek,
           // Pengiriman menunggu item yang panen paling lambat dalam grup.
           readyDate: gl.map((l) => l.claimedHarvestDate).sort().at(-1)!,
-          lines: gl.map(({ tenantId: _t, harvestWeek: _w, ...rest }) => rest),
+          lines: gl.map(({ tenantId: _t, harvestWeek: _w, commodityId: _c, ...rest }) => rest),
           subtotal,
           shippingCost: SHIPPING_COST_PER_PLAN,
           minOrderValue,
@@ -174,6 +186,9 @@ export class OrderService {
     const zone = await this.prisma.zone.findUniqueOrThrow({ where: { id: buyer.activeZoneId } });
     const resolved = await this.resolveLines(dto.lines, zone.id);
     const plans = this.buildPlans(resolved, zone.minOrderValue);
+    // `plan.lines` sengaja bersih dari field internal (kontrak FE), jadi komoditas
+    // dicari balik lewat batchId saat perlu mencatat sinyal permintaan.
+    const commodityByBatch = new Map(resolved.map((r) => [r.batchId, r.commodityId]));
 
     const failing = plans.filter((p) => !p.meetsMinimum);
     if (failing.length) {
@@ -224,6 +239,17 @@ export class OrderService {
               AND quota_box_sold + ${line.qtyBox} <= quota_box_total
           `;
           if (reserved !== 1) {
+            // Dicatat di luar transaksi (koneksi Prisma tersendiri) supaya sinyalnya
+            // tetap tersimpan meski checkout ini rollback.
+            const commodityId = commodityByBatch.get(line.batchId);
+            if (commodityId) {
+              void this.signals.recordQuotaRaceLost(
+                zone.id,
+                commodityId,
+                line.qtyBox * line.qtyKgPerBox,
+                buyer.id,
+              );
+            }
             throw new ConflictException({
               code: "QUOTA_RACE_LOST",
               message: `Kuota "${line.productName}" keburu habis. Kurangi jumlah atau pilih produk lain.`,

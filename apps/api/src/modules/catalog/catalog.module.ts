@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { IntelligenceModule } from "../intelligence/intelligence.module";
 import { TenantModule } from "../tenant/tenant.module";
 import {
   CatalogController,
@@ -10,7 +11,8 @@ import { BatchService } from "./batch.service";
 import { CatalogService } from "./catalog.service";
 
 @Module({
-  imports: [TenantModule], // butuh TenantService.requireTenant (userId → tenantId)
+  // IntelligenceModule: merekam pencarian nihil sebagai sinyal permintaan (FR-8.1).
+  imports: [TenantModule, IntelligenceModule],
   controllers: [CommodityController, TenantCatalogController, CatalogController],
   providers: [ProductService, BatchService, CatalogService],
   exports: [BatchService],
