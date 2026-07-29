@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { 
   Leaf, 
   Search, 
@@ -49,12 +50,12 @@ export default function LandingPage() {
             Platform rantai pasok agrikultur B2B pertama dengan Verified Timeline. Dapatkan kepastian pasokan yang divalidasi langsung oleh citra satelit Sentinel-2.
           </p>
           <div className="flex flex-wrap items-center gap-4 pt-4">
-            <button className="flex items-center gap-2 px-6 py-3 bg-emerald-900 text-white font-medium rounded-lg hover:bg-emerald-800 transition">
+            <Link href="/auth/buyer" className="flex items-center gap-2 px-6 py-3 bg-emerald-900 text-white font-medium rounded-lg hover:bg-emerald-800 transition">
               Cari Produk <Search className="w-4 h-4" />
-            </button>
-            <button className="px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition">
+            </Link>
+            <Link href="/auth/tenant" className="px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition">
               Mulai Menjual
-            </button>
+            </Link>
           </div>
         </div>
 
