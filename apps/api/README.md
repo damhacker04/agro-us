@@ -628,3 +628,119 @@ untuk jam ponsel yang meleset atau salah zona waktu.
 5. **Penalti kuota belum punya jalur pemulihan otomatis.** `quota_multiplier` naik lagi
    hanya kalau `applyShortfallPenalty` dipanggil ulang setelah 2 siklus bersih — dan itu
    baru terjadi saat ada panen berikutnya, belum ada cron yang menjadwalkannya.
+
+---
+
+## Modul Demand Intelligence & Rekomendasi Tanam (§5.8, FR-8.x, FR-3.7) — `feat/demand-intelligence`
+
+| Endpoint | Peran | Fungsi |
+| --- | --- | --- |
+| `GET /tenant/permintaan` | Tenant | Agregat mentah zona × komoditas × minggu panen (FR-8.1) |
+| `GET /tenant/rekomendasi` | Tenant | Kartu Rekomendasi Tanam, kalimat operasional (TN-27, FR-8.2) |
+| `GET /tenant/rekomendasi/prefill` | Tenant | Payload siap-isi form Buka Kuota (TN-28, FR-8.3) |
+| `GET /tenant/langganan` | Tenant | Status paket Verified (TN-30, FR-9.1) |
+| `POST /tenant/langganan/aktifkan` | Tenant | ⚠ Aktivasi **simulasi**, belum ada pembayaran nyata |
+
+### Materialized view `demand_aggregates` v1 DIBUANG
+
+Matview dari `0_init` tidak bisa menjalankan tugasnya, dan komentarnya sendiri
+mempersilakan diperbaiki di branch ini. Empat cacatnya:
+
+1. `demanded_box` menghitung `order_items` — permintaan yang **sudah dilayani**. Tiap
+   barisnya ada karena suatu Tenant lebih dulu membuka kuota, jadi permintaan secara
+   struktural tidak pernah bisa melebihi pasokan.
+2. Grain-nya bertumpu pada `claimed_harvest_date` batch yang **sudah ada**. Untuk minggu
+   panen yang belum ada Tenant membuka kuota, barisnya tidak terbentuk sama sekali —
+   padahal itu persis kasus yang dicontohkan FR-8.2 (*"Belum ada Tenant yang membuka kuota"*).
+3. `gap_box` mengurangkan sisa kuota (stok) dari pesanan (arus) — besaran tanpa arti.
+4. `saturation_pct = 100` saat permintaan nol, sehingga "tidak diketahui" tampil sebagai
+   "sudah tertutup" dan justru menekan rekomendasi.
+
+Penggantinya dihitung **langsung di query**. Volumenya kecil (zona × komoditas × 9 minggu)
+dan belum ada penjadwal cron di sistem ini; matview basi akan menyarankan penanaman
+berdasarkan data lama — lebih berbahaya daripada query yang sedikit lebih mahal.
+
+### Dari mana angka permintaan berasal
+
+`projectedKg` = **laju riwayat** + **permintaan yang gagal dilayani**.
+
+- **Laju riwayat** — total kg pesanan **LUNAS** per (zona, komoditas) dalam 8 minggu
+  terakhir, dibagi **8**, bukan dibagi jumlah minggu yang ada transaksinya. Kalau dibagi
+  minggu-yang-ada-saja, satu pesanan besar sekali seumur hidup terbaca sebagai permintaan
+  mingguan yang tetap.
+- **Gagal dilayani** — tabel baru `demand_signals`, diisi otomatis oleh:
+  - `CARI_KOSONG` — pembeli menyaring katalog per komoditas, hasilnya nihil
+  - `KUOTA_HABIS` — checkout ditolak karena kuota kurang / kalah rebutan
+
+  Disimpan dalam **kg, bukan box**: isi box berbeda antar Tenant sehingga box tidak bisa
+  dijumlahkan lintas produk. Perekamannya tidak pernah melempar error dan tidak ikut
+  transaksi pemanggil — kehilangan satu sinyal jauh lebih murah daripada menggagalkan
+  satu pencarian katalog atau satu checkout.
+
+> **`projectedKg` adalah PROYEKSI, bukan pesanan yang sudah ada.** Musiman, hari raya, dan
+> cuaca TIDAK dimodelkan. Karena itu tiap baris wajib membawa `confidence` dan
+> `weeksObserved`, dan kalimat rekomendasi menyatakan sendiri kalau dasarnya tipis.
+
+### Kejenuhan pasokan (FR-8.4)
+
+`coveragePct` = `openQuotaKg` / `projectedKg`. Ambang: `<80%` **KURANG**, `80-120%`
+**SEIMBANG**, `>120%` **JENUH**, permintaan nol → **TANPA_DATA**.
+
+`TANPA_DATA` sengaja dibedakan dari `SEIMBANG`: permintaan yang belum terukur bukan
+permintaan yang sudah tertutup.
+
+`openQuotaKg` memakai `quota_box_total`, bukan sisa yang belum terjual — untuk menakar
+kejenuhan yang penting adalah berapa banyak barang akan muncul di pasar. Pendampingnya
+`bookedKg`: kuota 1000 kg yang ludes terjual dan yang tak laku sama sekali punya
+`openQuotaKg` sama tetapi artinya berlawanan, jadi penyerapan di bawah 25% memunculkan
+peringatan bahwa proyeksi permintaannya mungkin kebesaran.
+
+**Perlindungan balapan.** Kejenuhan dihitung **ulang** saat prefill. Antara Tenant melihat
+kartu dan menekan tombol, Tenant lain bisa sudah membuka kuota untuk kekurangan yang sama;
+kalau semua bergerak berdasarkan angka basi, hasilnya justru panen raya yang mau dicegah.
+Prefill pada minggu yang sudah JENUH mengembalikan `suggestedQuotaBox: 0` + `warning`.
+
+### Rekomendasi menolak saran yang mustahil dikerjakan
+
+Kartu hanya muncul kalau `growing_days_min` komoditas **muat** di sisa waktu sampai minggu
+panen itu. Menyarankan Wortel (90 hari) untuk panen 8 minggu lagi (56 hari) hanya membuat
+Tenant menanam sesuatu yang pasti telat. Terverifikasi saat pengujian: dari 9 minggu
+horizon, hanya 3 minggu terakhir yang lolos untuk Wortel.
+
+`gapKg` adalah kekurangan **se-zona** yang diperebutkan bersama; `suggestedKgForYou`
+dibatasi kapasitas lahan Tenant yang **belum terpakai batch berjalan** — menghitung
+seluruh luas lahan akan menyarankan kuota yang tidak mungkin dibuka (satu lahan satu
+batch aktif).
+
+### Gerbang langganan (FR-9.1)
+
+Rekomendasi Tanam dan Intelijen Permintaan digerbangi paket Verified. `GRACE` masih lolos —
+itulah guna masa tenggang 14 hari.
+
+Status dihitung dari **tanggal**, bukan dibaca mentah dari kolom `subscriptions.status`:
+belum ada penjadwal yang memutakhirkan kolom itu, dan gerbang yang mempercayai kolom basi
+akan membuka akses yang seharusnya terkunci.
+
+Yang **tidak** ikut terkunci saat langganan lapse, karena itu kewajiban kepada pembeli yang
+sudah membayar: badge verifikasi yang sudah terbit (FR-9.2) dan batch yang PO-nya sudah
+terjual (FR-9.3).
+
+### ⚠️ Belum selesai
+
+1. **Sinyal `CARI_KOSONG` tidak pernah menghasilkan rekomendasi.** Pencarian tidak membawa
+   satuan kg, jadi komoditas yang **hanya** punya sinyal ini berproyeksi 0 kg dan berhenti
+   di `TANPA_DATA`. Ia tetap terlihat di `GET /tenant/permintaan` lewat `searchMissCount`,
+   tetapi tidak jadi kartu. Menebak kuantitas dari "N orang mencari" akan mengarang angka;
+   perbaikan yang benar adalah menanyakan jumlah yang dibutuhkan pembeli (mis. form
+   "minta komoditas"), bukan mengira-ngira.
+2. **Proyeksi datar, tanpa musiman.** Rata-rata 8 minggu diproyeksikan apa adanya ke depan.
+   Ramadan, hari raya, dan musim hujan akan meleset — dan justru di saat itulah selisihnya
+   paling besar.
+3. **Ambang 80/120% dan jendela 8 minggu belum dikalibrasi** ke data nyata Malang Raya.
+4. **Kapasitas lahan diasumsikan bebas seluruhnya.** `suggestedKgForYou` memakai lahan yang
+   tidak sedang dipakai batch berjalan, tetapi tidak tahu rencana tanam Tenant di luar
+   platform.
+5. **FR-8.5 (laporan tren bulanan sebagai produk data) belum dibuat** — prioritas C.
+6. **Siklus penuh FR-9 belum ada**: tagihan berulang, transisi terjadwal
+   ACTIVE→GRACE→EXPIRED, dan notifikasi sebelum penguncian. Aktivasi masih simulasi tanpa
+   pembayaran, seperti modul order.
