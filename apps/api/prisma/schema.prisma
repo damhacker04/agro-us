@@ -10,7 +10,9 @@
 //   - Trigger append-only: timeline_nodes, node_photos, escrow_ledger, hash_anchors (PRD §6.1)
 //   - CHECK constraints (kuota, pin_attempts, quota_multiplier, FAILED⟹fulfilled=0)
 //   - GiST index untuk semua kolom geometry
-//   - Materialized view demand_aggregates (FR-8.1)
+//
+// Agregat permintaan (FR-8.1) TIDAK memakai materialized view. Matview v1 di 0_init
+// sudah di-DROP pada migrasi 20260729000000_demand_signals — alasannya ditulis di sana.
 
 generator client {
   provider     = "prisma-client"
@@ -163,6 +165,11 @@ enum AssuranceOption {
   TERIMA_SEBAGIAN // FR-7.10 — pembeli di perbatasan alokasi
 }
 
+enum DemandSignalType {
+  CARI_KOSONG // pembeli menyaring katalog per komoditas, hasilnya nihil
+  KUOTA_HABIS // checkout gagal karena kuota keburu direbut
+}
+
 enum SubscriptionPlan {
   VERIFIED
 }
@@ -223,6 +230,7 @@ model Buyer {
   activeZone          Zone?                @relation(fields: [activeZoneId], references: [id])
   orders              Order[]
   traceabilityReports TraceabilityReport[]
+  demandSignals       DemandSignal[]
 
   @@map("buyers")
 }
@@ -235,9 +243,10 @@ model Zone {
   city          String
   minOrderValue Int    @map("min_order_value") // gerbang unit economics — Risiko 3
 
-  tenantZones TenantZone[]
-  buyers      Buyer[]
-  shipments   Shipment[]
+  tenantZones   TenantZone[]
+  buyers        Buyer[]
+  shipments     Shipment[]
+  demandSignals DemandSignal[]
 
   @@map("zones")
 }
@@ -262,7 +271,8 @@ model Commodity {
   growingDaysMin     Int               @default(30) @map("growing_days_min") // umur tanam minimal — kewajaran panen FR-4.8 ⚠ validasi penyuluh
   gradeStandards     Json              @map("grade_standards") // definisi A/B/C per komoditas — FR-5.1
 
-  products Product[]
+  products      Product[]
+  demandSignals DemandSignal[]
 
   @@map("commodities")
 }
@@ -404,6 +414,33 @@ model HashAnchor {
 
   @@unique([batchId, anchorDate])
   @@map("hash_anchors")
+}
+
+/**
+ * Bukti permintaan yang GAGAL dilayani (FR-8.1).
+ *
+ * Tanpa tabel ini permintaan hanya terlihat dari pesanan yang berhasil — padahal
+ * justru pencarian yang nihil dan checkout yang kalah kuota-lah yang menunjukkan
+ * ke mana pasokan seharusnya ditambah.
+ */
+model DemandSignal {
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  zoneId       String           @map("zone_id") @db.Uuid
+  commodityId  String?          @map("commodity_id") @db.Uuid // null bila pencarian bebas teks
+  buyerId      String?          @map("buyer_id") @db.Uuid
+  signalType   DemandSignalType @map("signal_type")
+  // Disimpan dalam KG, bukan box: isi box berbeda antar Tenant sehingga box tidak
+  // bisa dijumlahkan lintas produk. Hanya terisi untuk KUOTA_HABIS.
+  qtyKgWanted  Decimal?         @map("qty_kg_wanted") @db.Decimal(10, 2)
+  searchTerm   String?          @map("search_term")
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  zone      Zone       @relation(fields: [zoneId], references: [id])
+  commodity Commodity? @relation(fields: [commodityId], references: [id])
+  buyer     Buyer?     @relation(fields: [buyerId], references: [id])
+
+  @@index([zoneId, commodityId, createdAt])
+  @@map("demand_signals")
 }
 
 model Subscription {

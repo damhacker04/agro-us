@@ -92,6 +92,8 @@ export const EscrowEntryType = {
   RELEASE: "RELEASE",
   REFUND: "REFUND",
   BIAYA_BATAL10: "BIAYA_BATAL10",
+  /** Dana pindah ke Tenant pengganti saat pembeli memilih SUBSTITUSI (FR-7.4). */
+  ALIH_SUBSTITUSI: "ALIH_SUBSTITUSI",
 } as const;
 export type EscrowEntryType = (typeof EscrowEntryType)[keyof typeof EscrowEntryType];
 
@@ -137,6 +139,20 @@ export const QUOTA_MULTIPLIER_PENALTY = 0.5;
 
 /** Masa tenggang langganan sebelum fitur dikunci (FR-9.4). */
 export const SUBSCRIPTION_GRACE_DAYS = 14;
+
+/**
+ * Demand Intelligence (§5.8, FR-8.x, FR-3.7).
+ *
+ * Horizon 8-16 minggu ke depan: lebih pendek dari itu Tenant tidak sempat menanam,
+ * lebih panjang dari itu tebakannya tidak lagi bertumpu pada data.
+ */
+export const DEMAND_HORIZON_WEEKS_MIN = 8;
+export const DEMAND_HORIZON_WEEKS_MAX = 16;
+/** Jendela riwayat pesanan yang dipakai menghitung laju permintaan mingguan. */
+export const DEMAND_LOOKBACK_WEEKS = 8;
+/** Cakupan pasokan terhadap permintaan (%), penanda kejenuhan — FR-8.4. */
+export const SATURATION_UNDER_PCT = 80;
+export const SATURATION_OVER_PCT = 120;
 
 // ============================== KONTRAK AUTH (FR-1.3) ==============================
 // Dipakai FE (mock/real) & BE. Endpoint: POST /auth/otp/request · POST /auth/otp/verify · GET /auth/me
@@ -786,4 +802,89 @@ export interface CatalogItem {
    * ketidaksesuaian secara terbuka (FR-4.6), bukan menyembunyikannya di balik badge.
    */
   verificationStatus: VerificationStatus;
+}
+
+// ============================== DEMAND INTELLIGENCE (§5.8) ==============================
+// Endpoint: GET /tenant/rekomendasi · GET /tenant/rekomendasi/:id/prefill (FR-8.3)
+//           GET /tenant/permintaan (agregat mentah, FR-8.1)
+
+/** FR-8.4 — penanda kejenuhan pasokan, mencegah semua Tenant menanam komoditas sama. */
+export const SATURATION_LEVELS = ["KURANG", "SEIMBANG", "JENUH", "TANPA_DATA"] as const;
+export type SaturationLevel = (typeof SATURATION_LEVELS)[number];
+
+/**
+ * Seberapa banyak data yang menopang angka permintaan. WAJIB ditampilkan bersama
+ * angkanya: Tenant mengeluarkan uang sungguhan untuk menanam, jadi tebakan berdasar
+ * dua minggu data tidak boleh terlihat sama meyakinkannya dengan delapan minggu.
+ */
+export const DEMAND_CONFIDENCE = ["TINGGI", "SEDANG", "RENDAH", "TANPA_DATA"] as const;
+export type DemandConfidence = (typeof DEMAND_CONFIDENCE)[number];
+
+/** Satu baris agregat (zona × komoditas × minggu panen) — FR-8.1. */
+export interface DemandAggregate {
+  zoneId: string;
+  zoneName: string;
+  commodityId: string;
+  commodityName: string;
+  /** Senin minggu panen, ISO date. */
+  harvestWeekStart: string;
+  harvestWeekEnd: string;
+  /** Perkiraan permintaan minggu itu, dari laju pesanan LUNAS + sinyal kuota habis. */
+  projectedKg: number;
+  /** Bagian dari `projectedKg` yang berasal dari riwayat pesanan. */
+  baselineKg: number;
+  /** Bagian yang berasal dari checkout yang kalah kuota — permintaan nyata yang gagal dilayani. */
+  unservedKg: number;
+  /** Berapa kali pembeli menyaring komoditas ini di zona ini dan hasilnya nihil. */
+  searchMissCount: number;
+  /** Total kuota yang AKAN diproduksi minggu itu (quota_box_total, bukan sisa). */
+  openQuotaKg: number;
+  /**
+   * Bagian dari `openQuotaKg` yang SUDAH dipesan & dibayar untuk minggu itu.
+   * Pembanding penting: kuota 1000 kg yang ludes terjual dan yang tak laku sama
+   * sekali punya `openQuotaKg` sama, tetapi artinya berlawanan bagi Tenant yang
+   * sedang menimbang mau menanam.
+   */
+  bookedKg: number;
+  /** Kekurangan pasokan, 0 bila sudah tertutup. */
+  gapKg: number;
+  /** openQuotaKg / projectedKg × 100. null bila permintaan belum terukur. */
+  coveragePct: number | null;
+  saturation: SaturationLevel;
+  confidence: DemandConfidence;
+  weeksObserved: number;
+  tenantsPlanting: number;
+  /** Estimasi harga terkunci per kg di zona ini — FR-8.2. null bila belum ada acuan. */
+  estPricePerKg: Rupiah | null;
+}
+
+/** Satu kartu di halaman Rekomendasi Tanam (TN-27) — FR-8.2. */
+export interface PlantingRecommendation extends DemandAggregate {
+  /** Kalimat operasional siap tampil, sudah dalam Bahasa Indonesia. */
+  sentence: string;
+  /**
+   * Batas yang masuk akal untuk SATU Tenant, dibatasi kapasitas lahannya.
+   * `gapKg` adalah kekurangan SE-ZONA yang diperebutkan bersama Tenant lain.
+   */
+  suggestedKgForYou: number;
+  suggestedBox: number;
+  /** Hari tersisa sebelum harus tanam agar sempat panen di minggu itu. */
+  daysUntilPlantingDeadline: number;
+  growingDaysMin: number;
+}
+
+/** FR-8.3 — satu ketukan dari TN-27 ke form Buka Kuota (TN-16). */
+export interface OpenQuotaPrefill {
+  commodityId: string;
+  commodityName: string;
+  suggestedQtyKgPerBox: number;
+  suggestedQuotaBox: number;
+  suggestedLockedPrice: Rupiah;
+  /** Tengah minggu panen — Tenant boleh menggeser. */
+  suggestedHarvestDate: string;
+  /** Dihitung ULANG saat prefill: kejenuhan bisa berubah antara melihat dan menekan. */
+  saturation: SaturationLevel;
+  coveragePct: number | null;
+  /** Terisi bila kejenuhan memburuk sejak kartu ditampilkan. */
+  warning?: string;
 }

@@ -1,12 +1,16 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { VerificationBadge, type CatalogItem } from "@agro-os/shared";
 import { PrismaService } from "../../prisma/prisma.service";
+import { DemandSignalService } from "../intelligence/demand-signal.service";
 import type { CatalogQueryDto } from "./catalog.dto";
 import type { VerificationStatus } from "../../../generated/prisma/enums";
 
 @Injectable()
 export class CatalogService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly signals: DemandSignalService,
+  ) {}
 
   /**
    * FR-2.6 — tiga badge yang tampil ke pembeli.
@@ -49,8 +53,16 @@ export class CatalogService {
       orderBy: { claimedHarvestDate: "asc" },
     });
 
-    return batches
-      .filter((b) => b.quotaBoxTotal - b.quotaBoxSold > 0) // kuota habis → tidak tampil
+    const tersedia = batches.filter((b) => b.quotaBoxTotal - b.quotaBoxSold > 0); // kuota habis → tidak tampil
+
+    // Pencarian yang nihil adalah permintaan yang gagal dilayani — satu-satunya jejak
+    // bahwa pembeli menginginkan komoditas ini di zona ini (FR-8.1). Tidak di-await:
+    // pencatatan analitik tidak boleh memperlambat atau menggagalkan katalog.
+    if (!tersedia.length) {
+      void this.signals.recordSearchMiss(q.zoneId, q.commodityId, q.search);
+    }
+
+    return tersedia
       .map((b) => ({
         batchId: b.id,
         productId: b.product.id,
