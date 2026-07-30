@@ -1,13 +1,12 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import {
-  CLAIM_WINDOW_FALLBACK_MS,
-  CLAIM_WINDOW_MS,
   POD_TIMEOUT_MS,
   SIGNAL_LOST_AFTER_MS,
   type ConfirmReceiptResponse,
   type TrackingSnapshot,
 } from "@agro-os/shared";
 import { PrismaService } from "../../prisma/prisma.service";
+import { ClaimWindowService } from "./claim-window.service";
 import { TrackingGateway } from "./tracking.gateway";
 
 /**
@@ -26,6 +25,7 @@ export class PodService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly gateway: TrackingGateway,
+    private readonly claimWindow: ClaimWindowService,
   ) {}
 
   /** Sinyal-2 — konfirmasi satu ketukan + foto kondisi barang. */
@@ -48,10 +48,14 @@ export class PodService {
       });
     }
 
-    const claimWindowEndsAt = new Date(Date.now() + CLAIM_WINDOW_MS);
+    const claimWindowEndsAt = new Date(Date.now() + this.claimWindow.normalMs);
     await this.settle(shipmentId, "BUYER_CONFIRM", claimWindowEndsAt, photoUrl);
 
-    this.log.log(`Pengiriman ${shipmentId.slice(0, 8)} DITERIMA — jendela klaim 2 jam`);
+    // Panjang jendela ikut dicetak, bukan ditulis "2 jam" mati: kalau nilainya
+    // dipendekkan untuk demo, log yang menyebut angka lama justru menyesatkan.
+    this.log.log(
+      `Pengiriman ${shipmentId.slice(0, 8)} DITERIMA — jendela klaim ${this.claimWindow.normalLabel}`,
+    );
     return {
       shipmentId,
       status: "DITERIMA",
@@ -77,9 +81,12 @@ export class PodService {
     });
 
     for (const s of stale) {
-      const claimWindowEndsAt = new Date(Date.now() + CLAIM_WINDOW_FALLBACK_MS);
+      const claimWindowEndsAt = new Date(Date.now() + this.claimWindow.fallbackMs);
       await this.settle(s.id, "AUTO_60MIN", claimWindowEndsAt, null);
-      this.log.log(`Pengiriman ${s.id.slice(0, 8)} DITERIMA OTOMATIS — jendela klaim 24 jam`);
+      this.log.log(
+        `Pengiriman ${s.id.slice(0, 8)} DITERIMA OTOMATIS — jendela klaim ` +
+          `${ClaimWindowService.humanize(this.claimWindow.fallbackMs)}`,
+      );
     }
     return { autoAccepted: stale.length };
   }
