@@ -3,8 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "nest start --watch",
-    "build": "nest build",
+    "postinstall": "prisma generate",
+    "dev": "prisma generate && nest start --watch",
+    "build": "prisma generate && nest build",
     "start": "node dist/src/main.js",
     "lint": "echo \"[api] lint menyusul (eslint belum diset)\"",
     "type-check": "tsc --noEmit",
