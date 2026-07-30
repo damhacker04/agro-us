@@ -41,9 +41,18 @@ export class AuthService {
     throw new BadRequestException("Nomor telepon tidak valid");
   }
 
-  /** Kode TIDAK pernah disimpan plaintext — sha256(pepper|phone|kode). */
+  /**
+   * Kode TIDAK pernah disimpan plaintext — sha256(pepper|phone|kode).
+   *
+   * Pepper WAJIB dari environment, tanpa nilai cadangan. Pepper yang diketahui publik
+   * membuat hash OTP bisa ditebak habis-habisan: ruang kodenya hanya 10^6, jadi
+   * penyerang yang membaca tabel tinggal menghitung semua kemungkinan dalam hitungan detik.
+   */
   private hashCode(phone: string, code: string): string {
-    const pepper = process.env.OTP_PEPPER ?? "agrous-dev-pepper";
+    const pepper = process.env.OTP_PEPPER;
+    if (!pepper || pepper.length < 16) {
+      throw new Error("OTP_PEPPER wajib diset dan minimal 16 karakter.");
+    }
     return createHash("sha256").update(`${pepper}|${phone}|${code}`).digest("hex");
   }
 
