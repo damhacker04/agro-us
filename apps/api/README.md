@@ -414,6 +414,25 @@ Kewajaran dihitung terhadap posisi wajar terakhir, **bukan** posisi terakhir apa
 Posisi tidak wajar **tetap disimpan** (`is_plausible = false`) — jejaknya justru bukti
 saat sengketa. Yang ditolak hanyalah perannya sebagai pemicu geofence dan sebagai pembanding.
 
+### Jendela klaim bisa dipendekkan untuk peragaan
+
+Baku 2 jam (konfirmasi pembeli) dan 24 jam (auto-terima). Untuk demo, alur
+"Diterima → jendela habis → Selesai → escrow cair" tidak mungkin ditunjukkan kalau harus
+menunggu dua jam — padahal pencairan escrow justru inti ceritanya.
+
+```
+CLAIM_WINDOW_MINUTES=3
+CLAIM_WINDOW_FALLBACK_MINUTES=5
+```
+
+**Diabaikan saat `NODE_ENV=production`**, bukan sekadar "jangan diisi": memendekkan jendela
+berarti mengurangi waktu pembeli memeriksa barang dan mengajukan klaim — merugikan pihak
+yang sudah membayar di muka. Server mencatat peringatan setiap kali override dipakai, dan
+mencatat error bila override diabaikan di produksi.
+
+Panjang jendela ikut dicetak di log, tidak ditulis "2 jam" mati — log yang menyebut angka
+lama saat nilainya dipendekkan justru menyesatkan.
+
 ### Dual-Signal PoD (§5.6.4)
 
 | Sinyal | Membuktikan |
