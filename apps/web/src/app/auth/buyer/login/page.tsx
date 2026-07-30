@@ -20,8 +20,7 @@ export default function BuyerLoginPage() {
       return;
     }
     setError("");
-    alert("Berhasil masuk!");
-    router.push("/");
+    router.push("/buyer/region");
   };
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
