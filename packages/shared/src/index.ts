@@ -623,6 +623,52 @@ export const WS_EVENTS = {
   STATUS: "shipment:status",
 } as const;
 
+// ============================== NOTIFIKASI (§5.10, FR-10.x) ==============================
+// Namespace WS terpisah dari /tracking: notifikasi bersifat per-PENGGUNA, bukan per
+// pengiriman. Pembeli tetap harus menerima putusan klaim atau kabar gagal panen walau
+// sedang tidak membuka peta pelacakan.
+
+export const NOTIF_NAMESPACE = "/notifications";
+export const NOTIF_EVENTS = {
+  SUBSCRIBE: "notif:subscribe",
+  PUSH: "notif:push",
+} as const;
+
+/**
+ * Kejadian yang diberitahukan. `KRITIS` (FR-10.1) ikut dikirim lewat saluran luar
+ * (WhatsApp/SMS); `BIASA` (FR-10.3) cukup in-app.
+ */
+export const NOTIF_KINDS = {
+  PENGIRIMAN_DIMULAI: "PENGIRIMAN_DIMULAI",
+  KURIR_MENDEKAT: "KURIR_MENDEKAT",
+  KURIR_TIBA: "KURIR_TIBA",
+  GAGAL_PANEN: "GAGAL_PANEN",
+  KLAIM_DIPUTUS: "KLAIM_DIPUTUS",
+  ESCROW_CAIR: "ESCROW_CAIR",
+} as const;
+export type NotifKind = (typeof NOTIF_KINDS)[keyof typeof NOTIF_KINDS];
+
+export type NotifSeverity = "KRITIS" | "BIASA";
+
+export interface AppNotification {
+  kind: NotifKind;
+  severity: NotifSeverity;
+  /** Judul pendek untuk baris notifikasi. */
+  title: string;
+  /** Kalimat utuh siap tampil — dirakit server supaya angka & kata berubah bersamaan. */
+  body: string;
+  shipmentId?: string;
+  orderId?: string;
+  batchId?: string;
+  /**
+   * HANYA untuk KURIR_TIBA. Jam 60 menit "konfirmasi sekarang" dimulai di tahap ini —
+   * tahap 1 & 2 sengaja TIDAK membawanya, supaya FE tidak menampilkan hitung mundur
+   * lebih awal dan membuat pembeli panik tanpa alasan (FR-10.2).
+   */
+  countdownEndsAt?: string;
+  createdAt: string;
+}
+
 // ============================== KONTRAK MUTU, SUSUT & KLAIM (§5.5) ==============================
 
 /** Ambang klaim yang diselesaikan otomatis tanpa peninjauan operator (FR-5.5/5.6). */
