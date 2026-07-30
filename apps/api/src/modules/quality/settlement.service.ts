@@ -56,17 +56,19 @@ export class SettlementService {
 
   /** Cairkan sisa escrow satu pengiriman lalu tandai Selesai. */
   private async releaseForShipment(shipmentId: string, orderId: string): Promise<number> {
+    // HOLD adalah satu-satunya arus MASUK; jenis entri apa pun selain itu adalah uang
+    // yang sudah keluar. Ditulis begini, bukan sebagai daftar putih jenis entri:
+    // daftar putih membuat jenis entri baru diam-diam terhitung nol, dan `ALIH_SUBSTITUSI`
+    // pernah persis begitu — Tenant yang gagal panen ikut dicairkan untuk barang yang
+    // sudah dialihkan ke Tenant pengganti, sementara Tenant pengganti tetap memegang
+    // hold-nya sendiri. Uangnya keluar dua kali.
     const rows = await this.prisma.$queryRaw<Array<{ tenant_id: string; sisa: bigint }>>`
       SELECT tenant_id::text,
-             SUM(CASE WHEN entry_type = 'HOLD' THEN amount
-                      WHEN entry_type IN ('POTONG_KLAIM','RELEASE30','RELEASE','REFUND') THEN -amount
-                      ELSE 0 END)::bigint AS sisa
+             SUM(CASE WHEN entry_type = 'HOLD' THEN amount ELSE -amount END)::bigint AS sisa
       FROM escrow_ledger
       WHERE shipment_id = ${shipmentId}::uuid
       GROUP BY tenant_id
-      HAVING SUM(CASE WHEN entry_type = 'HOLD' THEN amount
-                      WHEN entry_type IN ('POTONG_KLAIM','RELEASE30','RELEASE','REFUND') THEN -amount
-                      ELSE 0 END) > 0
+      HAVING SUM(CASE WHEN entry_type = 'HOLD' THEN amount ELSE -amount END) > 0
     `;
 
     let total = 0;
