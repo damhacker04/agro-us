@@ -5,11 +5,13 @@ import {
   MAX_PLAUSIBLE_JUMP_M,
   MAX_PLAUSIBLE_SPEED_KMH,
   POSITION_INTERVAL_MS,
+  POD_TIMEOUT_MS,
   PRENOTIFY_RADIUS_M,
   type ReportPositionResponse,
   type ScanTokenResponse,
   type VerifyCourierCodeResponse,
 } from "@agro-os/shared";
+import { NotificationService } from "../notification/notification.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { QrService } from "./qr.service";
 import { TrackingGateway } from "./tracking.gateway";
@@ -26,6 +28,7 @@ export class CourierService {
     private readonly prisma: PrismaService,
     private readonly qr: QrService,
     private readonly gateway: TrackingGateway,
+    private readonly notif: NotificationService,
   ) {}
 
   /**
@@ -128,8 +131,15 @@ export class CourierService {
       return s;
     });
 
-    // Notif-1 dari tiga tahap (FR-10.2). Jendela 60 menit BELUM dimulai di sini.
+    // Notif-1 dari tiga tahap (FR-10.2). Jendela 60 menit BELUM dimulai di sini,
+    // jadi notifikasinya sengaja TANPA countdownEndsAt.
     this.gateway.emitStatus(shipment.id, "DIKIRIM");
+    void this.notif.kirimKePembeliPengiriman(
+      shipment.id,
+      "PENGIRIMAN_DIMULAI",
+      "Pesanan Anda dalam perjalanan",
+      "Kurir sudah memindai QR dan berangkat. Anda bisa memantau posisinya di peta.",
+    );
     this.log.log(`Pengiriman ${shipment.id.slice(0, 8)} dikirim — sesi ${session.id.slice(0, 8)}`);
 
     const dest = await this.destinationOf(shipment.id);
@@ -203,7 +213,10 @@ export class CourierService {
       arrived = await this.markArrived(session.shipmentId);
     } else if (plausible && distance <= PRENOTIFY_RADIUS_M) {
       // Notif-2 (FR-10.2): beri pembeli waktu bersiap SEBELUM jam 60 menit mulai.
+      // Masih tanpa hitung mundur — memunculkannya di sini membuat pembeli terburu-buru
+      // padahal kurirnya bisa saja masih 15 menit lagi.
       this.gateway.emitStatus(session.shipmentId, "MENDEKAT");
+      void this.notifMendekatSekali(session.shipmentId, distance);
     }
 
     return { accepted: true, plausible, distanceToDestM: Math.round(distance), arrived };
@@ -219,11 +232,42 @@ export class CourierService {
       data: { status: "TIBA_DI_LOKASI", arrivedAt: new Date() },
     });
     if (res.count === 1) {
-      // Notif-3 — jam 60 menit dimulai DI SINI (FR-10.2).
+      // Notif-3 — jam 60 menit dimulai DI SINI (FR-10.2), dan HANYA di sini
+      // countdownEndsAt ikut dikirim. Ini satu-satunya tahap yang kritis: kalau
+      // pembeli melewatkannya, pesanan diterima otomatis tanpa dia sempat memeriksa.
       this.gateway.emitStatus(shipmentId, "TIBA_DI_LOKASI");
+      void this.notif.kirimKePembeliPengiriman(
+        shipmentId,
+        "KURIR_TIBA",
+        "Kurir sudah tiba — mohon konfirmasi",
+        "Periksa kondisi barang lalu konfirmasi penerimaan. Tanpa konfirmasi dalam 60 menit, pesanan dianggap diterima otomatis.",
+        { countdownEndsAt: new Date(Date.now() + POD_TIMEOUT_MS).toISOString() },
+      );
       this.log.log(`Pengiriman ${shipmentId.slice(0, 8)} tiba — pembeli diminta konfirmasi`);
     }
     return true;
+  }
+
+  /**
+   * Posisi dilaporkan tiap 10 detik, jadi tanpa penjaga ini pembeli akan dihujani
+   * notifikasi "kurir mendekat" sepanjang kilometer terakhir. Satu kali per pengiriman
+   * sudah cukup — tahap berikutnya (kurir tiba) yang benar-benar menuntut tindakan.
+   *
+   * Penanda disimpan di memori: kalau proses API di-restart di tengah pengiriman,
+   * pembeli mungkin menerima satu notifikasi mendekat tambahan. Ditukar sadar dengan
+   * tidak menambah kolom di tabel pengiriman hanya untuk keperluan ini.
+   */
+  private readonly sudahDiberitahuMendekat = new Set<string>();
+
+  private async notifMendekatSekali(shipmentId: string, distanceM: number) {
+    if (this.sudahDiberitahuMendekat.has(shipmentId)) return;
+    this.sudahDiberitahuMendekat.add(shipmentId);
+    await this.notif.kirimKePembeliPengiriman(
+      shipmentId,
+      "KURIR_MENDEKAT",
+      "Kurir sekitar 1 km lagi",
+      `Kurir tinggal ${Math.round(distanceM)} meter dari lokasi Anda. Siapkan penerimaan barang.`,
+    );
   }
 
   private async destinationOf(shipmentId: string) {

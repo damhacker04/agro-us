@@ -15,7 +15,7 @@ import {
   type VerifyOtpResponse,
 } from "@agro-os/shared";
 import { PrismaService } from "../../prisma/prisma.service";
-import { SmsService } from "./sms.service";
+import { SmsService } from "../notification/sms.service";
 import type { UserRole } from "../../../generated/prisma/enums";
 
 export interface JwtPayload {

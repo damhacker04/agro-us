@@ -3,10 +3,13 @@ import { ConfigService } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
-import { ConsoleSmsService, SmsService } from "./sms.service";
+import { NotificationModule } from "../notification/notification.module";
 
 @Module({
   imports: [
+    // SmsService dulu tinggal di modul ini, padahal ia port pesan generik yang
+    // kebetulan auth-lah konsumen pertamanya. Sekarang dimiliki NotificationModule.
+    NotificationModule,
     JwtModule.registerAsync({
       global: true, // JwtService dipakai guard di modul lain nanti
       inject: [ConfigService],
@@ -28,6 +31,6 @@ import { ConsoleSmsService, SmsService } from "./sms.service";
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, { provide: SmsService, useClass: ConsoleSmsService }],
+  providers: [AuthService],
 })
 export class AuthModule {}
