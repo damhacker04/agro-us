@@ -33,12 +33,53 @@ Next.js 15 PWA · NestJS · PostgreSQL + **PostGIS** · Prisma · Socket.IO · *
 ## Getting started
 
 ```bash
-pnpm install
-pnpm dev          # jalankan app JS (turbo) — satellite-worker dijalankan terpisah (Python)
+pnpm install      # sekaligus menyiapkan Prisma Client (lewat postinstall di apps/api)
+pnpm dev          # turbo membangun packages/shared dulu, lalu menyalakan web + api
 pnpm type-check
 ```
 
-> `apps/web` & `apps/api` masih placeholder; scaffold penuh dikerjakan per sprint (lihat ARCHITECTURE_PLAN §8).
+### Kalau kamu hanya mengerjakan FE
+
+`pnpm dev` menyalakan **api juga**, dan api butuh PostgreSQL + PostGIS serta `apps/api/.env`.
+Untuk kerja di `apps/web` saja, jalankan web-nya sendirian:
+
+```bash
+pnpm --filter @agro-os/web dev
+```
+
+Butuh data sungguhan? Minta salah satu anggota tim menjalankan api di komputernya, lalu
+arahkan `NEXT_PUBLIC_API_URL` ke alamat itu. Kontrak tipe di `packages/shared` sudah stabil,
+jadi mock pun tidak akan sia-sia.
+
+### Dua hal yang TIDAK ada di git — dan penyebab error "modul tidak ditemukan"
+
+Keduanya hasil olahan, jadi sengaja tidak di-commit (lihat `.gitignore`) dan dibuat ulang di
+tiap komputer. Kalau salah satu belum ada, TypeScript melaporkan **ratusan** error yang
+sebenarnya berasal dari satu sebab:
+
+| Yang belum ada | Gejalanya | Dibuat oleh |
+| --- | --- | --- |
+| `apps/api/generated/prisma` | `Property 'batch' does not exist on type 'PrismaService'` (dan puluhan tabel lain) | `postinstall` → `prisma generate` |
+| `packages/shared/dist` | `Cannot find module '@agro-os/shared'` | task `build`, dipicu `dependsOn: ["^build"]` |
+
+Sekarang keduanya otomatis. Kalau tetap muncul, jalankan pemulihan manualnya:
+
+```bash
+pnpm install && pnpm --filter @agro-os/shared build
+```
+
+### Menjalankan api penuh (butuh database)
+
+```bash
+cp apps/api/.env.example apps/api/.env    # lalu isi JWT_SECRET & OTP_PEPPER
+```
+
+API **menolak boot** tanpa `JWT_SECRET` — itu disengaja, secret cadangan hardcoded sudah
+dihapus. Cara tercepat menyiapkan databasenya ada di `apps/api/.env.example`.
+
+Di Windows, kalau Docker Desktop gagal start dengan pesan *"remove …/dockerInference: The
+file cannot be accessed by the system"*, jalankan `scripts/fix-docker.ps1` — penyebabnya
+socket sisa dari proses yang mati tidak wajar, dijelaskan di dalam skripnya.
 
 ## Workflow git
 

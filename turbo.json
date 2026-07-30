@@ -2,6 +2,11 @@
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
     "dev": {
+      // `^build` = bangun paket hulu dulu. packages/shared di-import lewat
+      // dist/-nya, dan dist/ tidak ikut di git — tanpa baris ini `pnpm dev` di
+      // clone baru menyalakan api & web sebelum shared ada, lalu banjir
+      // "Cannot find module '@agro-os/shared'".
+      "dependsOn": ["^build"],
       "cache": false,
       "persistent": true
     },
