@@ -414,6 +414,25 @@ Kewajaran dihitung terhadap posisi wajar terakhir, **bukan** posisi terakhir apa
 Posisi tidak wajar **tetap disimpan** (`is_plausible = false`) — jejaknya justru bukti
 saat sengketa. Yang ditolak hanyalah perannya sebagai pemicu geofence dan sebagai pembanding.
 
+### Jendela klaim bisa dipendekkan untuk peragaan
+
+Baku 2 jam (konfirmasi pembeli) dan 24 jam (auto-terima). Untuk demo, alur
+"Diterima → jendela habis → Selesai → escrow cair" tidak mungkin ditunjukkan kalau harus
+menunggu dua jam — padahal pencairan escrow justru inti ceritanya.
+
+```
+CLAIM_WINDOW_MINUTES=3
+CLAIM_WINDOW_FALLBACK_MINUTES=5
+```
+
+**Diabaikan saat `NODE_ENV=production`**, bukan sekadar "jangan diisi": memendekkan jendela
+berarti mengurangi waktu pembeli memeriksa barang dan mengajukan klaim — merugikan pihak
+yang sudah membayar di muka. Server mencatat peringatan setiap kali override dipakai, dan
+mencatat error bila override diabaikan di produksi.
+
+Panjang jendela ikut dicetak di log, tidak ditulis "2 jam" mati — log yang menyebut angka
+lama saat nilainya dipendekkan justru menyesatkan.
+
 ### Dual-Signal PoD (§5.6.4)
 
 | Sinyal | Membuktikan |
@@ -760,3 +779,62 @@ terjual (FR-9.3).
 6. **Siklus penuh FR-9 belum ada**: tagihan berulang, transisi terjadwal
    ACTIVE→GRACE→EXPIRED, dan notifikasi sebelum penguncian. Aktivasi masih simulasi tanpa
    pembayaran, seperti modul order.
+
+---
+
+## Modul Notifikasi (§5.10, FR-10.1 s.d. 10.3) — `feat/notifikasi-kejadian`
+
+| Saluran | Untuk | Dasar |
+| --- | --- | --- |
+| WebSocket `/notifications` | **semua** tingkat, in-app | FR-10.3 |
+| SmsService (WhatsApp/SMS) | **hanya** yang `KRITIS` | FR-10.1 |
+
+### Kenapa namespace terpisah dari `/tracking`
+
+Notifikasi bersifat per-**pengguna**, bukan per pengiriman. Pembeli tetap harus menerima
+putusan klaim atau kabar gagal panen meski sedang tidak membuka peta pelacakan — kalau
+ditumpangkan ke room pengiriman, justru kejadian terpentingnya yang tidak sampai.
+
+Room dikunci pada `userId`, jadi satu langganan cukup untuk seluruh pesanan pengguna itu.
+
+### Kenapa tidak semua dikirim ke WhatsApp
+
+| Kejadian | Tingkat |
+| --- | --- |
+| `PENGIRIMAN_DIMULAI` | BIASA |
+| `KURIR_MENDEKAT` | BIASA |
+| `KURIR_TIBA` | **KRITIS** |
+| `GAGAL_PANEN` | **KRITIS** |
+| `KLAIM_DIPUTUS` | **KRITIS** |
+| `ESCROW_CAIR` | **KRITIS** |
+
+Mengirim tiap pembaruan ke WhatsApp akan membuat penerimanya membisukan nomor AgroUs dalam
+sepekan — dan saat kurir benar-benar tiba, pesan yang paling penting justru ikut tidak
+terbaca. Yang masuk daftar KRITIS hanyalah kejadian yang **menuntut tindakan** atau
+**menyangkut uang**.
+
+### Hitung mundur hanya di tahap ketiga
+
+`countdownEndsAt` HANYA ikut pada `KURIR_TIBA` — di situlah jam 60 menit benar-benar mulai
+(FR-10.2). Tahap 1 & 2 sengaja tidak membawanya: memunculkan hitung mundur saat kurir masih
+1 km jauhnya membuat pembeli terburu-buru tanpa alasan.
+
+### Notifikasi mendekat hanya sekali
+
+Posisi kurir dilaporkan tiap 10 detik. Tanpa penjaga, pembeli akan dihujani notifikasi
+sepanjang kilometer terakhir. Penandanya disimpan **di memori**: bila proses API di-restart
+di tengah pengiriman, pembeli mungkin menerima satu notifikasi mendekat tambahan — ditukar
+sadar dengan tidak menambah kolom di tabel pengiriman hanya untuk keperluan ini.
+
+### ⚠️ Belum selesai
+
+1. **`ConsoleSmsService` masih penyedia satu-satunya** — pesan "terkirim" hanya tercetak ke
+   log server. Penyaluran nyata tinggal menukar binding di `NotificationModule`; logika
+   `NotificationService` tidak perlu berubah.
+2. **Room `/notifications` belum diautentikasi**, sama seperti `/tracking`. `userId` berupa
+   UUID acak sehingga tidak bisa ditebak, tetapi handshake wajib memverifikasi JWT sebelum
+   produksi.
+3. **Notifikasi tidak disimpan** — tidak ada riwayat "kotak masuk". Pengguna yang sedang
+   offline melewatkan pancaran in-app-nya; hanya yang KRITIS yang tetap sampai lewat SMS.
+4. **Tenant belum diberi tahu** saat pembeli mengajukan klaim atau memilih opsi Harvest
+   Assurance — baru sisi pembeli yang tersambung, ditambah `ESCROW_CAIR` untuk Tenant.

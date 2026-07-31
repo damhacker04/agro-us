@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import exifr from "exifr";
+import { NotificationService } from "../notification/notification.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { AllocationService } from "../assurance/allocation.service";
@@ -29,6 +30,7 @@ export class TimelineService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly allocation: AllocationService,
+    private readonly notif: NotificationService,
   ) {}
 
   /**
@@ -192,7 +194,42 @@ export class TimelineService {
       await this.allocation.applyShortfallPenalty(batch.product.tenantId);
     }
 
+    // FR-10.1 — gagal panen & shortfall termasuk kejadian kritis. Pembeli yang sudah
+    // MEMBAYAR di muka harus tahu secepatnya, bukan menunggu ia membuka aplikasi:
+    // dari sinilah tenggat memilih opsi Harvest Assurance mulai berjalan.
+    if (dto.activityType === "PANEN" || dto.activityType === "GAGAL_PANEN") {
+      void this.beritahuShortfall(batchId, dto.activityType === "GAGAL_PANEN");
+    }
+
     return this.getNode(batchId, nodeId);
+  }
+
+  /** Kabari tiap pembeli yang pesanannya tidak terpenuhi penuh pada batch ini. */
+  private async beritahuShortfall(batchId: string, gagalTotal: boolean) {
+    const kurang = await this.prisma.orderItem.findMany({
+      where: { batchId, qtyBoxFulfilled: { not: null } },
+      select: {
+        id: true,
+        qtyBox: true,
+        qtyBoxFulfilled: true,
+        shipmentId: true,
+        order: { select: { buyer: { select: { userId: true } } } },
+      },
+    });
+
+    for (const it of kurang) {
+      const terpenuhi = it.qtyBoxFulfilled ?? 0;
+      if (terpenuhi >= it.qtyBox) continue;
+      const selisih = it.qtyBox - terpenuhi;
+      await this.notif.kirim(
+        it.order.buyer.userId,
+        "GAGAL_PANEN",
+        gagalTotal ? "Panen gagal — pesanan Anda terdampak" : "Panen tidak mencukupi pesanan Anda",
+        `Dari ${it.qtyBox} box yang Anda pesan, ${terpenuhi} box tersedia (kurang ${selisih} box). ` +
+          "Silakan pilih substitusi, penjadwalan ulang, atau pengembalian dana.",
+        { batchId, shipmentId: it.shipmentId },
+      );
+    }
   }
 
   /** Aturan urutan & kewajaran aktivitas. */
