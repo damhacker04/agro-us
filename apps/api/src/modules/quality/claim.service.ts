@@ -6,6 +6,7 @@ import {
   type ClaimResponse,
   type ClaimRoute,
 } from "@agro-os/shared";
+import { NotificationService } from "../notification/notification.service";
 import { PrismaService } from "../../prisma/prisma.service";
 
 /** Klien di dalam $transaction — tipe resmi Prisma, bukan bentuk struktural buatan sendiri. */
@@ -22,7 +23,10 @@ type Tx = Parameters<Parameters<PrismaService["$transaction"]>[0]>[0];
 export class ClaimService {
   private readonly log = new Logger(ClaimService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notif: NotificationService,
+  ) {}
 
   /**
    * FR-5.4 — ajukan klaim. Seluruh angka dihitung SERVER dari berat timbang;
@@ -193,6 +197,17 @@ export class ClaimService {
     });
 
     await this.refreshClaimRatio(tenantId);
+
+    // FR-10.1 — putusan klaim kritis: menentukan apakah uang pembeli kembali.
+    void this.notif.kirimKePembeliPengiriman(
+      claim.shipmentId,
+      "KLAIM_DIPUTUS",
+      approvedValue > 0 ? "Klaim Anda disetujui" : "Klaim Anda ditolak",
+      approvedValue > 0
+        ? `Rp${approvedValue.toLocaleString("id-ID")} dikembalikan ke rekening Anda. Catatan operator: ${note}`
+        : `Klaim tidak disetujui. Catatan operator: ${note}`,
+    );
+
     this.log.log(`Klaim ${claimId.slice(0, 8)} diputus operator: Rp${approvedValue.toLocaleString("id-ID")}`);
     return this.toResponse(claimId);
   }

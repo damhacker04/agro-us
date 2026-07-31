@@ -1,4 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
+import { NotificationService } from "../notification/notification.service";
 import { PrismaService } from "../../prisma/prisma.service";
 
 /**
@@ -15,7 +16,10 @@ import { PrismaService } from "../../prisma/prisma.service";
 export class SettlementService {
   private readonly log = new Logger(SettlementService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notif: NotificationService,
+  ) {}
 
   /**
    * Tutup jendela klaim yang sudah lewat, lalu cairkan sisanya.
@@ -72,9 +76,11 @@ export class SettlementService {
     `;
 
     let total = 0;
+    const dicairkan: Array<{ tenantId: string; amount: number }> = [];
     await this.prisma.$transaction(async (tx) => {
       for (const r of rows) {
         const amount = Number(r.sisa);
+        dicairkan.push({ tenantId: r.tenant_id, amount });
         await tx.escrowLedgerEntry.create({
           data: {
             orderId,
@@ -92,6 +98,24 @@ export class SettlementService {
         data: { status: "SELESAI", completedAt: new Date() },
       });
     });
+
+    // FR-10.1 — pencairan escrow kritis bagi Tenant: inilah saat uangnya benar-benar
+    // lepas dari tahanan. Dikirim SETELAH transaksi, supaya notifikasi tidak pernah
+    // mendahului pencairan yang ternyata gagal.
+    for (const d of dicairkan) {
+      const t = await this.prisma.tenant.findUnique({
+        where: { id: d.tenantId },
+        select: { userId: true },
+      });
+      if (!t) continue;
+      void this.notif.kirim(
+        t.userId,
+        "ESCROW_CAIR",
+        "Dana pesanan dicairkan",
+        `Rp${d.amount.toLocaleString("id-ID")} dilepas dari escrow untuk pengiriman yang sudah selesai.`,
+        { orderId, shipmentId },
+      );
+    }
     return total;
   }
 
