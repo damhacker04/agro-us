@@ -78,6 +78,22 @@ export class SettlementService {
     let total = 0;
     const dicairkan: Array<{ tenantId: string; amount: number }> = [];
     await this.prisma.$transaction(async (tx) => {
+      // KLAIM pengirimannya LEBIH DULU, baru tulis ledger.
+      //
+      // Sebelumnya entri RELEASE ditulis dulu dan status diubah belakangan. Selama job
+      // ini hanya dipanggil manual, urutannya tidak terasa; begitu dijadwalkan cron —
+      // apalagi bila API berjalan lebih dari satu instans — dua proses bisa sama-sama
+      // membaca `sisa > 0` lalu sama-sama menulis RELEASE, dan Tenant dibayar dua kali.
+      // Ledger append-only, jadi kelebihan itu tidak bisa dihapus, hanya dikoreksi.
+      //
+      // `updateMany` dengan syarat status DITERIMA bersifat atomik: hanya satu proses
+      // memperoleh count 1, sisanya keluar tanpa menulis apa pun.
+      const klaim = await tx.shipment.updateMany({
+        where: { id: shipmentId, status: "DITERIMA" },
+        data: { status: "SELESAI", completedAt: new Date() },
+      });
+      if (klaim.count !== 1) return;
+
       for (const r of rows) {
         const amount = Number(r.sisa);
         dicairkan.push({ tenantId: r.tenant_id, amount });
@@ -93,10 +109,6 @@ export class SettlementService {
         });
         total += amount;
       }
-      await tx.shipment.updateMany({
-        where: { id: shipmentId, status: "DITERIMA" },
-        data: { status: "SELESAI", completedAt: new Date() },
-      });
     });
 
     // FR-10.1 — pencairan escrow kritis bagi Tenant: inilah saat uangnya benar-benar
