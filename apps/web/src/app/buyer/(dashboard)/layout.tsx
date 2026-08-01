@@ -76,8 +76,6 @@ export default function BuyerDashboardLayout({
                   : "text-gray-600 hover:bg-gray-50"
               }`}
             >
-              <Clock className="w-5 h-5" />
-              Riwayat Transaksi
             </Link>
           </nav>
         </div>

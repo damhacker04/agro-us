@@ -30,7 +30,8 @@ const NDVI_DATA = [
   { date: "05 Ags", ndvi: 0.6 }, // Harvest drop
 ];
 
-export default function ProductDetailPage({ params }: { params: { id: string } }) {
+export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const unwrappedParams = React.use(params);
   const [activeTab, setActiveTab] = useState<"specs" | "timeline" | "ndvi">("specs");
 
   return (
