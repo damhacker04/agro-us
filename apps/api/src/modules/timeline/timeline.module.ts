@@ -21,6 +21,6 @@ import { AnchorService } from "./anchor.service";
     // disk container bersifat ephemeral, lihat storage.service.ts.
     { provide: StorageService, useClass: LocalDiskStorageService },
   ],
-  exports: [TimelineService],
+  exports: [TimelineService, AnchorService],
 })
 export class TimelineModule {}

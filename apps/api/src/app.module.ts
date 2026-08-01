@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import { ScheduleModule } from "@nestjs/schedule";
 import { HealthController } from "./health.controller";
 import { PrismaModule } from "./prisma/prisma.module";
 import { AuthModule } from "./modules/auth/auth.module";
@@ -11,11 +12,13 @@ import { LogisticsModule } from "./modules/logistics/logistics.module";
 import { QualityModule } from "./modules/quality/quality.module";
 import { IntelligenceModule } from "./modules/intelligence/intelligence.module";
 import { SubscriptionModule } from "./modules/subscription/subscription.module";
+import { JobsModule } from "./modules/jobs/jobs.module";
 import { AssuranceModule } from "./modules/assurance/assurance.module";
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }), // baca .env
+    ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
     TenantModule,
@@ -27,6 +30,7 @@ import { AssuranceModule } from "./modules/assurance/assurance.module";
     AssuranceModule,
     IntelligenceModule,
     SubscriptionModule,
+    JobsModule,
   ],
   controllers: [HealthController],
 })

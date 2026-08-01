@@ -11,6 +11,6 @@ import { EscrowService } from "./escrow.service";
   imports: [IntelligenceModule],
   controllers: [BuyerController, OrderController, PaymentController],
   providers: [BuyerService, OrderService, PaymentService, EscrowService],
-  exports: [EscrowService, BuyerService],
+  exports: [EscrowService, BuyerService, PaymentService],
 })
 export class OrderModule {}
