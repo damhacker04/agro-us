@@ -838,3 +838,54 @@ sadar dengan tidak menambah kolom di tabel pengiriman hanya untuk keperluan ini.
    offline melewatkan pancaran in-app-nya; hanya yang KRITIS yang tetap sampai lewat SMS.
 4. **Tenant belum diberi tahu** saat pembeli mengajukan klaim atau memilih opsi Harvest
    Assurance — baru sisi pembeli yang tersambung, ditambah `ESCROW_CAIR` untuk Tenant.
+
+---
+
+## Penjadwalan Job Berkala — `feat/penjadwalan-job`
+
+Sebelum ini seluruh job hanya punya endpoint dan tidak pernah dipanggil siapa pun.
+Akibatnya sistem **macet di tengah**: pengiriman berhenti selamanya di "Diterima" karena
+jendela klaim tak pernah ditutup, dan escrow Tenant tak pernah cair.
+
+| Job | Jadwal | Tugas |
+| --- | --- | --- |
+| `auto-terima` | tiap 5 menit | Fallback 60 menit §5.6.4 |
+| `cairkan-escrow` | tiap 5 menit | Tutup jendela klaim → Selesai → cairkan (FR-7.2) |
+| `lepas-tagihan-kedaluwarsa` | tiap 5 menit | Lepas kuota yang dikunci tagihan mati |
+| `jangkar-hash` | 01:15 harian | Root hash tiap batch (§6.1) |
+| `penalti-kuota` | 02:30 harian | Hitung ulang `quota_multiplier` (FR-7.12) |
+
+Endpoint manualnya **tetap ada** — dipakai saat peragaan dan pemulihan.
+
+### Kenapa pelepasan kuota perlu jadwal sendiri
+
+`expireStale` sebelumnya hanya berjalan **menumpang** saat ada pembeli lain checkout.
+Kuota bisa tertahan berhari-hari kalau zona itu sedang sepi — padahal justru saat sepi
+kuota paling perlu dilepas.
+
+### Kenapa penalti kuota perlu ditinjau harian
+
+Perhitungannya sudah berjalan tiap kali panen ditutup, tetapi **pemulihannya** tidak:
+`quota_multiplier` hanya naik kembali bila fungsinya dipanggil lagi, dan itu baru terjadi
+saat Tenant punya panen berikutnya. Tenant yang sedang kena penalti justru paling sedikit
+panennya, jadi tanpa job ini ia terkunci di 0,50 lebih lama daripada yang ditetapkan
+kebijakan.
+
+### Balapan pencairan yang diperbaiki sekalian
+
+`releaseForShipment` dulu menulis entri `RELEASE` **lebih dulu**, status pengiriman
+diubah belakangan. Selama job hanya dipanggil manual, urutannya tidak terasa. Begitu
+dijadwalkan — apalagi bila API berjalan lebih dari satu replika — dua proses bisa
+sama-sama membaca sisa escrow lalu sama-sama menulis `RELEASE`, dan **Tenant dibayar dua
+kali**. Ledger append-only, jadi kelebihannya tidak bisa dihapus, hanya dikoreksi.
+
+Sekarang pengirimannya **diklaim lebih dulu** lewat `updateMany ... WHERE status =
+'DITERIMA'` yang atomik: hanya satu proses memperoleh `count = 1`, sisanya keluar tanpa
+menulis apa pun.
+
+### ⚠️ Satu instans saja
+
+Bila API dijalankan lebih dari satu proses/replika, setiap replika menjalankan jadwal
+yang sama. Job-nya idempoten, tetapi pekerjaan gandanya pemborosan. Sebelum menskalakan
+mendatar: setel `CRON_ENABLED=false` di replika selain satu, atau pindahkan ke penjadwal
+terpisah.
