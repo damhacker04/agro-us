@@ -15,13 +15,12 @@ export default function TenantLoginPage() {
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     // Dummy validation for frontend demo
-    if (email !== "tanifarm@gmail.com" || password !== "Agrous123_") {
+    if (email !== "andi@email.com" || password !== "Agrous123_") {
       setError("Email atau sandi tidak sesuai dengan data yang terdaftar.");
       return;
     }
     setError("");
-    alert("Berhasil masuk!");
-    router.push("/");
+    router.push("/tenant/onboarding/profile");
   };
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
@@ -78,7 +77,7 @@ export default function TenantLoginPage() {
                 </label>
                 <input
                   type="email"
-                  placeholder="tanifarm@gmail.com"
+                  placeholder="andi@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
