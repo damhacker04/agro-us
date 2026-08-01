@@ -66,7 +66,7 @@ export default function BuyerDashboardLayout({
               }`}
             >
               <ShoppingCart className="w-5 h-5" />
-              Pesanan Aktif
+              Pesanan Saya
             </Link>
             <Link
               href="/buyer/history"
