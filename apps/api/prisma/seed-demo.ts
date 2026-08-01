@@ -96,12 +96,24 @@ const BUYERS = [
 ] as const;
 
 /**
+ * Nama batch unggulan: satu-satunya yang punya Verified Timeline lengkap, dan sengaja
+ * dibuat SIAP PANEN HARI INI (`panenHari: 0`).
+ *
+ * Alasannya praktis. Pagar umur tanam (FR-4.8) menolak PANEN yang lebih cepat dari
+ * `growingDaysMin` komoditasnya — wortel 90 hari. Kalau batch unggulan panennya masih
+ * belasan hari lagi, catatan penanamannya pun belum genap 90 hari, sehingga peragaan
+ * "tandai panen → cetak QR → kurir antar → pembeli konfirmasi" MENTOK di langkah
+ * pertama dan pagarnya terlihat seperti bug padahal bekerja benar.
+ */
+export const BATCH_UNGGULAN = "Wortel Pujon Grade A";
+
+/**
  * Katalog demo. `verifikasi` sengaja bervariasi supaya ketiga badge (FR-2.6) tampil
  * berdampingan di katalog — termasuk PERLU_DITINJAU, yang menurut FR-4.6 memang harus
  * terlihat pembeli, bukan disembunyikan.
  */
 const KATALOG = [
-  { tenant: "pujon", lahan: 0, komoditas: "Wortel", produk: "Wortel Pujon Grade A", grade: "A", hargaBox: 145_000, kgBox: 10, kuota: 180, panenHari: 12, verifikasi: "TERVERIFIKASI" },
+  { tenant: "pujon", lahan: 0, komoditas: "Wortel", produk: BATCH_UNGGULAN, grade: "A", hargaBox: 145_000, kgBox: 10, kuota: 180, panenHari: 0, verifikasi: "TERVERIFIKASI" },
   { tenant: "pujon", lahan: 0, komoditas: "Kubis", produk: "Kubis Krop Padat Pujon", grade: "A", hargaBox: 95_000, kgBox: 12, kuota: 150, panenHari: 26, verifikasi: "TERVERIFIKASI" },
   { tenant: "pujon", lahan: 1, komoditas: "Sawi Hijau (Caisim)", produk: "Caisim Segar Pujon", grade: "B", hargaBox: 78_000, kgBox: 8, kuota: 120, panenHari: 9, verifikasi: "FOTO_SAJA" },
   { tenant: "batu", lahan: 0, komoditas: "Selada", produk: "Selada Keriting Batu", grade: "A", hargaBox: 132_000, kgBox: 6, kuota: 90, panenHari: 15, verifikasi: "TERVERIFIKASI" },
@@ -115,6 +127,7 @@ const KRONOLOGI = [
   { hariSebelumPanen: 92, jenis: "PENANAMAN", foto: "penanaman.jpg", teks: "Penanaman benih wortel varietas lokal, jarak tanam 5 cm dalam barisan." },
   { hariSebelumPanen: 64, jenis: "PEMUPUKAN", foto: "pemupukan.jpg", teks: "Pemupukan susulan NPK sesuai anjuran penyuluh, dilanjutkan penyiangan gulma." },
   { hariSebelumPanen: 40, jenis: "PENGAIRAN", foto: "pengairan.jpg", teks: "Pengairan rutin pagi hari, kondisi tanaman sehat dan seragam." },
+  { hariSebelumPanen: 18, jenis: "PENGENDALIAN_HAMA", foto: "pemupukan.jpg", teks: "Pengendalian ulat daun dengan pestisida nabati, serangan terpantau ringan." },
 ] as const;
 
 // ============================== EKSEKUSI ==============================
@@ -230,14 +243,18 @@ async function main() {
   console.log(`✔ ${KATALOG.length} produk siap tampil di katalog (badge bervariasi)`);
 
   // ---------- Verified Timeline untuk batch unggulan ----------
-  const unggulan = batchId.get("Wortel Pujon Grade A")!;
+  const unggulan = batchId.get(BATCH_UNGGULAN)!;
+  const panenHariUnggulan = KATALOG.find((k) => k.produk === BATCH_UNGGULAN)!.panenHari;
   const titik = TENANTS[0].lahan[0];
   let prevHash: string | null = null;
   let seq = 0;
 
   for (const n of KRONOLOGI) {
     seq += 1;
-    const deviceTs = hariLalu(n.hariSebelumPanen - 12); // panen batch ini 12 hari lagi
+    // Diukur mundur dari tanggal panen batch ini, BUKAN dari angka tetap. Sebelumnya
+    // pengurangnya ditulis mati (12) sehingga begitu jadwal panen digeser, node
+    // penanaman ikut bergeser dan diam-diam melanggar pagar umur tanam.
+    const deviceTs = hariLalu(n.hariSebelumPanen - panenHariUnggulan);
     const foto = await simpanFoto(n.foto);
     const input: NodeHashInput = {
       batchId: unggulan,
@@ -372,7 +389,7 @@ async function main() {
   }
 
   const pesanan = [
-    { pembeli: "katering", produk: "Wortel Pujon Grade A", qtyBox: 24, status: "MENUNGGU_PANEN" as const },
+    { pembeli: "katering", produk: BATCH_UNGGULAN, qtyBox: 24, status: "MENUNGGU_PANEN" as const },
     { pembeli: "resto", produk: "Kubis Krop Padat Pujon", qtyBox: 30, status: "DIKIRIM" as const },
     { pembeli: "katering", produk: "Selada Keriting Batu", qtyBox: 20, status: "DITERIMA" as const },
     { pembeli: "resto", produk: "Caisim Segar Pujon", qtyBox: 34, status: "SELESAI" as const },
