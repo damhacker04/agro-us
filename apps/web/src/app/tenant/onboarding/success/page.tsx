@@ -91,7 +91,7 @@ export default function PendaftaranDitinjauPage() {
 
         {/* Actions */}
         <button 
-          onClick={() => router.push("/")}
+          onClick={() => router.push("/tenant")}
           className="w-full bg-[#0a381f] text-white font-semibold py-3.5 rounded-xl flex items-center justify-center gap-2 hover:bg-[#114b2d] transition shadow-md mb-4"
         >
           Masuk ke Dashboard Tenant <ArrowRight className="w-4 h-4" />
