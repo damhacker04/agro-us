@@ -29,9 +29,6 @@ export default function LandingPage() {
           <span className="text-xl font-bold font-fredoka">AgroUs</span>
         </div>
         <div className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-500">
-          <a href="#" className="text-emerald-900 border-b-2 border-emerald-900 pb-1">Beranda</a>
-          <a href="#" className="hover:text-emerald-900">Solusi</a>
-          <a href="#" className="hover:text-emerald-900">Harga</a>
         </div>
         <div className="w-24"></div> {/* Placeholder for balance */}
       </nav>
