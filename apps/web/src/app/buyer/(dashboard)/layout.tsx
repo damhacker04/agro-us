@@ -102,45 +102,47 @@ export default function BuyerDashboardLayout({
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0">
         {/* Top Header */}
-        <header className="sticky top-0 z-10 bg-white border-b border-gray-100 px-8 py-5">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-4">
-              <h1 className="text-2xl font-bold text-emerald-950">
-                Katalog: Kota Malang
-              </h1>
-              <Link 
-                href="/buyer/region"
-                className="px-4 py-1.5 border border-gray-300 rounded-full text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                Ganti Wilayah
-              </Link>
+        {!pathname.includes("/buyer/orders") && (
+          <header className="sticky top-0 z-10 bg-white border-b border-gray-100 px-8 py-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-4">
+                <h1 className="text-2xl font-bold text-emerald-950">
+                  Katalog: Kota Malang
+                </h1>
+                <Link 
+                  href="/buyer/region"
+                  className="px-4 py-1.5 border border-gray-300 rounded-full text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Ganti Wilayah
+                </Link>
+              </div>
+              <div className="flex items-center gap-6">
+                <button className="relative text-gray-600 hover:text-emerald-700 transition">
+                  <ShoppingCart className="w-6 h-6" />
+                  <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border border-white">
+                    3
+                  </span>
+                </button>
+                <button className="text-gray-600 hover:text-emerald-700 transition">
+                  <Bell className="w-6 h-6" />
+                </button>
+                <button className="text-gray-600 hover:text-emerald-700 transition">
+                  <User className="w-6 h-6" />
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-6">
-              <button className="relative text-gray-600 hover:text-emerald-700 transition">
-                <ShoppingCart className="w-6 h-6" />
-                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border border-white">
-                  3
-                </span>
-              </button>
-              <button className="text-gray-600 hover:text-emerald-700 transition">
-                <Bell className="w-6 h-6" />
-              </button>
-              <button className="text-gray-600 hover:text-emerald-700 transition">
-                <User className="w-6 h-6" />
-              </button>
+            
+            {/* Search Bar */}
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Cari Sawi, Tomat, Cabe..."
+                className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-sm shadow-sm"
+              />
             </div>
-          </div>
-          
-          {/* Search Bar */}
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Cari Sawi, Tomat, Cabe..."
-              className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-sm shadow-sm"
-            />
-          </div>
-        </header>
+          </header>
+        )}
 
         {/* Page Content */}
         <div className="flex-1 bg-white">

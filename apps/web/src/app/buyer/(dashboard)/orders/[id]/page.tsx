@@ -87,7 +87,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </div>
           <button 
             onClick={() => setStatus("completed")}
-            className="bg-lime-700 hover:bg-lime-800 text-white font-bold px-8 py-3 rounded-lg shadow-sm transition shrink-0"
+            className="bg-[#657711] hover:bg-[#52600d] text-white font-bold px-8 py-3 rounded-lg shadow-sm transition shrink-0"
           >
             DITERIMA
           </button>
@@ -334,8 +334,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
               <div className="relative text-xs">
                 <div className="absolute -left-[30px] top-0 w-4 h-4 rounded-full bg-emerald-700 flex items-center justify-center text-white"><CheckCircle2 className="w-3 h-3" /></div>
-                <div className="font-bold text-gray-900">Konsolidasi Kargo di Hub</div>
-                <div className="text-[10px] text-gray-400">03 Ags 2026, 16:15 WIB</div>
+                <div className="font-bold text-gray-900">Packing</div>
+                <div className="text-[10px] text-gray-400">03 Ags 2026, 12:45 WIB</div>
               </div>
 
               <div className="relative text-xs">
@@ -344,8 +344,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                 }`}>
                   {status === "completed" ? <CheckCircle2 className="w-3 h-3" /> : <div className="w-1.5 h-1.5 bg-white rounded-full"></div>}
                 </div>
-                <div className={`font-bold ${status === "completed" || status === "approaching" || status === "arrived" ? (status === "completed" ? "text-gray-900" : "text-blue-600") : "text-gray-400"}`}>Dalam Perjalanan ke HORECA</div>
-                <div className="text-[10px] text-gray-400">Sedang dalam pengiriman - Kurir Budi Santoso</div>
+                <div className={`font-bold ${status === "completed" || status === "approaching" || status === "arrived" ? (status === "completed" ? "text-gray-900" : "text-blue-600") : "text-gray-400"}`}>Dikirim</div>
+                <div className="text-[10px] text-gray-400">15 Ags 2026, 19:48 WIB</div>
+                {status !== "completed" && <div className="text-[10px] text-blue-600 mt-1 font-semibold">Sedang dalam pengiriman - Kurir Budi Santoso</div>}
               </div>
 
               <div className="relative text-xs">
