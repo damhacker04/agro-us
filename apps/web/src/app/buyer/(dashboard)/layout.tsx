@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { 
   Search, 
   ShoppingCart, 
@@ -22,6 +22,19 @@ export default function BuyerDashboardLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const city = searchParams.get("city") || "Semua Wilayah";
+
+  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const term = e.target.value;
+    const params = new URLSearchParams(searchParams);
+    if (term) {
+      params.set("q", term);
+    } else {
+      params.delete("q");
+    }
+    router.replace(`${pathname}?${params.toString()}`);
+  };
 
   const handleLogout = () => {
     router.push("/auth/buyer/login");
@@ -49,7 +62,7 @@ export default function BuyerDashboardLayout({
             <Link
               href="/buyer/catalog"
               className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-colors ${
-                pathname.includes("/buyer/catalog") || pathname.includes("/buyer/product")
+                pathname.includes("/buyer/catalog") || pathname.includes("/buyer/product") || pathname.includes("/buyer/cart") || pathname.includes("/buyer/checkout")
                   ? "bg-emerald-900 text-white"
                   : "text-gray-600 hover:bg-gray-50"
               }`}
@@ -106,7 +119,7 @@ export default function BuyerDashboardLayout({
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-4">
               <h1 className="text-2xl font-bold text-emerald-950">
-                Katalog: Kota Malang
+                Katalog: {city}
               </h1>
               <Link 
                 href="/buyer/region"
@@ -116,12 +129,12 @@ export default function BuyerDashboardLayout({
               </Link>
             </div>
             <div className="flex items-center gap-6">
-              <button className="relative text-gray-600 hover:text-emerald-700 transition">
+              <Link href="/buyer/cart" className="relative text-gray-600 hover:text-emerald-700 transition">
                 <ShoppingCart className="w-6 h-6" />
                 <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border border-white">
                   3
                 </span>
-              </button>
+              </Link>
               <button className="text-gray-600 hover:text-emerald-700 transition">
                 <Bell className="w-6 h-6" />
               </button>
@@ -137,6 +150,8 @@ export default function BuyerDashboardLayout({
             <input
               type="text"
               placeholder="Cari Sawi, Tomat, Cabe..."
+              defaultValue={searchParams.get("q") || ""}
+              onChange={handleSearch}
               className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-sm shadow-sm"
             />
           </div>

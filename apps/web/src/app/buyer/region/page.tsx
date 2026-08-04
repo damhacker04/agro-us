@@ -3,35 +3,46 @@
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, ChevronRight, MapPin } from "lucide-react";
-
-const REGIONS = [
-  {
-    province: "JAWA TIMUR",
-    cities: [
-      "Sidoarjo",
-      "Malang",
-      "Tulungagung",
-      "Surabaya",
-      "Batu",
-      "Blitar",
-      "Mojokerto",
-      "Pasuruan",
-      "Probolinggo",
-      "Madiun",
-    ],
-  },
-  {
-    province: "JAWA BARAT",
-    cities: ["Bandung", "Sukabumi", "Bekasi", "Depok"],
-  },
-];
+import { ArrowLeft, ArrowRight, ChevronRight, MapPin, Search } from "lucide-react";
 
 export default function BuyerRegionPage() {
   const router = useRouter();
+  const [regions, setRegions] = useState<{ province: string; cities: string[] }[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedCity, setSelectedCity] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Fetch from Emsifa API
+  useEffect(() => {
+    async function fetchRegions() {
+      try {
+        // Fetch all provinces
+        const resProv = await fetch("https://www.emsifa.com/api-wilayah-indonesia/api/provinces.json");
+        const provinces = await resProv.json();
+
+        // Fetch regencies for each province concurrently
+        const regionsData = await Promise.all(
+          provinces.map(async (p: any) => {
+            const resReg = await fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/regencies/${p.id}.json`);
+            const regencies = await resReg.json();
+            return {
+              province: p.name,
+              cities: regencies.map((r: any) => r.name),
+            };
+          })
+        );
+        
+        setRegions(regionsData);
+      } catch (error) {
+        console.error("Error fetching regions:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    fetchRegions();
+  }, []);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -46,8 +57,8 @@ export default function BuyerRegionPage() {
 
   const handleContinue = () => {
     if (selectedCity) {
-      // Navigate to catalog
-      router.push("/buyer/catalog");
+      // Navigate to catalog with city in query parameter
+      router.push(`/buyer/catalog?city=${encodeURIComponent(selectedCity)}`);
     }
   };
 
@@ -91,10 +102,11 @@ export default function BuyerRegionPage() {
                 <button
                   type="button"
                   onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                  className="w-full flex items-center justify-between px-4 py-3 rounded-lg border border-gray-200 bg-slate-50 text-left focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all shadow-sm"
+                  disabled={isLoading}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-lg border border-gray-200 bg-slate-50 text-left focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all shadow-sm ${isLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
                 >
                   <span className={selectedCity ? "text-gray-900 font-medium" : "text-gray-500"}>
-                    {selectedCity || "Pilih kota layanan..."}
+                    {isLoading ? "Memuat data wilayah..." : (selectedCity || "Pilih kota layanan...")}
                   </span>
                   <ChevronRight 
                     className={`w-5 h-5 text-gray-400 transition-transform ${isDropdownOpen ? "rotate-90" : ""}`} 
@@ -102,30 +114,59 @@ export default function BuyerRegionPage() {
                 </button>
 
                 {/* Dropdown Menu */}
-                {isDropdownOpen && (
-                  <div className="absolute z-10 w-full mt-2 bg-white rounded-xl shadow-lg border border-gray-100 max-h-80 overflow-y-auto overflow-x-hidden animate-in fade-in slide-in-from-top-2">
-                    {REGIONS.map((region, idx) => (
-                      <div key={idx} className="py-2">
-                        <div className="px-5 py-2 text-[10px] font-bold text-gray-400 tracking-wider">
-                          {region.province}
-                        </div>
-                        {region.cities.map((city) => (
-                          <button
-                            key={city}
-                            onClick={() => {
-                              setSelectedCity(city);
-                              setIsDropdownOpen(false);
-                            }}
-                            className={`w-full flex items-center gap-3 px-5 py-2.5 text-sm transition-colors hover:bg-emerald-50 ${
-                              selectedCity === city ? "bg-emerald-50 font-medium text-emerald-900" : "text-gray-700"
-                            }`}
-                          >
-                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                            {city}
-                          </button>
-                        ))}
+                {isDropdownOpen && !isLoading && (
+                  <div className="absolute z-10 w-full mt-2 bg-white rounded-xl shadow-lg border border-gray-100 max-h-80 overflow-y-auto overflow-x-hidden animate-in fade-in slide-in-from-top-2 flex flex-col">
+                    <div className="sticky top-0 bg-white p-2 border-b border-gray-100 z-20">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                        <input
+                          type="text"
+                          placeholder="Cari nama kota/kabupaten..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
                       </div>
-                    ))}
+                    </div>
+                    <div className="py-1">
+                      {regions
+                        .map((region) => {
+                          const filteredCities = region.cities.filter((city) =>
+                            city.toLowerCase().includes(searchQuery.toLowerCase())
+                          );
+                          return { ...region, cities: filteredCities };
+                        })
+                        .filter((region) => region.cities.length > 0)
+                        .map((region, idx) => (
+                          <div key={idx} className="py-1">
+                            <div className="px-5 py-2 text-[10px] font-bold text-gray-400 tracking-wider">
+                              {region.province}
+                            </div>
+                            {region.cities.map((city) => (
+                              <button
+                                key={city}
+                                onClick={() => {
+                                  setSelectedCity(city);
+                                  setIsDropdownOpen(false);
+                                  setSearchQuery(""); // Reset search on select
+                                }}
+                                className={`w-full flex items-center gap-3 px-5 py-2.5 text-sm transition-colors hover:bg-emerald-50 ${
+                                  selectedCity === city ? "bg-emerald-50 font-medium text-emerald-900" : "text-gray-700"
+                                }`}
+                              >
+                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                {city}
+                              </button>
+                            ))}
+                          </div>
+                        ))}
+                      {regions.length > 0 &&
+                        regions.some((region) => region.cities.some((city) => city.toLowerCase().includes(searchQuery.toLowerCase()))) === false && (
+                          <div className="px-5 py-4 text-center text-sm text-gray-500">
+                            Kota/Kabupaten tidak ditemukan
+                          </div>
+                        )}
+                    </div>
                   </div>
                 )}
               </div>

@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Truck
 } from "lucide-react";
+import { PRODUCTS } from "../../catalog/page";
 import { 
   LineChart, 
   Line, 
@@ -33,6 +34,8 @@ const NDVI_DATA = [
 export default function ProductDetailPage({ params }: { params: { id: string } }) {
   const [activeTab, setActiveTab] = useState<"specs" | "timeline" | "ndvi">("specs");
 
+  const product = PRODUCTS.find((p) => p.id === unwrappedParams.id) || PRODUCTS[0];
+
   return (
     <div className="p-8 max-w-6xl mx-auto">
       {/* Back button */}
@@ -50,10 +53,12 @@ export default function ProductDetailPage({ params }: { params: { id: string } }
           <div className="relative h-96 w-full rounded-2xl overflow-hidden bg-gray-100 border border-gray-200">
             <div 
               className="absolute inset-0 bg-cover bg-center"
-              style={{ backgroundImage: `url(https://images.unsplash.com/photo-1592924357228-91a4daadcfea?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80)` }}
+              style={{ backgroundImage: `url(${product.image})` }}
             />
-            <div className="absolute top-4 left-4 bg-emerald-700 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-sm">
-              GRADE A
+            <div className={`absolute top-4 left-4 text-[10px] font-bold px-3 py-1 rounded-full shadow-sm ${
+                product.grade === 'GRADE A' ? 'bg-emerald-700 text-white' : 'bg-white border border-gray-300 text-gray-700'
+              }`}>
+              {product.grade}
             </div>
           </div>
           <div className="grid grid-cols-3 gap-4">
@@ -70,26 +75,26 @@ export default function ProductDetailPage({ params }: { params: { id: string } }
 
         {/* Info */}
         <div className="flex flex-col">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Tomat Beef Premium</h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">{product.name}</h1>
           <div className="flex items-baseline gap-2 mb-6">
-            <span className="text-2xl font-bold text-gray-900">Rp 150.000</span>
-            <span className="text-sm font-medium text-gray-500">/ Box</span>
+            <span className="text-2xl font-bold text-gray-900">Rp {product.price}</span>
+            <span className="text-sm font-medium text-gray-500">/ {product.unit}</span>
           </div>
 
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl">
               <div className="text-[10px] font-bold text-gray-500 tracking-wider mb-1">KAPASITAS</div>
-              <div className="text-sm font-semibold text-gray-900">10 Kg / Box</div>
+              <div className="text-sm font-semibold text-gray-900">{product.unit}</div>
             </div>
             <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl">
               <div className="text-[10px] font-bold text-gray-500 tracking-wider mb-1">STOK TERSEDIA</div>
-              <div className="text-sm font-semibold text-gray-900">450 Box</div>
+              <div className="text-sm font-semibold text-gray-900">{product.stock}</div>
             </div>
           </div>
 
           <div className="flex items-center gap-2 text-xs font-semibold text-emerald-800 mb-8">
             <Store className="w-4 h-4" />
-            <span>Dari: Tani Rawit Jos</span>
+            <span>Dari: {product.seller}</span>
           </div>
 
           <div className="flex gap-4 mt-auto">
