@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { 
   Leaf, 
   Search, 
@@ -24,13 +25,10 @@ export default function LandingPage() {
       {/* Nvabar */}
       <nav className="flex items-center justify-between px-8 py-4 border-b border-gray-100">
         <div className="flex items-center gap-2 text-emerald-900">
-          <Leaf className="w-6 h-6" />
+          <img src="/logo.png" alt="AgroUs Logo" className="w-10 h-10 object-contain" />
           <span className="text-xl font-bold font-fredoka">AgroUs</span>
         </div>
         <div className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-500">
-          <a href="#" className="text-emerald-900 border-b-2 border-emerald-900 pb-1">Beranda</a>
-          <a href="#" className="hover:text-emerald-900">Solusi</a>
-          <a href="#" className="hover:text-emerald-900">Harga</a>
         </div>
         <div className="w-24"></div> {/* Placeholder for balance */}
       </nav>
@@ -49,12 +47,12 @@ export default function LandingPage() {
             Platform rantai pasok agrikultur B2B pertama dengan Verified Timeline. Dapatkan kepastian pasokan yang divalidasi langsung oleh citra satelit Sentinel-2.
           </p>
           <div className="flex flex-wrap items-center gap-4 pt-4">
-            <button className="flex items-center gap-2 px-6 py-3 bg-emerald-900 text-white font-medium rounded-lg hover:bg-emerald-800 transition">
+            <Link href="/auth/buyer" className="flex items-center gap-2 px-6 py-3 bg-emerald-900 text-white font-medium rounded-lg hover:bg-emerald-800 transition">
               Cari Produk <Search className="w-4 h-4" />
-            </button>
-            <button className="px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition">
+            </Link>
+            <Link href="/auth/tenant" className="px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition">
               Mulai Menjual
-            </button>
+            </Link>
           </div>
         </div>
 
