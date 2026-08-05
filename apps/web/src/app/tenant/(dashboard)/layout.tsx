@@ -11,7 +11,10 @@ import {
   Settings,
   LogOut,
   Leaf,
-  ShoppingBag
+  ShoppingBag,
+  Wallet,
+  Sprout,
+  Star
 } from "lucide-react";
 
 export default function TenantDashboardLayout({
@@ -24,9 +27,12 @@ export default function TenantDashboardLayout({
   const menuItems = [
     { name: "Dashboard", href: "/tenant", icon: LayoutDashboard },
     { name: "Katalog Produk", href: "/tenant/catalog", icon: PackageSearch },
+    { name: "Manajemen Pesanan", href: "/tenant/orders", icon: ShoppingBag },
     { name: "Manajemen Lahan", href: "/tenant/land", icon: Map },
     { name: "Manajemen Batch", href: "/tenant/batch", icon: Layers },
-    { name: "Manajemen Pesanan", href: "/tenant/orders", icon: ShoppingBag },
+    { name: "Keuangan & Escrow", href: "/tenant/finance", icon: Wallet },
+    { name: "Rekomendasi Tanam", href: "/tenant/recommendation", icon: Sprout },
+    { name: "Reputation", href: "/tenant/reputation", icon: Star },
   ];
 
   return (
