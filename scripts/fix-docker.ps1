@@ -1,4 +1,4 @@
-<#
+﻿<#
   Membereskan Docker Desktop yang gagal start di Windows.
 
   MASALAHNYA

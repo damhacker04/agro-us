@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { 
   Search, 
   ShoppingCart, 
@@ -22,6 +22,19 @@ export default function BuyerDashboardLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const city = searchParams.get("city") || "Semua Wilayah";
+
+  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const term = e.target.value;
+    const params = new URLSearchParams(searchParams);
+    if (term) {
+      params.set("q", term);
+    } else {
+      params.delete("q");
+    }
+    router.replace(`${pathname}?${params.toString()}`);
+  };
 
   const handleLogout = () => {
     router.push("/auth/buyer/login");
@@ -49,7 +62,7 @@ export default function BuyerDashboardLayout({
             <Link
               href="/buyer/catalog"
               className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-colors ${
-                pathname.includes("/buyer/catalog") || pathname.includes("/buyer/product")
+                pathname.includes("/buyer/catalog") || pathname.includes("/buyer/product") || pathname.includes("/buyer/cart") || pathname.includes("/buyer/checkout")
                   ? "bg-emerald-900 text-white"
                   : "text-gray-600 hover:bg-gray-50"
               }`}

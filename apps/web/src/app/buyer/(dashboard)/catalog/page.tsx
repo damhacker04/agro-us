@@ -1,6 +1,7 @@
 "use client";
 
-import React from "react";
+import React, { Suspense, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { 
@@ -11,11 +12,11 @@ import {
   ArrowUpDown
 } from "lucide-react";
 
-const PRODUCTS = [
+export const PRODUCTS = [
   {
     id: "prod-1",
     name: "Sawi Pakcoy Premium",
-    image: "https://images.unsplash.com/photo-1596180377074-ce49b596afdb?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
+    image: "https://images.unsplash.com/photo-1628773822503-83864a75c128?auto=format&fit=crop&w=800&q=80",
     grade: "GRADE A",
     harvestDate: "27 Agustus 2026",
     stock: "15 Box",
@@ -48,7 +49,7 @@ const PRODUCTS = [
   {
     id: "prod-4",
     name: "Cabe Rawit Merah",
-    image: "https://images.unsplash.com/photo-1588015343469-80ce5664188b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
+    image: "https://images.unsplash.com/photo-1556910110-a5a63dfd393c?auto=format&fit=crop&w=800&q=80",
     grade: "GRADE B",
     harvestDate: "13 Agustus 2026",
     stock: "10 Box",
@@ -58,34 +59,77 @@ const PRODUCTS = [
   },
 ];
 
-export default function BuyerCatalogPage() {
+function CatalogContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const query = searchParams.get("q")?.toLowerCase() || "";
+  const [sortOption, setSortOption] = useState<"default" | "grade" | "harvest" | "price">("default");
+
+  const filteredProducts = PRODUCTS.filter(product => 
+    product.name.toLowerCase().includes(query)
+  );
+
+  let sortedProducts = [...filteredProducts];
+  if (sortOption === "grade") {
+    sortedProducts.sort((a, b) => a.grade.localeCompare(b.grade));
+  } else if (sortOption === "price") {
+    sortedProducts.sort((a, b) => {
+      const priceA = parseInt(a.price.replace(/\./g, ""));
+      const priceB = parseInt(b.price.replace(/\./g, ""));
+      return priceA - priceB;
+    });
+  } else if (sortOption === "harvest") {
+    const months: Record<string, number> = {
+      Januari: 0, Februari: 1, Maret: 2, April: 3, Mei: 4, Juni: 5,
+      Juli: 6, Agustus: 7, September: 8, Oktober: 9, November: 10, Desember: 11
+    };
+    const parseDate = (dateStr: string) => {
+      const parts = dateStr.split(" ");
+      if (parts.length === 3) {
+         return new Date(parseInt(parts[2]), months[parts[1]] || 0, parseInt(parts[0])).getTime();
+      }
+      return 0;
+    };
+    sortedProducts.sort((a, b) => parseDate(a.harvestDate) - parseDate(b.harvestDate));
+  }
+
   return (
     <div className="p-8">
       {/* Filters Row */}
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 bg-emerald-950 text-white px-4 py-2 rounded-full text-xs font-semibold hover:bg-emerald-900 transition">
-            Komoditas <ChevronDown className="w-3.5 h-3.5" />
+          <button 
+            onClick={() => setSortOption("default")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition ${sortOption === "default" ? "bg-emerald-950 text-white" : "bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-100"}`}
+          >
+            Semua Komoditas
           </button>
-          <button className="bg-emerald-50 text-emerald-800 px-4 py-2 rounded-full text-xs font-semibold hover:bg-emerald-100 transition border border-emerald-100">
-            Grade
+          <button 
+            onClick={() => setSortOption("grade")}
+            className={`px-4 py-2 rounded-full text-xs font-semibold transition border ${sortOption === "grade" ? "bg-emerald-950 text-white border-emerald-950" : "bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border-emerald-100"}`}
+          >
+            Grade A - Z
           </button>
-          <button className="bg-emerald-50 text-emerald-800 px-4 py-2 rounded-full text-xs font-semibold hover:bg-emerald-100 transition border border-emerald-100">
-            Badge Verifikasi
-          </button>
-          <button className="bg-emerald-50 text-emerald-800 px-4 py-2 rounded-full text-xs font-semibold hover:bg-emerald-100 transition border border-emerald-100">
+          <button 
+            onClick={() => setSortOption("harvest")}
+            className={`px-4 py-2 rounded-full text-xs font-semibold transition border ${sortOption === "harvest" ? "bg-emerald-950 text-white border-emerald-950" : "bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border-emerald-100"}`}
+          >
             Tanggal Panen
           </button>
         </div>
-        <button className="flex items-center gap-2 border border-gray-300 px-4 py-2 rounded-full text-xs font-semibold text-gray-700 hover:bg-gray-50 transition shadow-sm">
+        <button 
+          onClick={() => setSortOption(sortOption === "price" ? "default" : "price")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition shadow-sm border ${sortOption === "price" ? "bg-emerald-950 text-white border-emerald-950" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+        >
           Urutkan: Harga Termurah <ArrowUpDown className="w-3.5 h-3.5" />
         </button>
       </div>
 
       {/* Product Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
-        {PRODUCTS.map((product) => (
-          <Link 
+        {sortedProducts.length > 0 ? (
+          sortedProducts.map((product) => (
+            <Link 
             key={product.id} 
             href={`/buyer/product/${product.id}`}
             className="group bg-white border border-gray-200 rounded-2xl overflow-hidden hover:shadow-md transition-all flex flex-col"
@@ -137,11 +181,10 @@ export default function BuyerCatalogPage() {
                 </div>
                 
                 <button 
-                  className="w-10 h-10 rounded-xl bg-emerald-950 text-white flex items-center justify-center hover:bg-emerald-800 transition-colors shadow-sm"
+                  className="w-10 h-10 rounded-xl bg-emerald-950 text-white flex items-center justify-center hover:bg-emerald-800 transition-colors shadow-sm z-10 relative"
                   onClick={(e) => {
                     e.preventDefault();
-                    // Handle add to cart
-                    alert("Ditambahkan ke keranjang");
+                    router.push("/buyer/cart");
                   }}
                 >
                   <ShoppingCart className="w-5 h-5" />
@@ -149,8 +192,21 @@ export default function BuyerCatalogPage() {
               </div>
             </div>
           </Link>
-        ))}
+        ))
+        ) : (
+          <div className="col-span-full py-12 text-center text-gray-500">
+            Produk tidak ditemukan untuk pencarian "{query}"
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+export default function BuyerCatalogPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-gray-500">Memuat katalog...</div>}>
+      <CatalogContent />
+    </Suspense>
   );
 }
