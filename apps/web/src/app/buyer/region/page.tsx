@@ -4,44 +4,32 @@ import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, ChevronRight, MapPin, Search } from "lucide-react";
+import { ambilZona } from "@/lib/api";
+import type { ZoneSummary } from "@agro-os/shared";
 
 export default function BuyerRegionPage() {
   const router = useRouter();
-  const [regions, setRegions] = useState<{ province: string; cities: string[] }[]>([]);
+  const [zones, setZones] = useState<ZoneSummary[]>([]);
+  const [galat, setGalat] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCity, setSelectedCity] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Fetch from Emsifa API
+  /**
+   * Zona layanan diambil dari API AgroUs, BUKAN daftar wilayah nasional.
+   *
+   * Sebelumnya halaman ini memanggil API wilayah pihak ketiga dan menampilkan seluruh
+   * kabupaten/kota di Indonesia — padahal tidak satu pun di antaranya bisa dipesan.
+   * Layanan baru tersedia di tiga zona Malang Raya, dan tiap zona punya nilai minimum
+   * order sendiri yang menentukan apakah checkout bisa dilanjutkan (Risiko 3).
+   */
   useEffect(() => {
-    async function fetchRegions() {
-      try {
-        // Fetch all provinces
-        const resProv = await fetch("https://www.emsifa.com/api-wilayah-indonesia/api/provinces.json");
-        const provinces = await resProv.json();
-
-        // Fetch regencies for each province concurrently
-        const regionsData = await Promise.all(
-          provinces.map(async (p: any) => {
-            const resReg = await fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/regencies/${p.id}.json`);
-            const regencies = await resReg.json();
-            return {
-              province: p.name,
-              cities: regencies.map((r: any) => r.name),
-            };
-          })
-        );
-        
-        setRegions(regionsData);
-      } catch (error) {
-        console.error("Error fetching regions:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    fetchRegions();
+    ambilZona()
+      .then(setZones)
+      .catch((e) => setGalat(e instanceof Error ? e.message : "Gagal memuat zona layanan"))
+      .finally(() => setIsLoading(false));
   }, []);
 
   // Close dropdown when clicking outside
@@ -56,10 +44,10 @@ export default function BuyerRegionPage() {
   }, []);
 
   const handleContinue = () => {
-    if (selectedCity) {
-      // Navigate to catalog with city in query parameter
-      router.push(`/buyer/catalog?city=${encodeURIComponent(selectedCity)}`);
-    }
+    const zona = zones.find((z) => z.name === selectedCity);
+    if (!zona) return;
+    // zoneId ikut dibawa: katalog menyaring per zona, dan `city` hanya untuk ditampilkan.
+    router.push(`/buyer/catalog?zoneId=${zona.id}&city=${encodeURIComponent(zona.name)}`);
   };
 
   return (
@@ -129,41 +117,41 @@ export default function BuyerRegionPage() {
                       </div>
                     </div>
                     <div className="py-1">
-                      {regions
-                        .map((region) => {
-                          const filteredCities = region.cities.filter((city) =>
-                            city.toLowerCase().includes(searchQuery.toLowerCase())
-                          );
-                          return { ...region, cities: filteredCities };
-                        })
-                        .filter((region) => region.cities.length > 0)
-                        .map((region, idx) => (
-                          <div key={idx} className="py-1">
-                            <div className="px-5 py-2 text-[10px] font-bold text-gray-400 tracking-wider">
-                              {region.province}
-                            </div>
-                            {region.cities.map((city) => (
-                              <button
-                                key={city}
-                                onClick={() => {
-                                  setSelectedCity(city);
-                                  setIsDropdownOpen(false);
-                                  setSearchQuery(""); // Reset search on select
-                                }}
-                                className={`w-full flex items-center gap-3 px-5 py-2.5 text-sm transition-colors hover:bg-emerald-50 ${
-                                  selectedCity === city ? "bg-emerald-50 font-medium text-emerald-900" : "text-gray-700"
-                                }`}
-                              >
-                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                {city}
-                              </button>
-                            ))}
-                          </div>
+                      {zones
+                        .filter((z) => z.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                        .map((z) => (
+                          <button
+                            key={z.id}
+                            onClick={() => {
+                              setSelectedCity(z.name);
+                              setIsDropdownOpen(false);
+                              setSearchQuery("");
+                            }}
+                            className={`w-full flex items-center justify-between gap-3 px-5 py-3 text-sm transition-colors hover:bg-emerald-50 ${
+                              selectedCity === z.name ? "bg-emerald-50 font-medium text-emerald-900" : "text-gray-700"
+                            }`}
+                          >
+                            <span className="flex items-center gap-3">
+                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              {z.name}
+                            </span>
+                            {/* Minimum order ditampilkan SEJAK AWAL: nilainya berbeda tiap zona
+                                dan menentukan apakah checkout nanti bisa dilanjutkan. Lebih baik
+                                pembeli tahu sekarang daripada ditolak setelah mengisi keranjang. */}
+                            <span className="text-[11px] text-gray-400 shrink-0">
+                              min. Rp{z.minOrderValue.toLocaleString("id-ID")}
+                            </span>
+                          </button>
                         ))}
-                      {regions.length > 0 &&
-                        regions.some((region) => region.cities.some((city) => city.toLowerCase().includes(searchQuery.toLowerCase()))) === false && (
+                      {!isLoading && zones.length === 0 && (
+                        <div className="px-5 py-4 text-center text-sm text-gray-500">
+                          {galat ? "Gagal memuat zona layanan" : "Belum ada zona layanan"}
+                        </div>
+                      )}
+                      {zones.length > 0 &&
+                        !zones.some((z) => z.name.toLowerCase().includes(searchQuery.toLowerCase())) && (
                           <div className="px-5 py-4 text-center text-sm text-gray-500">
-                            Kota/Kabupaten tidak ditemukan
+                            Zona tidak ditemukan
                           </div>
                         )}
                     </div>

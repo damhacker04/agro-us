@@ -124,6 +124,21 @@ export const AssuranceOption = {
 } as const;
 export type AssuranceOption = (typeof AssuranceOption)[keyof typeof AssuranceOption];
 
+/** Jenis foto bukti pada node timeline (NODE_PHOTOS.photo_type). */
+export const PhotoType = {
+  KEGIATAN: "KEGIATAN",
+  /** Bukti sekunder pemupukan/pestisida — FR-4.7. */
+  NOTA_INPUT: "NOTA_INPUT",
+} as const;
+export type PhotoType = (typeof PhotoType)[keyof typeof PhotoType];
+
+/** Asal foto. Galeri ditandai berbeda karena menurunkan kepercayaan node (§5.4.1). */
+export const CaptureSource = {
+  IN_APP_CAMERA: "IN_APP_CAMERA",
+  GALLERY: "GALLERY",
+} as const;
+export type CaptureSource = (typeof CaptureSource)[keyof typeof CaptureSource];
+
 export const APP_NAME = "AgroUs" as const;
 
 /** Konstanta operasional (PRD). */
@@ -1095,4 +1110,47 @@ export interface DecideLegalityBody {
   approve: boolean;
   /** Wajib saat menolak — Tenant berhak tahu apa yang harus diperbaiki. */
   note?: string;
+}
+
+// ============================== KONTRAK VERIFIED TIMELINE PUBLIK (§6.1) ==============================
+// GET /batches/:batchId/timeline · /timeline/verify — TANPA autentikasi.
+// Pembeli (dan siapa pun) harus bisa memverifikasi sendiri tanpa mempercayai kata AgroUs.
+
+export interface NodePhotoResponse {
+  url: string;
+  photoType: PhotoType;
+  /** Foto dari galeri ditandai berbeda — menurunkan kepercayaan node (§5.4.1). */
+  captureSource: CaptureSource;
+  exif: { lat: number | null; lng: number | null; ts: string | null };
+  sha256: string;
+}
+
+export interface TimelineNodeResponse {
+  id: string;
+  seq: number;
+  activityType: TimelineActivity;
+  description: string;
+  gps: GpsCoordinate;
+  /** Stempel waktu perangkat Tenant. */
+  deviceTs: string;
+  /** Stempel waktu server — pembanding jujur bila deviceTs mencurigakan. */
+  serverTs: string;
+  prevHash: string | null;
+  nodeHash: string;
+  /** Node koreksi menunjuk node lama; node lama TETAP tampil (FR-4.2). */
+  ralatOfId: string | null;
+  /** Ditampilkan apa adanya ke pembeli bila GPS di luar poligon (FR-4.3). */
+  outsidePolygonReason: string | null;
+  photos: NodePhotoResponse[];
+}
+
+/** Hasil hitung ulang rantai hash dari ISI node, bukan dari kolom hash tersimpan. */
+export interface TimelineVerifyResponse {
+  batchId: string;
+  nodeCount: number;
+  /** false = ada isi node yang pernah diubah setelah tersimpan. */
+  intact: boolean;
+  rootHash: string;
+  /** Jangkar eksternal terakhir, bila sudah dipublikasikan (§6.1). */
+  anchor: { anchorDate: string; rootHash: string; externalRef: string | null } | null;
 }

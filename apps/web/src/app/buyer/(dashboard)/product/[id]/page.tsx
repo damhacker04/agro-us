@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { 
   ArrowLeft, 
@@ -12,7 +12,11 @@ import {
   MessageSquare,
   Truck
 } from "lucide-react";
-import { PRODUCTS } from "../../catalog/page";
+import { ambilNdvi, ambilProduk, ambilTimeline, ambilVerifikasi } from "@/lib/api";
+import type { CatalogItem, NdviSeries, TimelineNodeResponse, TimelineVerifyResponse } from "@agro-os/shared";
+
+/** Foto bukti disajikan API sebagai jalur relatif (/uploads/...), jadi perlu diawali host. */
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 import { 
   LineChart, 
   Line, 
@@ -23,19 +27,64 @@ import {
   ResponsiveContainer 
 } from "recharts";
 
-const NDVI_DATA = [
-  { date: "15 Jun", ndvi: 0.3 },
-  { date: "30 Jun", ndvi: 0.45 },
-  { date: "15 Jul", ndvi: 0.7 },
-  { date: "30 Jul", ndvi: 0.82 },
-  { date: "05 Ags", ndvi: 0.6 }, // Harvest drop
-];
 
 export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const unwrappedParams = React.use(params);
+  const batchId = unwrappedParams.id;
   const [activeTab, setActiveTab] = useState<"specs" | "timeline" | "ndvi">("specs");
 
-  const product = PRODUCTS.find((p) => p.id === unwrappedParams.id) || PRODUCTS[0];
+  const [item, setItem] = useState<CatalogItem | null>(null);
+  const [nodes, setNodes] = useState<TimelineNodeResponse[]>([]);
+  const [verify, setVerify] = useState<TimelineVerifyResponse | null>(null);
+  const [ndvi, setNdvi] = useState<NdviSeries | null>(null);
+  const [galat, setGalat] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Produk wajib ada; timeline/verifikasi/NDVI boleh kosong (batch baru belum punya
+    // catatan) — kegagalannya tidak boleh mengosongkan seluruh halaman.
+    ambilProduk(batchId)
+      .then(setItem)
+      .catch((e) => setGalat(e instanceof Error ? e.message : "Produk tidak ditemukan"));
+    ambilTimeline(batchId).then(setNodes).catch(() => setNodes([]));
+    ambilVerifikasi(batchId).then(setVerify).catch(() => setVerify(null));
+    ambilNdvi(batchId).then(setNdvi).catch(() => setNdvi(null));
+  }, [batchId]);
+
+  if (galat) {
+    return (
+      <div className="p-8 max-w-3xl mx-auto">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
+          <h2 className="font-bold text-red-900 mb-1">Produk tidak dapat dimuat</h2>
+          <p className="text-sm text-red-700">{galat}</p>
+          <Link href="/buyer/catalog" className="inline-block mt-4 text-sm font-semibold text-emerald-700 hover:underline">
+            Kembali ke katalog
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (!item) return <div className="p-8 text-sm text-gray-500">Memuat produk…</div>;
+
+  // Pengamatan tertutup awan bernilai null — dibuang supaya garis grafik tidak putus
+  // dan tidak terbaca sebagai penurunan vegetasi yang sebenarnya tidak terjadi.
+  const titikNdvi = (ndvi?.points ?? [])
+    .filter((x) => x.ndvi !== null)
+    .map((x) => ({ date: new Date(x.date).toLocaleDateString("id-ID", { day: "numeric", month: "short" }), ndvi: x.ndvi }));
+
+  const rupiah = (n: number) => n.toLocaleString("id-ID");
+  const tanggal = (iso: string) =>
+    new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+
+  const product = {
+    name: item.productName,
+    grade: `GRADE ${item.grade}`,
+    price: rupiah(item.lockedPrice),
+    unit: `Box (${item.qtyKgPerBox} kg)`,
+    seller: item.tenant.companyName,
+    stock: `${item.quotaBoxAvailable} Box`,
+    image: "",
+  };
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
@@ -231,55 +280,99 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 <h3 className="text-lg font-bold text-emerald-950 mb-1">Digital Farm Ledger</h3>
                 <p className="text-xs text-gray-500">Catatan aktivitas pertanian yang tidak dapat diubah (append-only ledger).</p>
               </div>
-              <div className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Verified by AgroChain
-              </div>
+              {/* Klaim keutuhan TIDAK ditulis mati. Nilainya dari server yang menghitung
+                  ulang seluruh rantai SHA-256 dari ISI node — kalau ada yang pernah diubah
+                  lewat SQL sekalipun, di sinilah ketahuannya. */}
+              {verify && (
+                <div
+                  className={`text-[10px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 ${
+                    verify.intact ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"
+                  }`}
+                >
+                  {verify.intact ? (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Rantai bukti utuh ({verify.nodeCount} catatan)
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle className="w-3.5 h-3.5" /> Rantai bukti TIDAK utuh
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
-            <div className="relative pl-6 space-y-12 before:absolute before:inset-0 before:ml-6 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gray-200">
-              {/* Item 1 */}
-              <div className="relative flex items-start gap-6 before:absolute before:-left-[15px] before:top-1 before:z-10 before:w-8 before:h-8 before:rounded-full before:bg-emerald-500 before:border-4 before:border-white before:shadow-sm">
-                <div className="bg-white border border-gray-200 rounded-xl p-5 flex-1 shadow-sm relative z-0">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-bold text-gray-900">Penanaman Bibit</h4>
-                    <span className="text-xs font-semibold text-gray-500">10 Jun 2026</span>
-                  </div>
-                  <p className="text-sm text-gray-600 mb-4">Penanaman 5,000 bibit varietas Beef Steak di Blok C. Menggunakan media tanam cocopeat steril.</p>
-                  <div className="h-40 bg-gray-100 rounded-lg overflow-hidden">
-                    <div className="w-full h-full bg-cover bg-center" style={{ backgroundImage: `url(https://images.unsplash.com/photo-1592924357228-91a4daadcfea?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80)` }} />
-                  </div>
-                </div>
+            {nodes.length === 0 ? (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-8 text-center text-sm text-gray-500">
+                Belum ada catatan budidaya untuk batch ini.
               </div>
+            ) : (
+              <div className="relative pl-6 space-y-12 before:absolute before:inset-0 before:ml-6 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gray-200">
+                {nodes.map((n) => {
+                  const ralat = n.ralatOfId !== null;
+                  return (
+                    <div
+                      key={n.id}
+                      className={`relative flex items-start gap-6 before:absolute before:-left-[15px] before:top-1 before:z-10 before:w-8 before:h-8 before:rounded-full before:border-4 before:border-white before:shadow-sm ${
+                        ralat ? "before:bg-amber-500" : "before:bg-emerald-500"
+                      }`}
+                    >
+                      <div
+                        className={`rounded-xl p-5 flex-1 shadow-sm relative z-0 border ${
+                          ralat ? "bg-amber-50 border-amber-200" : "bg-white border-gray-200"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-2 gap-3">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-gray-900">
+                              {n.activityType.replace(/_/g, " ")}
+                            </h4>
+                            {ralat && (
+                              <span className="bg-amber-200 text-amber-800 text-[9px] font-bold px-2 py-0.5 rounded">
+                                RALAT
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs font-semibold text-gray-500 shrink-0">
+                            {tanggal(n.deviceTs)}
+                          </span>
+                        </div>
 
-              {/* Item 2 */}
-              <div className="relative flex items-start gap-6 before:absolute before:-left-[15px] before:top-1 before:z-10 before:w-8 before:h-8 before:rounded-full before:bg-amber-500 before:border-4 before:border-white before:shadow-sm">
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 flex-1 shadow-sm relative z-0">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-bold text-gray-900">RALAT: Aplikasi Pupuk</h4>
-                      <span className="bg-amber-200 text-amber-800 text-[9px] font-bold px-2 py-0.5 rounded">REVISION</span>
+                        <p className="text-sm text-gray-600 mb-3">{n.description}</p>
+
+                        {n.outsidePolygonReason && (
+                          <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+                            Lokasi di luar batas lahan terdaftar. Alasan Tenant: {n.outsidePolygonReason}
+                          </p>
+                        )}
+
+                        {n.photos.length > 0 && (
+                          <div className="flex gap-2 flex-wrap">
+                            {n.photos.map((f) => (
+                              <div key={f.sha256} className="relative">
+                                <div
+                                  className="h-32 w-40 rounded-lg bg-gray-100 bg-cover bg-center border border-gray-200"
+                                  style={{ backgroundImage: `url(${API_BASE}${f.url})` }}
+                                />
+                                {f.captureSource === "GALLERY" && (
+                                  <span className="absolute bottom-1 left-1 bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                                    DARI GALERI
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <p className="mt-3 text-[10px] font-mono text-gray-400 break-all">
+                          hash {n.nodeHash.slice(0, 32)}
+                        </p>
+                      </div>
                     </div>
-                    <span className="text-xs font-semibold text-amber-800">25 Jun 2026</span>
-                  </div>
-                  <p className="text-sm font-bold text-amber-900 mb-1">Volume pupuk direvisi dari 50kg menjadi 55kg</p>
-                  <p className="text-xs text-amber-700 italic">Alasan: Penyesuaian berdasarkan hasil tes kadar hara tanah terbaru untuk optimalisasi fase vegetatif.</p>
-                </div>
+                  );
+                })}
               </div>
-
-              {/* Item 3 */}
-              <div className="relative flex items-start gap-6 before:absolute before:-left-[15px] before:top-1 before:z-10 before:w-8 before:h-8 before:rounded-full before:bg-emerald-500 before:border-4 before:border-white before:shadow-sm">
-                <div className="bg-white border border-gray-200 rounded-xl p-5 flex-1 shadow-sm relative z-0">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-bold text-gray-900">Persiapan Panen</h4>
-                    <span className="text-xs font-semibold text-gray-500">05 Ags 2026</span>
-                  </div>
-                  <p className="text-sm text-gray-600 mb-4">Pemeriksaan brix gula dan kekerasan buah untuk memastikan standar Grade A terpenuhi sebelum pemetikan massal.</p>
-                  <div className="w-24 h-24 bg-gray-100 rounded-lg overflow-hidden">
-                    <div className="w-full h-full bg-cover bg-center" style={{ backgroundImage: `url(https://images.unsplash.com/photo-1592924357228-91a4daadcfea?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80)` }} />
-                  </div>
-                </div>
-              </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -294,7 +387,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               {/* Note: In a real implementation we would render the Recharts here, using standard layout. */}
               <div className="w-full h-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={NDVI_DATA} margin={{ top: 20, right: 20, left: -20, bottom: 0 }}>
+                  <LineChart data={titikNdvi} margin={{ top: 20, right: 20, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
                     <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#6B7280" }} dy={10} />
                     <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#6B7280" }} dx={-10} domain={[0, 1]} />
