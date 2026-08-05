@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowUpDown, Calendar, ShieldCheck, ShieldAlert, Store, ShoppingCart } from "lucide-react";
 import { ambilKatalog } from "@/lib/api";
+import { tambahKeKeranjang } from "@/lib/keranjang";
 import type { CatalogItem } from "@agro-os/shared";
 
 const rupiah = (n: number) => n.toLocaleString("id-ID");
@@ -209,7 +210,10 @@ function CatalogContent() {
                     <button
                       className="w-10 h-10 rounded-xl bg-emerald-950 text-white flex items-center justify-center hover:bg-emerald-800 transition-colors shadow-sm z-10 relative"
                       onClick={(e) => {
+                        // Kartu ini adalah <Link> ke detail produk; tombol keranjang di
+                        // dalamnya harus mencegah navigasi itu, bukan ikut terbawa.
                         e.preventDefault();
+                        tambahKeKeranjang(item, zoneId!);
                         router.push("/buyer/cart");
                       }}
                     >

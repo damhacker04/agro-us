@@ -1,267 +1,205 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { 
-  ArrowLeft, 
-  MoreVertical, 
-  Trash2, 
-  Plus, 
-  Minus, 
-  Store, 
-  Info,
-  ShoppingCart,
-  ArrowRight,
-  Leaf
-} from "lucide-react";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, Minus, Plus, ShoppingCart, Trash2, Truck } from "lucide-react";
+import { GalatApi, pratinjauPesanan } from "@/lib/api";
+import { bacaKeranjang, hapusDariKeranjang, ubahJumlah, type BarisKeranjang } from "@/lib/keranjang";
+import type { PreviewOrderResponse } from "@agro-os/shared";
 
-type CartItem = {
-  id: string;
-  seller: string;
-  name: string;
-  grade: string;
-  harvestDate: string;
-  price: number;
-  qty: number;
-  image: string;
-  selected: boolean;
-};
+const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
+const tgl = (iso: string) =>
+  new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
 
-const INITIAL_CART: CartItem[] = [
-  {
-    id: "item-1",
-    seller: "Farm Fresh Berdikari",
-    name: "Tomat Beef Premium",
-    grade: "Grade A",
-    harvestDate: "05 Ags 2026",
-    price: 150000,
-    qty: 10,
-    image: "https://images.unsplash.com/photo-1592924357228-91a4daadcfea?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80",
-    selected: true,
-  },
-  {
-    id: "item-2",
-    seller: "Kebun Makmur Jaya",
-    name: "Sawi Pakcoy Premium",
-    grade: "Grade B",
-    harvestDate: "07 Ags 2026",
-    price: 100000,
-    qty: 5,
-    image: "https://images.unsplash.com/photo-1596180377074-ce49b596afdb?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80",
-    selected: true,
-  },
-  {
-    id: "item-3",
-    seller: "Kebun Makmur Jaya",
-    name: "Sawi Pakcoy Premium",
-    grade: "Grade B",
-    harvestDate: "07 Ags 2026",
-    price: 100000,
-    qty: 5,
-    image: "https://images.unsplash.com/photo-1596180377074-ce49b596afdb?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80",
-    selected: false,
-  },
-  {
-    id: "item-4",
-    seller: "Kebun Makmur Jaya",
-    name: "Sawi Pakcoy Premium",
-    grade: "Grade B",
-    harvestDate: "07 Ags 2026",
-    price: 100000,
-    qty: 5,
-    image: "https://images.unsplash.com/photo-1596180377074-ce49b596afdb?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80",
-    selected: false,
-  },
-];
+export default function CartPage() {
+  const router = useRouter();
+  const [isi, setIsi] = useState<BarisKeranjang[]>([]);
+  const [pratinjau, setPratinjau] = useState<PreviewOrderResponse | null>(null);
+  const [galat, setGalat] = useState<string | null>(null);
+  const [memuat, setMemuat] = useState(false);
 
-export default function BuyerCartPage() {
-  const [items, setItems] = useState<CartItem[]>(INITIAL_CART);
+  const hitung = useCallback(async (baris: BarisKeranjang[]) => {
+    if (!baris.length) {
+      setPratinjau(null);
+      return;
+    }
+    setMemuat(true);
+    setGalat(null);
+    try {
+      // Rencana pengiriman, ongkir, dan pemeriksaan minimum order SELALU dihitung server.
+      // Kalau FE ikut menghitung, dua sumber kebenaran akan berselisih dan pembeli
+      // melihat angka yang berbeda dengan yang ditagihkan.
+      setPratinjau(await pratinjauPesanan({ lines: baris.map((b) => ({ batchId: b.batchId, qtyBox: b.qtyBox })) }));
+    } catch (e) {
+      setGalat(e instanceof GalatApi ? e.message : "Gagal menghitung rencana pengiriman");
+      setPratinjau(null);
+    } finally {
+      setMemuat(false);
+    }
+  }, []);
 
-  const toggleSelect = (id: string) => {
-    setItems(items.map(item => item.id === id ? { ...item, selected: !item.selected } : item));
-  };
+  useEffect(() => {
+    const muat = () => {
+      const baris = bacaKeranjang();
+      setIsi(baris);
+      void hitung(baris);
+    };
+    muat();
+    window.addEventListener("keranjang:ubah", muat);
+    return () => window.removeEventListener("keranjang:ubah", muat);
+  }, [hitung]);
 
-  const updateQty = (id: string, delta: number) => {
-    setItems(items.map(item => {
-      if (item.id === id) {
-        const newQty = Math.max(1, item.qty + delta);
-        return { ...item, qty: newQty };
-      }
-      return item;
-    }));
-  };
-
-  const selectedItems = items.filter(item => item.selected);
-  const totalQty = selectedItems.reduce((acc, item) => acc + item.qty, 0);
-  const subtotal = selectedItems.reduce((acc, item) => acc + (item.price * item.qty), 0);
-
-  const formatRupiah = (number: number) => {
-    return new Intl.NumberFormat("id-ID", {
-      style: "currency",
-      currency: "IDR",
-      minimumFractionDigits: 0
-    }).format(number);
-  };
+  if (!isi.length) {
+    return (
+      <div className="p-8">
+        <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center">
+          <ShoppingCart className="w-10 h-10 text-gray-300 mx-auto mb-4" />
+          <h2 className="font-bold text-gray-800 mb-1">Keranjang masih kosong</h2>
+          <p className="text-sm text-gray-500 mb-5">
+            Pilih komoditas dari katalog untuk mulai memesan.
+          </p>
+          <Link
+            href="/buyer/region"
+            className="inline-block bg-emerald-950 text-white text-sm font-semibold px-5 py-2.5 rounded-lg hover:bg-emerald-800"
+          >
+            Lihat Katalog
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      {/* Back button */}
-      <Link 
-        href="/buyer/catalog" 
-        className="inline-flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-emerald-700 transition mb-6"
-      >
-        <ArrowLeft className="w-4 h-4" /> Kembali ke Katalog
-      </Link>
+    <div className="p-8 max-w-5xl">
+      <h1 className="text-2xl font-bold text-emerald-950 mb-6">Keranjang</h1>
 
-      {/* Header Section */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-emerald-950 mb-2">Keranjang Pasokan</h1>
-        <p className="text-gray-500 text-sm">Periksa kembali kuantitas komoditas Anda sebelum mengatur rencana pengiriman.</p>
-      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-3">
+          {isi.map((b) => (
+            <div
+              key={b.batchId}
+              className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-4"
+            >
+              <div className="flex-1 min-w-0">
+                <h3 className="font-bold text-gray-900 truncate">{b.productName}</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {b.tenantName} · panen {tgl(b.claimedHarvestDate)}
+                </p>
+                <p className="text-sm font-semibold text-gray-800 mt-1">
+                  {rp(b.unitPriceLocked)}{" "}
+                  <span className="text-xs font-normal text-gray-500">
+                    / box ({b.qtyKgPerBox} kg)
+                  </span>
+                </p>
+              </div>
 
-      <div className="flex flex-col lg:flex-row gap-8">
-        {/* Left: Items List */}
-        <div className="flex-1 space-y-4">
-          {items.map((item) => (
-            <div key={item.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-              {/* Header */}
-              <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={item.selected}
-                    onChange={() => toggleSelect(item.id)}
-                    className="w-5 h-5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer" 
-                  />
-                  <span className="font-bold text-gray-900 text-sm">{item.seller}</span>
-                </label>
-                <button className="text-gray-400 hover:text-gray-600 transition">
-                  <MoreVertical className="w-5 h-5" />
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => ubahJumlah(b.batchId, b.qtyBox - 1)}
+                  className="w-8 h-8 rounded-lg border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+                <span className="w-10 text-center text-sm font-bold">{b.qtyBox}</span>
+                <button
+                  onClick={() => ubahJumlah(b.batchId, b.qtyBox + 1)}
+                  className="w-8 h-8 rounded-lg border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                >
+                  <Plus className="w-3.5 h-3.5" />
                 </button>
               </div>
 
-              {/* Body */}
-              <div className="p-5">
-                <div className="flex gap-4">
-                  <div className="w-24 h-24 rounded-lg overflow-hidden bg-gray-100 shrink-0">
-                    <div className="w-full h-full bg-cover bg-center" style={{ backgroundImage: `url(${item.image})` }} />
-                  </div>
-                  
-                  <div className="flex-1">
-                    <div className="flex justify-between items-start mb-1">
-                      <h3 className="font-bold text-gray-900">{item.name}</h3>
-                      <button className="text-gray-400 hover:text-red-500 transition">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                    
-                    <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
-                      <Store className="w-3.5 h-3.5" />
-                      <span>Dari: <strong className="text-gray-700">{item.seller}</strong></span>
-                    </div>
-                    
-                    <div className="text-xs text-gray-500 mb-2">
-                      {item.grade} | Panen: {item.harvestDate}
-                    </div>
-                    
-                    <div className="text-sm font-semibold text-gray-900">
-                      {formatRupiah(item.price)} <span className="text-gray-400 font-normal">/ Box</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Footer Controls */}
-                <div className="mt-4 flex items-center justify-between pt-4 border-t border-gray-100">
-                  <div className="flex items-center gap-4 bg-white border border-gray-200 rounded-lg p-1">
-                    <button 
-                      onClick={() => updateQty(item.id, -1)}
-                      className="w-8 h-8 flex items-center justify-center text-gray-500 hover:bg-gray-100 rounded-md transition"
-                    >
-                      <Minus className="w-4 h-4" />
-                    </button>
-                    <span className="w-8 text-center font-bold text-sm text-gray-900">{item.qty}</span>
-                    <button 
-                      onClick={() => updateQty(item.id, 1)}
-                      className="w-8 h-8 flex items-center justify-center text-gray-500 hover:bg-gray-100 rounded-md transition"
-                    >
-                      <Plus className="w-4 h-4" />
-                    </button>
-                  </div>
-                  
-                  <div className="text-right">
-                    <div className="text-[10px] font-bold text-gray-400 tracking-wider mb-0.5">SUBTOTAL</div>
-                    <div className="text-lg font-bold text-emerald-700">
-                      {formatRupiah(item.price * item.qty)}
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <button
+                onClick={() => hapusDariKeranjang(b.batchId)}
+                className="w-8 h-8 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 flex items-center justify-center shrink-0"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
             </div>
           ))}
-
-          {/* Add more button */}
-          <Link 
-            href="/buyer/catalog"
-            className="w-full border-2 border-dashed border-gray-300 rounded-xl p-8 flex flex-col items-center justify-center text-gray-500 hover:text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50 transition-colors"
-          >
-            <ShoppingCart className="w-8 h-8 mb-3 text-gray-400" />
-            <span className="text-sm font-medium">Tambahkan komoditas lain dari katalog untuk mengoptimalkan logistik Anda.</span>
-          </Link>
         </div>
 
-        {/* Right: Summary */}
-        <div className="w-full lg:w-[400px]">
-          <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm sticky top-24">
-            <h2 className="text-lg font-bold text-gray-900 mb-6">Ringkasan Belanja</h2>
-            
-            <div className="space-y-4 mb-6">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Total Item ({selectedItems.length} Komoditas)</span>
-                <span className="font-bold text-gray-900">{totalQty} Box</span>
+        <div className="space-y-4">
+          {galat && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              {galat}
+            </div>
+          )}
+
+          {memuat && <div className="h-40 rounded-xl bg-gray-100 animate-pulse" />}
+
+          {pratinjau && !memuat && (
+            <>
+              {/**
+               * Rencana Pengiriman (FR-2.4). Item dikelompokkan per MINGGU PANEN, bukan per
+               * penjual: barang yang panennya beda minggu tidak mungkin diangkut bersamaan,
+               * jadi satu pesanan bisa jadi beberapa pengiriman dengan ongkir masing-masing.
+               */}
+              {pratinjau.plans.map((p, i) => (
+                <div
+                  key={p.harvestWeek}
+                  className={`rounded-xl border p-4 ${
+                    p.meetsMinimum ? "border-gray-200 bg-white" : "border-amber-300 bg-amber-50"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <Truck className="w-4 h-4 text-emerald-700" />
+                    <h3 className="font-bold text-sm text-gray-900">
+                      Pengiriman {i + 1} · siap {tgl(p.readyDate)}
+                    </h3>
+                  </div>
+                  <div className="text-xs text-gray-600 space-y-1">
+                    <div className="flex justify-between">
+                      <span>Subtotal barang</span>
+                      <span>{rp(p.subtotal)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Ongkir</span>
+                      <span>{rp(p.shippingCost)}</span>
+                    </div>
+                  </div>
+
+                  {!p.meetsMinimum && (
+                    <div className="mt-3 flex gap-2 text-xs text-amber-900">
+                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <p>
+                        Kurang <b>{rp(p.shortfallToMinimum)}</b> dari minimum{" "}
+                        {rp(p.minOrderValue)} untuk pengiriman ini. Minimum dihitung{" "}
+                        <b>per pengiriman</b>, bukan per total pesanan, karena ongkir juga
+                        timbul per pengiriman.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              <div className="rounded-xl border border-gray-200 bg-white p-4">
+                <div className="text-sm space-y-1.5">
+                  <div className="flex justify-between text-gray-600">
+                    <span>Total barang</span>
+                    <span>{rp(pratinjau.itemsTotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-600">
+                    <span>Total ongkir</span>
+                    <span>{rp(pratinjau.shippingTotal)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-gray-900 pt-2 border-t border-gray-100">
+                    <span>Total</span>
+                    <span>{rp(pratinjau.grandTotal)}</span>
+                  </div>
+                </div>
+
+                <button
+                  disabled={!pratinjau.canCheckout}
+                  onClick={() => router.push("/buyer/checkout")}
+                  className="w-full mt-4 bg-emerald-950 text-white text-sm font-semibold py-2.5 rounded-lg hover:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {pratinjau.canCheckout ? "Lanjut ke Pengiriman" : "Ada pengiriman di bawah minimum"}
+                </button>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Subtotal Produk</span>
-                <span className="font-bold text-gray-900">{formatRupiah(subtotal)}</span>
-              </div>
-            </div>
-
-            <div className="border-t border-gray-100 pt-4 mb-6">
-              <div className="flex justify-between items-end">
-                <span className="font-bold text-gray-900">Estimasi Total</span>
-                <span className="text-xl font-bold text-emerald-700">{formatRupiah(subtotal)}</span>
-              </div>
-            </div>
-
-            <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 flex gap-3 mb-6">
-              <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
-              <p className="text-xs text-blue-800 leading-relaxed">
-                Ongkos kirim terkonsolidasi dan jadwal kedatangan akan dihitung pada tahap Rencana Pengiriman.
-              </p>
-            </div>
-
-            <Link 
-              href="/buyer/checkout"
-              className={`w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl font-semibold transition shadow-sm ${
-                selectedItems.length > 0 
-                  ? "bg-emerald-950 text-white hover:bg-emerald-900" 
-                  : "bg-gray-200 text-gray-400 cursor-not-allowed pointer-events-none"
-              }`}
-            >
-              Checkout <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
-
-          <div className="mt-4 bg-emerald-50 border border-emerald-100 rounded-xl p-5 flex gap-4">
-            <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center shrink-0">
-              <Leaf className="w-4 h-4 text-emerald-700" />
-            </div>
-            <div>
-              <h4 className="font-bold text-emerald-900 text-sm mb-1">AgroUs Logistics Tip</h4>
-              <p className="text-xs text-emerald-800 leading-relaxed">
-                Menggabungkan pesanan dari tenant yang berdekatan dapat mengurangi biaya emisi karbon hingga 15%.
-              </p>
-            </div>
-          </div>
+            </>
+          )}
         </div>
       </div>
     </div>
