@@ -1,13 +1,15 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Put, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
 import type { GeoJsonPolygon } from "@agro-os/shared";
 import { CurrentUser, JwtAuthGuard } from "../auth/auth.guard";
 import { Roles, RolesGuard } from "../auth/roles.guard";
 import type { JwtPayload } from "../auth/auth.service";
 import { TenantService } from "./tenant.service";
+import { LegalityService } from "./legality.service";
 import { LandPlotService } from "./land-plot.service";
 import {
   CreateLandPlotDto,
   CreateTenantProfileDto,
+  DecideLegalityDto,
   SubmitLegalityDto,
   UpdateTenantProfileDto,
 } from "./tenant.dto";
@@ -74,5 +76,29 @@ export class ZoneController {
   @Get()
   list() {
     return this.tenant.listZones();
+  }
+}
+
+
+/** OP-01 / OP-02 — antrean & putusan legalitas Tenant (FR-1.7). */
+@Controller("operator/legality")
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles("OPERATOR")
+export class OperatorLegalityController {
+  constructor(private readonly legality: LegalityService) {}
+
+  @Get()
+  queue(@Query("status") status?: "PENDING" | "APPROVED" | "REJECTED") {
+    return this.legality.queue(status ?? "PENDING");
+  }
+
+  @Post(":tenantId/decide")
+  @HttpCode(200)
+  decide(
+    @CurrentUser() u: JwtPayload,
+    @Param("tenantId", ParseUUIDPipe) tenantId: string,
+    @Body() dto: DecideLegalityDto,
+  ) {
+    return this.legality.decide(u.sub, tenantId, dto);
   }
 }

@@ -1,10 +1,12 @@
-import { Body, Controller, Get, HttpCode, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, UseGuards } from "@nestjs/common";
 import { CurrentUser, JwtAuthGuard } from "../auth/auth.guard";
 import { Roles, RolesGuard } from "../auth/roles.guard";
 import type { JwtPayload } from "../auth/auth.service";
 import { BuyerService } from "../buyer/buyer.service";
 import { OrderService } from "./order.service";
 import { PaymentService } from "./payment.service";
+import { TenantOrderService } from "./tenant-order.service";
+import { TenantService } from "../tenant/tenant.service";
 import { CheckoutDto, PaymentWebhookDto, PreviewOrderDto } from "./order.dto";
 import { CreateBuyerProfileDto, UpdateBuyerProfileDto } from "../buyer/buyer.dto";
 
@@ -52,6 +54,17 @@ export class OrderController {
   list(@CurrentUser() u: JwtPayload) {
     return this.orders.listOrders(u.sub);
   }
+
+  /**
+   * BY-10 — detail satu pesanan.
+   *
+   * Didaftarkan SETELAH rute statis di atas: `@Get(":id")` yang ditaruh lebih awal akan
+   * ikut menangkap "/preview" dan "/checkout" sebagai id.
+   */
+  @Get(":id")
+  detail(@CurrentUser() u: JwtPayload, @Param("id", ParseUUIDPipe) id: string) {
+    return this.orders.getOrder(u.sub, id);
+  }
 }
 
 @Controller("payments")
@@ -74,5 +87,30 @@ export class PaymentController {
   @HttpCode(200)
   expireStale() {
     return this.payments.expireStale();
+  }
+}
+
+
+/** TN-21 & TN-22 — pesanan masuk dari sisi Tenant. */
+@Controller("tenant/orders")
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles("TENANT")
+export class TenantOrderController {
+  constructor(
+    private readonly tenant: TenantService,
+    private readonly tenantOrders: TenantOrderService,
+  ) {}
+
+  @Get()
+  async list(@CurrentUser() u: JwtPayload) {
+    const t = await this.tenant.requireTenant(u.sub);
+    return this.tenantOrders.list(t.id);
+  }
+
+  /** `:id` adalah shipmentId — satuan kerja Tenant memang pengiriman, bukan pesanan. */
+  @Get(":id")
+  async detail(@CurrentUser() u: JwtPayload, @Param("id", ParseUUIDPipe) id: string) {
+    const t = await this.tenant.requireTenant(u.sub);
+    return this.tenantOrders.detail(t.id, id);
   }
 }

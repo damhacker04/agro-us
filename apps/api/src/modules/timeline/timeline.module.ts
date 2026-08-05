@@ -10,6 +10,7 @@ import {
 } from "./timeline.controller";
 import { TimelineService } from "./timeline.service";
 import { AnchorService } from "./anchor.service";
+import { NdviService } from "./ndvi.service";
 
 @Module({
   imports: [TenantModule, AssuranceModule, NotificationModule],
@@ -17,6 +18,7 @@ import { AnchorService } from "./anchor.service";
   providers: [
     TimelineService,
     AnchorService,
+    NdviService,
     // ⚠️ Ganti ke implementasi object storage (S3/R2/GCS) sebelum produksi —
     // disk container bersifat ephemeral, lihat storage.service.ts.
     { provide: StorageService, useClass: LocalDiskStorageService },

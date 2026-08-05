@@ -18,6 +18,7 @@ import type { JwtPayload } from "../auth/auth.service";
 import { TenantService } from "../tenant/tenant.service";
 import { TimelineService, type UploadedPhoto } from "./timeline.service";
 import { AnchorService } from "./anchor.service";
+import { NdviService } from "./ndvi.service";
 import { CreateNodeDto } from "./timeline.dto";
 
 const MAX_PHOTOS = 5;
@@ -73,6 +74,7 @@ export class PublicTimelineController {
   constructor(
     private readonly timeline: TimelineService,
     private readonly anchorSvc: AnchorService,
+    private readonly ndvi: NdviService,
   ) {}
 
   /** BY-03a — Verified Timeline yang dilihat pembeli. */
@@ -85,6 +87,12 @@ export class PublicTimelineController {
   @Get("timeline/verify")
   verify(@Param("batchId", ParseUUIDPipe) batchId: string) {
     return this.timeline.verifyChain(batchId);
+  }
+
+  /** BY-03b & TN-15 — deret NDVI/NDMI beserta klaim vs deteksi (FR-4.6). */
+  @Get("ndvi")
+  ndviSeries(@Param("batchId", ParseUUIDPipe) batchId: string) {
+    return this.ndvi.forBatch(batchId);
   }
 
   /** Riwayat root hash harian (§6.1). */
