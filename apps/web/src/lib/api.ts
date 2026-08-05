@@ -6,11 +6,22 @@
  * tipe responsnya diambil dari `@agro-os/shared` — kontrak yang sama yang dipakai
  * backend, sehingga ketidakcocokan ketahuan saat kompilasi, bukan saat dibuka pengguna.
  */
+import { ambilToken } from "./auth";
 import type {
+  AuthUser,
+  BuyerProfileResponse,
   CatalogItem,
+  CheckoutBody,
+  CheckoutResponse,
   NdviSeries,
+  PreviewOrderResponse,
+  OrderSummary,
+  PreviewOrderBody,
+  RequestOtpResponse,
   TimelineNodeResponse,
   TimelineVerifyResponse,
+  VerifyOtpBody,
+  VerifyOtpResponse,
   ZoneSummary,
 } from "@agro-os/shared";
 
@@ -28,19 +39,52 @@ import type {
  */
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://agro-us.onrender.com";
 
+/** Galat API yang membawa kode mesin, supaya UI bisa membedakan penyebabnya. */
+export class GalatApi extends Error {
+  constructor(
+    readonly status: number,
+    readonly kode: string | null,
+    pesan: string,
+  ) {
+    super(pesan);
+  }
+}
+
 async function ambil<T>(jalur: string, init?: RequestInit): Promise<T> {
+  const token = ambilToken();
   const res = await fetch(`${BASE}${jalur}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-    // Katalog & timeline berubah sepanjang musim tanam; jangan disimpan cache Next.
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {}),
+    },
+    // Katalog, pesanan, dan timeline berubah sepanjang musim tanam; jangan di-cache.
     cache: "no-store",
   });
+
   if (!res.ok) {
-    const pesan = await res.text().catch(() => "");
-    throw new Error(`API ${res.status} ${jalur}${pesan ? ` — ${pesan.slice(0, 160)}` : ""}`);
+    // Backend mengirim { code, message } untuk galat yang bisa ditindaklanjuti pengguna
+    // (mis. MIN_ORDER_NOT_MET, QUOTA_RACE_LOST). Pesannya sudah berbahasa Indonesia dan
+    // siap tampil — jangan diganti kalimat buatan FE yang lebih miskin konteks.
+    let kode: string | null = null;
+    let pesan = `Terjadi kesalahan (${res.status})`;
+    try {
+      const isi = await res.json();
+      kode = isi?.code ?? null;
+      pesan = Array.isArray(isi?.message) ? isi.message.join(", ") : (isi?.message ?? pesan);
+    } catch {
+      /* respons bukan JSON — pakai pesan baku */
+    }
+    throw new GalatApi(res.status, kode, pesan);
   }
-  return res.json() as Promise<T>;
+
+  // 204/205 tidak berisi badan respons.
+  return (res.status === 204 ? undefined : await res.json()) as T;
 }
+
+const kirim = <T>(jalur: string, body: unknown, metode = "POST") =>
+  ambil<T>(jalur, { method: metode, body: JSON.stringify(body) });
 
 /** Zona layanan (FR-2.1). Hanya Malang Raya — bukan seluruh Indonesia. */
 export const ambilZona = () => ambil<ZoneSummary[]>("/zones");
@@ -60,3 +104,33 @@ export const ambilVerifikasi = (batchId: string) =>
   ambil<TimelineVerifyResponse>(`/batches/${batchId}/timeline/verify`);
 
 export const ambilNdvi = (batchId: string) => ambil<NdviSeries>(`/batches/${batchId}/ndvi`);
+
+// ============================== AUTH (FR-1.3) ==============================
+
+export const mintaOtp = (phone: string) =>
+  kirim<RequestOtpResponse>("/auth/otp/request", { phone });
+
+export const verifikasiOtp = (body: VerifyOtpBody) =>
+  kirim<VerifyOtpResponse>("/auth/otp/verify", body);
+
+export const ambilSaya = () => ambil<AuthUser>("/auth/me");
+
+// ============================== PEMBELI ==============================
+
+export const pratinjauPesanan = (body: PreviewOrderBody) =>
+  kirim<PreviewOrderResponse>("/orders/preview", body);
+
+export const checkout = (body: CheckoutBody) => kirim<CheckoutResponse>("/orders/checkout", body);
+
+export const bayarSimulasi = (invoiceRef: string) =>
+  kirim<unknown>("/payments/webhook", { invoiceRef, status: "PAID" });
+
+export const ambilPesanan = () => ambil<OrderSummary[]>("/orders");
+
+export const ambilProfilPembeli = () => ambil<BuyerProfileResponse>("/buyer/profile");
+
+export const buatProfilPembeli = (body: { companyName: string; activeZoneId?: string }) =>
+  kirim<BuyerProfileResponse>("/buyer/profile", body);
+
+export const ubahProfilPembeli = (body: { companyName?: string; activeZoneId?: string }) =>
+  kirim<BuyerProfileResponse>("/buyer/profile", body, "PATCH");

@@ -4,6 +4,7 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
@@ -26,6 +27,8 @@ export interface JwtPayload {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
@@ -89,11 +92,24 @@ export class AuthService {
     });
     await this.sms.send(phone, `Kode masuk AgroUs: ${code}. Berlaku 5 menit. Jangan bagikan.`);
 
-    const isProd = process.env.NODE_ENV === "production";
+    // Kode ikut dikembalikan HANYA bila lingkungannya sengaja dibuka untuk peragaan.
+    //
+    // Sebelumnya syaratnya `NODE_ENV !== "production"`. Itu menyatukan dua hal berbeda:
+    // "ini bukan server produksi" dan "boleh membocorkan kode masuk". Lingkungan
+    // peragaan yang benar-benar dipublikasikan tetap perlu NODE_ENV=production supaya
+    // pagar-pagar lain (mis. penolakan pemendekan jendela klaim) tetap aktif — tetapi
+    // kodenya harus bisa diambil, karena tidak ada SMS sungguhan yang mengirimkannya.
+    //
+    // ⚠️ Selama menyala, siapa pun yang tahu nomor telepon bisa masuk sebagai pemiliknya.
+    // Hanya untuk data karangan. JANGAN diaktifkan di lingkungan berisi pengguna nyata.
+    const bukaKode = process.env["DEMO_EXPOSE_OTP"] === "true";
+    if (bukaKode) {
+      this.logger.warn(`DEMO_EXPOSE_OTP aktif — kode OTP ${phone} ikut dikembalikan lewat API.`);
+    }
     return {
       expiresInSec: OTP_TTL_MS / 1000,
       resendAfterSec: OTP_RESEND_COOLDOWN_MS / 1000,
-      ...(isProd ? {} : { devOtp: code }), // memudahkan dev/demo saat SMS = console
+      ...(bukaKode ? { devOtp: code } : {}),
     };
   }
 
