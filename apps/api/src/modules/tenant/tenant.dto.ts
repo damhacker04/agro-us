@@ -1,18 +1,5 @@
 import { Type } from "class-transformer";
-import {
-  ArrayMaxSize,
-  ArrayMinSize,
-  ArrayNotEmpty,
-  IsArray,
-  IsIn,
-  IsOptional,
-  IsString,
-  IsUUID,
-  IsUrl,
-  MaxLength,
-  MinLength,
-  ValidateNested,
-} from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, ArrayNotEmpty, IsArray, IsBoolean, IsIn, IsOptional, IsString, IsUUID, IsUrl, MaxLength, MinLength, ValidateNested } from "class-validator";
 
 export class CreateTenantProfileDto {
   @IsString()
@@ -75,4 +62,17 @@ export class CreateLandPlotDto {
 
   @IsIn(["GAMBAR_PETA", "WALK_AROUND"], { message: "captureMethod harus GAMBAR_PETA atau WALK_AROUND" })
   captureMethod!: "GAMBAR_PETA" | "WALK_AROUND";
+}
+
+
+/** POST /operator/legality/:tenantId/decide — FR-1.7. */
+export class DecideLegalityDto {
+  @IsBoolean()
+  approve!: boolean;
+
+  /** Wajib saat menolak; divalidasi di service supaya pesannya bisa menjelaskan alasannya. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
 }

@@ -508,6 +508,12 @@ model Shipment {
   zoneId            String                               @map("zone_id") @db.Uuid
   destPoint         Unsupported("geometry(Point, 4326)") @map("dest_point") // snapshot titik checkout — FR-2.7
   destRadiusM       Int                                  @default(100) @map("dest_radius_m") // §5.6.3
+  // FR-2.7 — identitas penerima. Sebelumnya divalidasi di DTO checkout lalu DIBUANG:
+  // kurir yang tiba di lokasi tidak tahu harus menyerahkan barang kepada siapa, dan
+  // layar detail pesanan Tenant tidak punya data penerima untuk ditampilkan.
+  recipientName     String                               @map("recipient_name")
+  recipientPhone    String                               @map("recipient_phone")
+  landmark          String?
   receivingHours    String                               @map("receiving_hours")
   status            ShipmentStatus                       @default(MENUNGGU_PANEN)
   courierPinHash    String?                              @map("courier_pin_hash") // Kode Antar di-hash — FR-6.1/6.3

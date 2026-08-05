@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import {
+  toVerificationBadge,
+  type BuyerOrderDetail,
   PAYMENT_EXPIRY_MS,
   SHIPPING_COST_PER_PLAN,
   type CheckoutResponse,
@@ -215,11 +217,15 @@ export class OrderService {
       for (const plan of plans) {
         // Shipment punya kolom geometry → harus lewat raw SQL.
         const rows = await tx.$queryRaw<Array<{ id: string }>>`
-          INSERT INTO shipments (order_id, zone_id, dest_point, receiving_hours, status)
+          INSERT INTO shipments (order_id, zone_id, dest_point, recipient_name, recipient_phone,
+                                 landmark, receiving_hours, status)
           VALUES (
             ${order.id}::uuid,
             ${zone.id}::uuid,
             ST_SetSRID(ST_MakePoint(${dto.delivery.point.lng}, ${dto.delivery.point.lat}), 4326),
+            ${dto.delivery.recipientName},
+            ${dto.delivery.phone},
+            ${dto.delivery.landmark ?? null},
             ${dto.delivery.receivingHours},
             'MENUNGGU_PANEN'::"ShipmentStatus"
           )
@@ -288,7 +294,18 @@ export class OrderService {
       where: { buyerId: buyer.id },
       include: {
         payments: { orderBy: { expiresAt: "desc" }, take: 1 },
-        shipments: { include: { _count: { select: { items: true } } } },
+        shipments: {
+          include: {
+            _count: { select: { items: true } },
+            // BY-09 hanya bisa menulis "3 item" tanpa ini — pembeli tidak tahu
+            // pesanan mana yang mana.
+            items: {
+              select: {
+                batch: { select: { product: { select: { name: true, tenant: { select: { companyName: true } } } } } },
+              },
+            },
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -312,10 +329,102 @@ export class OrderService {
             status: s.status,
             readyDate: await this.readyDateOf(s.id),
             itemCount: s._count.items,
+            productNames: [...new Set(s.items.map((i) => i.batch.product.name))],
+            tenantNames: [...new Set(s.items.map((i) => i.batch.product.tenant.companyName))],
           })),
         ),
       })),
     );
+  }
+
+  /**
+   * BY-10 — detail satu pesanan milik pembeli ini.
+   *
+   * Daftar pesanan (`GET /orders`) sengaja ringkas; layar detail butuh nama produk,
+   * nama Tenant, badge verifikasi, dan identitas penerima — semuanya tidak ada di
+   * daftar, dan tanpa endpoint ini FE terpaksa menembak beberapa endpoint lain lalu
+   * menyusunnya sendiri.
+   */
+  async getOrder(userId: string, orderId: string): Promise<BuyerOrderDetail> {
+    const buyer = await this.buyers.requireBuyer(userId);
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, buyerId: buyer.id },
+      include: { payments: { orderBy: { expiresAt: "desc" }, take: 1 }, shipments: true },
+    });
+    if (!order) throw new NotFoundException("Pesanan tidak ditemukan");
+
+    const shipments = await Promise.all(
+      order.shipments.map(async (s) => {
+        const geo = await this.prisma.$queryRaw<
+          Array<{ lat: number; lng: number; recipient_name: string; recipient_phone: string; landmark: string | null; receiving_hours: string }>
+        >`
+          SELECT ST_Y(dest_point) AS lat, ST_X(dest_point) AS lng,
+                 recipient_name, recipient_phone, landmark, receiving_hours
+          FROM shipments WHERE id = ${s.id}::uuid
+        `;
+        const g = geo[0]!;
+
+        const items = await this.prisma.orderItem.findMany({
+          where: { shipmentId: s.id },
+          select: {
+            id: true,
+            batchId: true,
+            qtyBox: true,
+            qtyBoxFulfilled: true,
+            unitPriceLocked: true,
+            subtotal: true,
+            batch: {
+              select: {
+                verificationStatus: true,
+                product: { select: { name: true, grade: true, tenant: { select: { companyName: true } } } },
+              },
+            },
+          },
+        });
+
+        return {
+          shipmentId: s.id,
+          status: s.status,
+          readyDate: await this.readyDateOf(s.id),
+          recipient: {
+            name: g.recipient_name,
+            phone: g.recipient_phone,
+            landmark: g.landmark,
+            receivingHours: g.receiving_hours,
+          },
+          destination: { lat: Number(g.lat), lng: Number(g.lng) },
+          arrivedAt: s.arrivedAt?.toISOString() ?? null,
+          claimWindowEndsAt: s.claimWindowEndsAt?.toISOString() ?? null,
+          lines: items.map((i) => ({
+            orderItemId: i.id,
+            batchId: i.batchId,
+            productName: i.batch.product.name,
+            tenantName: i.batch.product.tenant.companyName,
+            grade: i.batch.product.grade,
+            qtyBox: i.qtyBox,
+            qtyBoxFulfilled: i.qtyBoxFulfilled,
+            unitPriceLocked: i.unitPriceLocked,
+            subtotal: i.subtotal,
+            badge: toVerificationBadge(i.batch.verificationStatus),
+          })),
+        };
+      }),
+    );
+
+    return {
+      orderId: order.id,
+      orderStatus: order.orderStatus,
+      totalAmount: order.totalAmount,
+      createdAt: order.createdAt.toISOString(),
+      payment: order.payments[0]
+        ? {
+            status: order.payments[0].status,
+            method: order.payments[0].method,
+            expiresAt: order.payments[0].expiresAt.toISOString(),
+          }
+        : null,
+      shipments,
+    };
   }
 
   private async readyDateOf(shipmentId: string): Promise<string> {

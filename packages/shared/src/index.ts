@@ -59,6 +59,23 @@ export const VerificationBadge = {
 } as const;
 export type VerificationBadge = (typeof VerificationBadge)[keyof typeof VerificationBadge];
 
+/**
+ * Status mentah → badge yang tampil ke pembeli (FR-2.6).
+ *
+ * Ditaruh di kontrak bersama, bukan disalin di tiap modul: pemetaan yang diduplikasi
+ * pasti melenceng begitu ada status baru, dan yang melenceng di sini adalah klaim
+ * kepercayaan — hal yang paling tidak boleh salah di produk ini.
+ *
+ * PERLU_DITINJAU & TIDAK_SESUAI sengaja jatuh ke BELUM_TERVERIFIKASI, bukan
+ * disembunyikan: status mentahnya tetap ikut dikirim supaya FE bisa menampilkan
+ * ketidaksesuaiannya secara terbuka (FR-4.6).
+ */
+export function toVerificationBadge(status: VerificationStatus): VerificationBadge {
+  if (status === "TERVERIFIKASI") return VerificationBadge.TERVERIFIKASI_SATELIT;
+  if (status === "FOTO_SAJA") return VerificationBadge.BUKTI_FOTO_SAJA;
+  return VerificationBadge.BELUM_TERVERIFIKASI;
+}
+
 /** Jenis kegiatan node timeline — 7 jenis terstruktur, bukan teks bebas (5.4.1 + FR-4.9). */
 export const TimelineActivity = {
   PENYIAPAN_LAHAN: "PENYIAPAN_LAHAN",
@@ -361,6 +378,15 @@ export interface BatchResponse {
   verificationStatus: VerificationStatus;
   detectedPlantDate: string | null;
   detectedHarvestDate: string | null;
+  /**
+   * Terisi pada DAFTAR batch (GET /tenant/batches) — TN-14 menampilkan produk & lahannya.
+   * Kosong pada respons satuan yang pemanggilnya sudah memegang konteks itu.
+   */
+  productName?: string;
+  grade?: Grade;
+  qtyKgPerBox?: number;
+  landPlotAreaHa?: number;
+  landPlotTier?: "NORMAL" | "TERBATAS";
 }
 
 /** GET /catalog — katalog terpadu lintas-Tenant (FR-2.1, FR-2.2). */
@@ -515,6 +541,9 @@ export interface OrderSummary {
     status: ShipmentStatus;
     readyDate: string;
     itemCount: number;
+    /** BY-09 — tanpa ini daftar pesanan hanya bisa menulis "3 item". */
+    productNames: string[];
+    tenantNames: string[];
   }>;
 }
 
@@ -645,6 +674,8 @@ export const NOTIF_KINDS = {
   GAGAL_PANEN: "GAGAL_PANEN",
   KLAIM_DIPUTUS: "KLAIM_DIPUTUS",
   ESCROW_CAIR: "ESCROW_CAIR",
+  /** Operator menyetujui/menolak legalitas Tenant (FR-1.7) — menentukan boleh jualan atau tidak. */
+  LEGALITAS_DIPUTUS: "LEGALITAS_DIPUTUS",
 } as const;
 export type NotifKind = (typeof NOTIF_KINDS)[keyof typeof NOTIF_KINDS];
 
@@ -933,4 +964,135 @@ export interface OpenQuotaPrefill {
   coveragePct: number | null;
   /** Terisi bila kejenuhan memburuk sejak kartu ditampilkan. */
   warning?: string;
+}
+
+// ============================== PESANAN SISI TENANT (TN-21, TN-22) ==============================
+
+/** Penerima barang di lokasi — FR-2.7. Kurir perlu tahu menyerahkan kepada siapa. */
+export interface RecipientInfo {
+  name: string;
+  phone: string;
+  /** Patokan alamat, opsional. */
+  landmark: string | null;
+  receivingHours: string;
+}
+
+export interface TenantOrderLine {
+  orderItemId: string;
+  batchId: string;
+  productName: string;
+  grade: Grade;
+  qtyBox: number;
+  /** null selama belum panen; hasil alokasi FIFO setelahnya (FR-7.9). */
+  qtyBoxFulfilled: number | null;
+  unitPriceLocked: Rupiah;
+  subtotal: Rupiah;
+}
+
+/**
+ * Satu baris pekerjaan Tenant (TN-21). Grainnya PENGIRIMAN, bukan pesanan: pengiriman
+ * itulah yang dikemas, dicetak QR-nya, dan diserahkan ke kurir.
+ *
+ * Pesanan lintas-Tenant bisa memuat item milik beberapa Tenant dalam satu pengiriman —
+ * `lines` HANYA berisi item milik Tenant yang meminta.
+ */
+export interface TenantOrderSummary {
+  shipmentId: string;
+  orderId: string;
+  status: ShipmentStatus;
+  buyerName: string;
+  zoneName: string;
+  createdAt: string;
+  /** Tanggal panen paling lambat di antara item Tenant ini. */
+  readyDate: string;
+  lines: TenantOrderLine[];
+  /** Nilai milik Tenant ini saja, bukan total tagihan pembeli. */
+  subtotal: Rupiah;
+  /** QR sudah pernah diterbitkan? Menentukan tombol Cetak QR aktif atau tidak (TN-22). */
+  qrIssued: boolean;
+}
+
+export interface TenantOrderDetail extends TenantOrderSummary {
+  recipient: RecipientInfo;
+  destination: GpsCoordinate;
+  /** Terisi hanya setelah barang diterima. */
+  arrivedAt: string | null;
+  claimWindowEndsAt: string | null;
+  completedAt: string | null;
+}
+
+// ============================== DETAIL PESANAN PEMBELI (BY-10) ==============================
+
+export interface BuyerOrderShipment {
+  shipmentId: string;
+  status: ShipmentStatus;
+  readyDate: string;
+  recipient: RecipientInfo;
+  destination: GpsCoordinate;
+  arrivedAt: string | null;
+  claimWindowEndsAt: string | null;
+  lines: Array<{
+    orderItemId: string;
+    batchId: string;
+    productName: string;
+    tenantName: string;
+    grade: Grade;
+    qtyBox: number;
+    qtyBoxFulfilled: number | null;
+    unitPriceLocked: Rupiah;
+    subtotal: Rupiah;
+    /** Badge batch — pembeli berhak melihatnya kembali di riwayat (FR-2.6). */
+    badge: VerificationBadge;
+  }>;
+}
+
+export interface BuyerOrderDetail {
+  orderId: string;
+  orderStatus: OrderStatus;
+  totalAmount: Rupiah;
+  createdAt: string;
+  payment: { status: PaymentStatus; method: PaymentMethod; expiresAt: string } | null;
+  shipments: BuyerOrderShipment[];
+}
+
+// ============================== BUKTI SATELIT (BY-03b, TN-15) ==============================
+
+export interface NdviPoint {
+  date: string;
+  /** null bila citranya tidak terpakai (mis. tertutup awan). */
+  ndvi: number | null;
+  ndmi: number | null;
+  cloudPct: number;
+  /** false = pengamatan dibuang dari penilaian; tetap dikirim agar lubang data terlihat. */
+  usable: boolean;
+}
+
+/** GET /batches/:id/ndvi — publik, sejalan dengan Verified Timeline (§6.1). */
+export interface NdviSeries {
+  batchId: string;
+  verificationStatus: VerificationStatus;
+  /** Klaim Tenant vs yang terdeteksi satelit — selisihnya ditampilkan terbuka (FR-4.6). */
+  claimedPlantDate: string | null;
+  claimedHarvestDate: string;
+  detectedPlantDate: string | null;
+  detectedHarvestDate: string | null;
+  points: NdviPoint[];
+}
+
+// ============================== OPERATOR: LEGALITAS (FR-1.7) ==============================
+
+export interface LegalityQueueItem {
+  tenantId: string;
+  companyName: string;
+  legalityStatus: LegalityStatus;
+  legalityDocUrl: string | null;
+  submittedAt: string | null;
+  zoneNames: string[];
+  landPlotCount: number;
+}
+
+export interface DecideLegalityBody {
+  approve: boolean;
+  /** Wajib saat menolak — Tenant berhak tahu apa yang harus diperbaiki. */
+  note?: string;
 }
