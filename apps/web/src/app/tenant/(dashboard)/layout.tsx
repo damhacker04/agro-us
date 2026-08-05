@@ -78,10 +78,8 @@ export default function TenantDashboardLayout({
         {/* Topbar */}
         <header className="h-20 bg-[#f5f8ff] flex items-center justify-between px-8 shrink-0">
           <div className="flex items-center gap-2 font-bold text-xl text-emerald-950">
-            <div className="w-6 h-6 bg-emerald-100 text-emerald-700 rounded-md flex items-center justify-center">
-              <Leaf className="w-3.5 h-3.5" />
-            </div>
-            AgroUs
+            <img src="/logo.png" alt="AgroUs Logo" className="w-10 h-10 object-contain" />
+            <span className="font-fredoka text-2xl">AgroUs</span>
           </div>
 
           <div className="flex items-center gap-6">

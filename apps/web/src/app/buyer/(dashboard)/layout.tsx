@@ -48,9 +48,7 @@ export default function BuyerDashboardLayout({
           {/* Logo */}
           <div className="p-6 pb-8">
             <Link href="/" className="flex items-center gap-2">
-              <div className="w-8 h-8 text-emerald-600 bg-emerald-100 rounded flex items-center justify-center font-bold text-lg">
-                A
-              </div>
+              <img src="/logo.png" alt="AgroUs Logo" className="w-10 h-10 object-contain" />
               <span className="text-2xl font-bold text-emerald-950 font-fredoka">
                 AgroUs
               </span>
