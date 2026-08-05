@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { 
@@ -15,7 +15,7 @@ import {
   SearchCode
 } from "lucide-react";
 
-export default function BuyerDashboardLayout({
+function BuyerDashboardLayoutInner({
   children,
 }: {
   children: React.ReactNode;
@@ -161,5 +161,21 @@ export default function BuyerDashboardLayout({
         </div>
       </main>
     </div>
+  );
+}
+
+/**
+ * `useSearchParams()` membuat komponen ini hanya bisa dirender di klien. Karena dipakai
+ * di LAYOUT, seluruh halaman di bawah /buyer ikut terdampak — dan `next build` menolak
+ * memprarender semuanya dengan galat "should be wrapped in a suspense boundary".
+ *
+ * Dibungkus Suspense di sini supaya kerangka halaman tetap bisa dirender lebih dulu di
+ * server, sementara bagian yang bergantung pada query string menyusul di klien.
+ */
+export default function BuyerDashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#f0f4f8]" />}>
+      <BuyerDashboardLayoutInner>{children}</BuyerDashboardLayoutInner>
+    </Suspense>
   );
 }
