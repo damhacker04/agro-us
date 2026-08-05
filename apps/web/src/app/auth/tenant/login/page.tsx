@@ -27,10 +27,8 @@ export default function TenantLoginPage() {
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-100">
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-6 h-6 text-emerald-600 bg-emerald-100 rounded-sm flex items-center justify-center font-bold">
-            A
-          </div>
-          <span className="text-xl font-bold text-emerald-950 font-fredoka">
+          <img src="/logo.png" alt="AgroUs Logo" className="w-10 h-10 object-contain" />
+          <span className="text-2xl font-bold text-emerald-950 font-fredoka">
             AgroUs
           </span>
         </Link>

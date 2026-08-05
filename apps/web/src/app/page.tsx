@@ -25,7 +25,7 @@ export default function LandingPage() {
       {/* Nvabar */}
       <nav className="flex items-center justify-between px-8 py-4 border-b border-gray-100">
         <div className="flex items-center gap-2 text-emerald-900">
-          <Leaf className="w-6 h-6" />
+          <img src="/logo.png" alt="AgroUs Logo" className="w-10 h-10 object-contain" />
           <span className="text-xl font-bold font-fredoka">AgroUs</span>
         </div>
         <div className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-500">
