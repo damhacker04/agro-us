@@ -12,6 +12,8 @@ const SEVERITY: Record<NotifKind, NotifSeverity> = {
   GAGAL_PANEN: "KRITIS",
   KLAIM_DIPUTUS: "KRITIS",
   ESCROW_CAIR: "KRITIS",
+  // Kritis: selama belum diputus, Tenant tidak bisa berjualan sama sekali.
+  LEGALITAS_DIPUTUS: "KRITIS",
 };
 
 /**

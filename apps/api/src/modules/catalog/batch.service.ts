@@ -115,12 +115,28 @@ export class BatchService {
     return this.toResponse(batch);
   }
 
+  /**
+   * TN-14 wajib menampilkan produk & poligon lahannya, bukan sekadar id. Tanpa nama di
+   * sini FE terpaksa menembak /tenant/products dan /tenant/land-plots untuk tiap baris
+   * hanya demi mengisi dua kolom teks.
+   */
   async findAll(tenantId: string): Promise<BatchResponse[]> {
     const rows = await this.prisma.batch.findMany({
       where: { product: { tenantId } },
       orderBy: { claimedHarvestDate: "asc" },
+      include: {
+        product: { select: { name: true, grade: true, qtyKgPerBox: true } },
+        landPlot: { select: { areaHa: true, verificationTier: true } },
+      },
     });
-    return rows.map((b) => this.toResponse(b));
+    return rows.map((b) => ({
+      ...this.toResponse(b),
+      productName: b.product.name,
+      grade: b.product.grade,
+      qtyKgPerBox: Number(b.product.qtyKgPerBox),
+      landPlotAreaHa: Number(b.landPlot.areaHa),
+      landPlotTier: b.landPlot.verificationTier,
+    }));
   }
 
   async findOne(tenantId: string, id: string): Promise<BatchResponse> {

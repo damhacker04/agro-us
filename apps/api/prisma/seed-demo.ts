@@ -89,6 +89,9 @@ const TENANTS = [
   },
 ] as const;
 
+/** Nomor operator — satu sumber untuk pembuatan akun DAN baris panduan yang dicetak. */
+const OPERATOR_PHONE = "081100000030";
+
 const BUYERS = [
   { kunci: "katering", nama: "Katering Sehat Nusantara", telepon: "081100000201", zona: "Kota Malang" },
   { kunci: "resto", nama: "Resto Padi Emas", telepon: "081100000202", zona: "Kota Malang" },
@@ -207,7 +210,12 @@ async function main() {
   console.log(`✔ ${BUYERS.length} pembeli`);
 
   // ---------- Operator ----------
-  await prisma.user.create({ data: { phone: "+628110000030", role: "OPERATOR" } });
+  // Nomornya dipakai bersama dengan baris panduan di bawah lewat satu konstanta:
+  // sebelumnya ditulis dua kali dan MELENCENG satu digit, sehingga siapa pun yang
+  // mengikuti panduan cetak justru membuat akun baru alih-alih masuk sebagai operator.
+  await prisma.user.create({
+    data: { phone: `+62${OPERATOR_PHONE.slice(1)}`, role: "OPERATOR" },
+  });
 
   // ---------- Katalog ----------
   const batchId = new Map<string, string>();
@@ -291,6 +299,40 @@ async function main() {
   }
   console.log(`✔ Verified Timeline: ${KRONOLOGI.length} node berantai + foto bukti`);
 
+  // ---------- Pengamatan satelit untuk batch unggulan ----------
+  // Tanpa ini grafik NDVI (BY-03b/TN-15) kosong saat diperagakan, padahal verifikasi
+  // satelit justru pembeda utama produk ini. Kurvanya dibuat mengikuti pola tanaman
+  // sungguhan: nyaris telanjang saat tanam, naik selama vegetatif, memuncak, lalu
+  // turun menjelang panen. Dua tanggal sengaja tertutup awan supaya lubang datanya
+  // ikut terlihat — grafik yang mulus sempurna justru tidak realistis untuk Indonesia.
+  const lahanUnggulan = lahanId.get("pujon")![0]!;
+  const kurva: Array<[number, number | null, number]> = [
+    // [hari sebelum panen, NDVI, tutupan awan %]
+    [92, 0.14, 8], [87, 0.16, 12], [82, 0.21, 5], [77, null, 74],
+    [72, 0.34, 18], [67, 0.46, 9], [62, 0.58, 4], [57, 0.67, 11],
+    [52, 0.74, 6], [47, 0.79, 15], [42, 0.81, 3], [37, null, 88],
+    [32, 0.78, 21], [27, 0.72, 7], [22, 0.64, 13], [17, 0.55, 9],
+    [12, 0.47, 6], [7, 0.39, 17], [2, 0.31, 10],
+  ];
+  for (const [hari, ndvi, awan] of kurva) {
+    await prisma.satelliteObservation.create({
+      data: {
+        landPlotId: lahanUnggulan,
+        sceneDate: hariLalu(hari - panenHariUnggulan),
+        cloudPct: awan,
+        ndviMean: ndvi,
+        ndmiMean: ndvi === null ? null : Math.round(ndvi * 0.72 * 1e4) / 1e4,
+        // >40% awan dibuang dari penilaian (§6.2) — tetap disimpan, tidak dihapus.
+        usable: awan <= 40 && ndvi !== null,
+      },
+    });
+  }
+  await prisma.batch.update({
+    where: { id: unggulan },
+    data: { detectedPlantDate: hariLalu(90 - panenHariUnggulan) },
+  });
+  console.log(`✔ ${kurva.length} pengamatan satelit (2 tertutup awan) untuk grafik NDVI`);
+
   // ---------- Pesanan di berbagai tahap ----------
   // Supaya stepper 6 status (BY-10) dan ledger escrow bisa diperagakan tanpa menunggu
   // alur nyata berjalan. Tiap pesanan memakai Tenant & pembeli yang berbeda.
@@ -301,6 +343,8 @@ async function main() {
     produk: string;
     qtyBox: number;
     status: "MENUNGGU_PANEN" | "DIKIRIM" | "DITERIMA" | "SELESAI";
+    penerima: string;
+    teleponPenerima: string;
   }) {
     const batch = await prisma.batch.findUniqueOrThrow({
       where: { id: batchId.get(opts.produk)! },
@@ -319,11 +363,13 @@ async function main() {
 
     const sudahTiba = opts.status === "DITERIMA" || opts.status === "SELESAI";
     const ship = await prisma.$queryRaw<Array<{ id: string }>>`
-      INSERT INTO shipments (order_id, zone_id, dest_point, receiving_hours, status,
+      INSERT INTO shipments (order_id, zone_id, dest_point, recipient_name, recipient_phone,
+                             landmark, receiving_hours, status,
                              arrived_at, claim_window_ends_at, completed_at, received_mode)
       VALUES (
         ${order.id}::uuid, ${zonaMalang.id}::uuid,
         ST_SetSRID(ST_MakePoint(112.6304, -7.9666), 4326),
+        ${opts.penerima}, ${opts.teleponPenerima}, 'Sebelah Masjid Al-Ikhlas',
         '08:00-16:00', ${opts.status}::"ShipmentStatus",
         ${sudahTiba ? hariLalu(1) : null},
         ${opts.status === "DITERIMA" ? hariDepan(0.05) : opts.status === "SELESAI" ? hariLalu(0.5) : null},
@@ -389,10 +435,10 @@ async function main() {
   }
 
   const pesanan = [
-    { pembeli: "katering", produk: BATCH_UNGGULAN, qtyBox: 24, status: "MENUNGGU_PANEN" as const },
-    { pembeli: "resto", produk: "Kubis Krop Padat Pujon", qtyBox: 30, status: "DIKIRIM" as const },
-    { pembeli: "katering", produk: "Selada Keriting Batu", qtyBox: 20, status: "DITERIMA" as const },
-    { pembeli: "resto", produk: "Caisim Segar Pujon", qtyBox: 34, status: "SELESAI" as const },
+    { pembeli: "katering", produk: BATCH_UNGGULAN, qtyBox: 24, status: "MENUNGGU_PANEN" as const, penerima: "Bu Winarti (Kepala Dapur)", teleponPenerima: "081234500101" },
+    { pembeli: "resto", produk: "Kubis Krop Padat Pujon", qtyBox: 30, status: "DIKIRIM" as const, penerima: "Pak Hendra (Gudang)", teleponPenerima: "081234500102" },
+    { pembeli: "katering", produk: "Selada Keriting Batu", qtyBox: 20, status: "DITERIMA" as const, penerima: "Bu Winarti (Kepala Dapur)", teleponPenerima: "081234500101" },
+    { pembeli: "resto", produk: "Caisim Segar Pujon", qtyBox: 34, status: "SELESAI" as const, penerima: "Pak Hendra (Gudang)", teleponPenerima: "081234500102" },
   ];
   for (const p of pesanan) await buatPesanan(p);
   console.log(`✔ ${pesanan.length} pesanan: ${pesanan.map((p) => p.status).join(", ")}`);
@@ -400,7 +446,7 @@ async function main() {
   console.log("\nSelesai. Masuk sebagai salah satu nomor berikut (OTP tercetak di log API):");
   for (const t of TENANTS) console.log(`  Tenant  ${t.telepon}  ${t.nama}`);
   for (const b of BUYERS) console.log(`  Pembeli ${b.telepon}  ${b.nama}`);
-  console.log("  Operator 081100000030");
+  console.log(`  Operator ${OPERATOR_PHONE}`);
 }
 
 main()
