@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { VerificationBadge, type CatalogItem } from "@agro-os/shared";
+import { toVerificationBadge, type CatalogItem } from "@agro-os/shared";
 import { PrismaService } from "../../prisma/prisma.service";
 import { DemandSignalService } from "../intelligence/demand-signal.service";
 import type { CatalogQueryDto } from "./catalog.dto";
@@ -11,18 +11,6 @@ export class CatalogService {
     private readonly prisma: PrismaService,
     private readonly signals: DemandSignalService,
   ) {}
-
-  /**
-   * FR-2.6 — tiga badge yang tampil ke pembeli.
-   * PERLU_DITINJAU / TIDAK_SESUAI TIDAK disembunyikan: badge-nya memang
-   * "Belum Terverifikasi", tetapi `verificationStatus` mentah ikut dikirim agar FE
-   * bisa menampilkan ketidaksesuaiannya secara terbuka (FR-4.6).
-   */
-  private toBadge(status: VerificationStatus): VerificationBadge {
-    if (status === "TERVERIFIKASI") return VerificationBadge.TERVERIFIKASI_SATELIT;
-    if (status === "FOTO_SAJA") return VerificationBadge.BUKTI_FOTO_SAJA;
-    return VerificationBadge.BELUM_TERVERIFIKASI;
-  }
 
   /** Katalog terpadu lintas-Tenant dalam satu zona (FR-2.1, FR-2.2). */
   async browse(q: CatalogQueryDto): Promise<CatalogItem[]> {
@@ -75,7 +63,7 @@ export class CatalogService {
         claimedHarvestDate: b.claimedHarvestDate.toISOString().slice(0, 10),
         commodity: b.product.commodity,
         tenant: b.product.tenant,
-        badge: this.toBadge(b.verificationStatus),
+        badge: toVerificationBadge(b.verificationStatus),
         verificationStatus: b.verificationStatus,
       }));
   }
@@ -109,7 +97,7 @@ export class CatalogService {
       claimedPlantDate: b.claimedPlantDate?.toISOString().slice(0, 10) ?? null,
       claimedHarvestDate: b.claimedHarvestDate.toISOString().slice(0, 10),
       productionStatus: b.productionStatus,
-      badge: this.toBadge(b.verificationStatus),
+      badge: toVerificationBadge(b.verificationStatus),
       verificationStatus: b.verificationStatus,
       // Transparansi FR-4.6: selisih klaim vs deteksi satelit ikut dikirim.
       detectedPlantDate: b.detectedPlantDate?.toISOString().slice(0, 10) ?? null,
