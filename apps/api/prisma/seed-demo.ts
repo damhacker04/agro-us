@@ -443,6 +443,112 @@ async function main() {
   for (const p of pesanan) await buatPesanan(p);
   console.log(`✔ ${pesanan.length} pesanan: ${pesanan.map((p) => p.status).join(", ")}`);
 
+  // ---------- Riwayat & sinyal permintaan (FR-8.1) ----------
+  // Rekomendasi Tanam membaca dua jendela waktu yang TIDAK beririsan dengan katalog
+  // di atas: riwayat pesanan 8 minggu ke BELAKANG, dan pasokan 8–16 minggu ke DEPAN.
+  // Semua batch katalog panen dalam ~5 minggu, jadi tanpa blok ini kedua jendela
+  // kosong dan halaman rekomendasi tidak punya apa pun untuk dihitung.
+  //
+  // Komoditas di sini sengaja dipilih yang TIDAK ada di katalog: permintaannya nyata
+  // (pernah dibeli, pernah dicari saat kuota habis) tetapi belum ada yang menanam —
+  // persis kondisi yang seharusnya memunculkan rekomendasi.
+  const RIWAYAT = [
+    { komoditas: "Bayam", produk: "Bayam Hijau Pujon (musim lalu)", kgBox: 5, hargaBox: 42_000, tenant: "pujon", lahan: 1, panenBerapaMingguLalu: [2, 4, 6], boxPerPesanan: 40 },
+    { komoditas: "Kangkung", produk: "Kangkung Darat Pujon (musim lalu)", kgBox: 6, hargaBox: 38_000, tenant: "pujon", lahan: 1, panenBerapaMingguLalu: [3, 5], boxPerPesanan: 35 },
+  ] as const;
+
+  let riwayatDibuat = 0;
+  for (const r of RIWAYAT) {
+    for (const mingguLalu of r.panenBerapaMingguLalu) {
+      const panen = hariLalu(mingguLalu * 7);
+      const produk = await prisma.product.create({
+        data: {
+          tenantId: tenantId.get(r.tenant)!,
+          commodityId: komoditas.get(r.komoditas)!.id,
+          name: `${r.produk} #${mingguLalu}`,
+          grade: "A",
+          pricePerBox: r.hargaBox,
+          qtyKgPerBox: r.kgBox,
+          estHarvestDate: panen,
+        },
+      });
+      // HARVESTED, bukan GROWING: batch lampau tidak boleh ikut menghitung pasokan
+      // masa depan, dan tidak boleh menahan kapasitas lahan Tenant.
+      const batch = await prisma.batch.create({
+        data: {
+          productId: produk.id,
+          landPlotId: lahanId.get(r.tenant)![r.lahan]!,
+          claimedPlantDate: hariLalu(mingguLalu * 7 + komoditas.get(r.komoditas)!.growingDaysMin),
+          claimedHarvestDate: panen,
+          quotaBoxTotal: r.boxPerPesanan,
+          quotaBoxSold: r.boxPerPesanan,
+          quotaBoxFulfilled: r.boxPerPesanan,
+          lockedPrice: r.hargaBox,
+          productionStatus: "HARVESTED",
+          verificationStatus: "TERVERIFIKASI",
+        },
+      });
+
+      const subtotal = r.hargaBox * r.boxPerPesanan;
+      // PAID, bukan CLOSED — agregasi permintaan hanya menghitung pesanan berstatus PAID.
+      const order = await prisma.order.create({
+        data: {
+          buyerId: buyerId.get("katering")!,
+          totalAmount: subtotal + 85_000,
+          orderStatus: "PAID",
+        },
+      });
+      const ship = await prisma.$queryRaw<Array<{ id: string }>>`
+        INSERT INTO shipments (order_id, zone_id, dest_point, recipient_name, recipient_phone,
+                               receiving_hours, status, arrived_at, completed_at, received_mode)
+        VALUES (
+          ${order.id}::uuid, ${zonaMalang.id}::uuid,
+          ST_SetSRID(ST_MakePoint(112.6304, -7.9666), 4326),
+          'Bu Winarti (Kepala Dapur)', '081234500101',
+          '08:00-16:00', 'SELESAI'::"ShipmentStatus",
+          ${panen}, ${panen}, 'BUYER_CONFIRM'::"ReceivedMode"
+        )
+        RETURNING id::text
+      `;
+      await prisma.orderItem.create({
+        data: {
+          orderId: order.id,
+          shipmentId: ship[0]!.id,
+          batchId: batch.id,
+          qtyBox: r.boxPerPesanan,
+          qtyBoxFulfilled: r.boxPerPesanan,
+          unitPriceLocked: r.hargaBox,
+          subtotal,
+        },
+      });
+      riwayatDibuat++;
+    }
+  }
+
+  // Sinyal permintaan gagal: pembeli yang datang tapi pulang dengan tangan kosong.
+  // KUOTA_HABIS membawa jumlah kg, jadi ikut menaikkan proyeksi; CARI_KOSONG hanya
+  // menaikkan keyakinan (confidence), tidak menambah kg.
+  const SINYAL = [
+    { komoditas: "Bayam", jenis: "KUOTA_HABIS" as const, kg: 260 },
+    { komoditas: "Bayam", jenis: "CARI_KOSONG" as const, kg: null },
+    { komoditas: "Kangkung", jenis: "KUOTA_HABIS" as const, kg: 180 },
+    { komoditas: "Kangkung", jenis: "CARI_KOSONG" as const, kg: null },
+    { komoditas: "Bayam", jenis: "KUOTA_HABIS" as const, kg: 140 },
+  ];
+  for (const s of SINYAL) {
+    await prisma.demandSignal.create({
+      data: {
+        zoneId: zonaMalang.id,
+        commodityId: komoditas.get(s.komoditas)!.id,
+        buyerId: buyerId.get("katering")!,
+        signalType: s.jenis,
+        qtyKgWanted: s.kg,
+        searchTerm: s.jenis === "CARI_KOSONG" ? s.komoditas.toLowerCase() : null,
+      },
+    });
+  }
+  console.log(`✔ ${riwayatDibuat} batch riwayat + ${SINYAL.length} sinyal permintaan`);
+
   console.log("\nSelesai. Masuk sebagai salah satu nomor berikut (OTP tercetak di log API):");
   for (const t of TENANTS) console.log(`  Tenant  ${t.telepon}  ${t.nama}`);
   for (const b of BUYERS) console.log(`  Pembeli ${b.telepon}  ${b.nama}`);

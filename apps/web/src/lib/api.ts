@@ -17,7 +17,15 @@ import type {
   PreviewOrderResponse,
   OrderSummary,
   PreviewOrderBody,
+  BatchResponse,
+  LandPlotResponse,
+  PlantingRecommendation,
+  ProductResponse,
   RequestOtpResponse,
+  Rupiah,
+  TenantOrderDetail,
+  TenantOrderSummary,
+  TenantProfileResponse,
   TimelineNodeResponse,
   TimelineVerifyResponse,
   VerifyOtpBody,
@@ -134,3 +142,67 @@ export const buatProfilPembeli = (body: { companyName: string; activeZoneId?: st
 
 export const ubahProfilPembeli = (body: { companyName?: string; activeZoneId?: string }) =>
   kirim<BuyerProfileResponse>("/buyer/profile", body, "PATCH");
+
+// ============================== TENANT ==============================
+
+export const ambilProfilTenant = () => ambil<TenantProfileResponse>("/tenant/profile");
+
+export const ambilBatchTenant = () => ambil<BatchResponse[]>("/tenant/batches");
+
+export const ambilBatchSatu = (id: string) => ambil<BatchResponse>(`/tenant/batches/${id}`);
+
+export const ambilTimelineTenant = (batchId: string) =>
+  ambil<TimelineNodeResponse[]>(`/tenant/batches/${batchId}/timeline`);
+
+export const ambilProdukTenant = () => ambil<ProductResponse[]>("/tenant/products");
+
+export const ambilLahan = () => ambil<LandPlotResponse[]>("/tenant/land-plots");
+
+export const ambilEscrow = () =>
+  ambil<{
+    tertahan: Rupiah;
+    totalDitahan: Rupiah;
+    totalDicairkan: Rupiah;
+    totalPotonganKlaim: Rupiah;
+    totalRefund: Rupiah;
+    rincian: Record<string, number>;
+  }>("/tenant/escrow");
+
+export const ambilPesananTenant = () => ambil<TenantOrderSummary[]>("/tenant/orders");
+
+export const ambilPesananTenantSatu = (shipmentId: string) =>
+  ambil<TenantOrderDetail>(`/tenant/orders/${shipmentId}`);
+
+export const ambilRekomendasi = () => ambil<PlantingRecommendation[]>("/tenant/rekomendasi");
+
+export const aktifkanLangganan = (months = 1) =>
+  kirim<{ status: string; periodEnd: string; message: string }>("/tenant/langganan/aktifkan", {
+    months,
+  });
+
+/**
+ * Tambah node timeline (FR-4.1). Dikirim sebagai multipart karena membawa berkas foto,
+ * jadi TIDAK lewat `ambil()` yang selalu menyetel Content-Type JSON — biarkan peramban
+ * yang menuliskannya sendiri beserta boundary-nya.
+ */
+export async function tambahNodeTimeline(batchId: string, form: FormData) {
+  const token = ambilToken();
+  const res = await fetch(`${BASE}/tenant/batches/${batchId}/timeline`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  if (!res.ok) {
+    let kode: string | null = null;
+    let pesan = `Gagal menyimpan catatan (${res.status})`;
+    try {
+      const isi = await res.json();
+      kode = isi?.code ?? null;
+      pesan = Array.isArray(isi?.message) ? isi.message.join(", ") : (isi?.message ?? pesan);
+    } catch {
+      /* biarkan pesan baku */
+    }
+    throw new GalatApi(res.status, kode, pesan);
+  }
+  return res.json() as Promise<TimelineNodeResponse>;
+}

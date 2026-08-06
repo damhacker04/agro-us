@@ -1,10 +1,10 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { 
-  LayoutDashboard, 
+import { usePathname, useRouter } from "next/navigation";
+import {
+  LayoutDashboard,
   PackageSearch,
   Map,
   Layers,
@@ -16,6 +16,8 @@ import {
   Sprout,
   Star
 } from "lucide-react";
+import { ambilProfilTenant } from "@/lib/api";
+import { hapusSesi } from "@/lib/auth";
 
 export default function TenantDashboardLayout({
   children,
@@ -23,6 +25,23 @@ export default function TenantDashboardLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  // Nama perusahaan dipakai di dua tempat; diambil sekali di layout supaya tiap
+  // halaman anak tidak perlu memanggil /tenant/profile sendiri-sendiri.
+  const [namaUsaha, setNamaUsaha] = useState("Tenant");
+  useEffect(() => {
+    ambilProfilTenant()
+      .then((p) => setNamaUsaha(p.companyName))
+      .catch(() => {
+        /* Header bukan alasan untuk menggagalkan halaman — biarkan label bawaan. */
+      });
+  }, []);
+
+  function keluar() {
+    hapusSesi();
+    router.push("/");
+  }
 
   const menuItems = [
     { name: "Dashboard", href: "/tenant", icon: LayoutDashboard },
@@ -44,7 +63,7 @@ export default function TenantDashboardLayout({
           <div className="w-7 h-7 bg-[#b8f5d0] text-[#165634] rounded-md flex items-center justify-center font-bold shrink-0">
             <Leaf className="w-4 h-4" />
           </div>
-          <span className="font-bold text-[#b8f5d0] text-sm tracking-wide uppercase">Tani Rawit Jos</span>
+          <span className="font-bold text-[#b8f5d0] text-sm tracking-wide uppercase">{namaUsaha}</span>
         </div>
 
         {/* Navigation */}
@@ -87,14 +106,18 @@ export default function TenantDashboardLayout({
               <div className="w-6 h-6 border border-emerald-300 rounded-full flex items-center justify-center text-emerald-600 bg-white">
                 <Leaf className="w-3 h-3" />
               </div>
-              Tani Rawit Jos
+              {namaUsaha}
             </div>
             <button className="text-emerald-800 hover:text-emerald-600 transition">
               <Settings className="w-5 h-5" />
             </button>
-            <Link href="/" className="text-red-500 hover:text-red-600 transition">
+            <button
+              onClick={keluar}
+              title="Keluar"
+              className="text-red-500 hover:text-red-600 transition"
+            >
               <LogOut className="w-5 h-5" />
-            </Link>
+            </button>
           </div>
         </header>
 

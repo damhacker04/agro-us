@@ -28,7 +28,7 @@ export default function OrdersPage() {
 
   useEffect(() => {
     ambilPesanan()
-      .then(setPesanan)
+      .then((d) => { setPesanan(d); setGalat(""); })
       .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat pesanan"))
       .finally(() => setMemuat(false));
   }, []);

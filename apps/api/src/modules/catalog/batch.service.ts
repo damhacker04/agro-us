@@ -123,7 +123,10 @@ export class BatchService {
   async findAll(tenantId: string): Promise<BatchResponse[]> {
     const rows = await this.prisma.batch.findMany({
       where: { product: { tenantId } },
-      orderBy: { claimedHarvestDate: "asc" },
+      // Batch yang masih berjalan lebih dulu (panen terdekat di atas), baru yang sudah
+      // ditutup. Urut panen menaik saja membuat batch musim lalu menumpuk di puncak
+      // daftar dan mengubur yang justru perlu dikerjakan hari ini.
+      orderBy: [{ productionStatus: "asc" }, { claimedHarvestDate: "asc" }],
       include: {
         product: { select: { name: true, grade: true, qtyKgPerBox: true } },
         landPlot: { select: { areaHa: true, verificationTier: true } },
@@ -140,9 +143,25 @@ export class BatchService {
   }
 
   async findOne(tenantId: string, id: string): Promise<BatchResponse> {
-    const b = await this.prisma.batch.findFirst({ where: { id, product: { tenantId } } });
+    // Ikut menyertakan produk dan lahan seperti findAll — tanpa ini detail batch
+    // justru mengembalikan lebih sedikit daripada daftarnya, dan pemanggil harus
+    // menebak nama produknya sendiri.
+    const b = await this.prisma.batch.findFirst({
+      where: { id, product: { tenantId } },
+      include: {
+        product: { select: { name: true, grade: true, qtyKgPerBox: true } },
+        landPlot: { select: { areaHa: true, verificationTier: true } },
+      },
+    });
     if (!b) throw new NotFoundException("Batch tidak ditemukan");
-    return this.toResponse(b);
+    return {
+      ...this.toResponse(b),
+      productName: b.product.name,
+      grade: b.product.grade,
+      qtyKgPerBox: Number(b.product.qtyKgPerBox),
+      landPlotAreaHa: Number(b.landPlot.areaHa),
+      landPlotTier: b.landPlot.verificationTier,
+    };
   }
 
   private toResponse(b: {

@@ -2,257 +2,240 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { 
-  X,
-  Camera,
-  Image as ImageIcon,
-  ChevronDown,
-  Calendar,
-  AlertTriangle,
-  ArrowRight
-} from "lucide-react";
+import { ArrowLeft, Camera, Loader2, MapPin } from "lucide-react";
+import Link from "next/link";
+import { GalatApi, tambahNodeTimeline } from "@/lib/api";
+import { TimelineActivity } from "@agro-os/shared";
 
-export default function TenantProgressReportPage() {
+/** Tujuh jenis kegiatan terstruktur, bukan teks bebas (§5.4.1) — supaya bisa dibandingkan
+ *  antar batch dan antar Tenant, dan supaya satelit punya acuan yang jelas. */
+const JENIS: { nilai: keyof typeof TimelineActivity; label: string }[] = [
+  { nilai: "PENYIAPAN_LAHAN", label: "Penyiapan Lahan" },
+  { nilai: "PENANAMAN", label: "Penanaman" },
+  { nilai: "PEMUPUKAN", label: "Pemupukan" },
+  { nilai: "PENGENDALIAN_HAMA", label: "Pengendalian Hama" },
+  { nilai: "PENGAIRAN", label: "Pengairan" },
+  { nilai: "PANEN", label: "Panen" },
+  { nilai: "GAGAL_PANEN", label: "Gagal Panen" },
+];
+
+export default function TambahNodePage({ params }: { params: Promise<{ id: string }> }) {
+  const { id: batchId } = React.use(params);
   const router = useRouter();
-  const [progressTab, setProgressTab] = useState<"lanjutan" | "ralat">("lanjutan");
 
-  const [newProgress, setNewProgress] = useState({
-    type: "Penyiraman & Pupuk",
-    desc: "",
-    hasImage: false
-  });
+  const [jenis, setJenis] = useState<string>("PEMUPUKAN");
+  const [deskripsi, setDeskripsi] = useState("");
+  const [berkas, setBerkas] = useState<File | null>(null);
+  const [lat, setLat] = useState("");
+  const [lng, setLng] = useState("");
+  const [alasanLuar, setAlasanLuar] = useState("");
+  const [fulfilledBox, setFulfilledBox] = useState("");
+  const [proses, setProses] = useState(false);
+  const [galat, setGalat] = useState("");
 
-  const handleSubmitProgress = (e: React.FormEvent) => {
+  const perluJumlahPanen = jenis === "PANEN";
+
+  function ambilLokasi() {
+    navigator.geolocation?.getCurrentPosition(
+      (pos) => {
+        setLat(String(pos.coords.latitude));
+        setLng(String(pos.coords.longitude));
+      },
+      () => setGalat("Izin lokasi ditolak. Isi koordinat secara manual."),
+    );
+  }
+
+  async function simpan(e: React.FormEvent) {
     e.preventDefault();
-    router.push("/tenant/batch/B-1001?po=open");
-  };
+    if (!berkas) return setGalat("Foto bukti wajib dilampirkan.");
+    setGalat("");
+    setProses(true);
+    try {
+      const form = new FormData();
+      form.append("activityType", jenis);
+      form.append("description", deskripsi);
+      form.append("lat", lat);
+      form.append("lng", lng);
+      // Waktu perangkat direkam otomatis, tidak diketik pengguna (§5.4.1). Server menolak
+      // stempel waktu yang lebih maju dari waktunya sendiri.
+      form.append("deviceTs", new Date().toISOString());
+      form.append("captureSource", "IN_APP_CAMERA");
+      if (alasanLuar) form.append("outsidePolygonReason", alasanLuar);
+      if (perluJumlahPanen && fulfilledBox) form.append("fulfilledBox", fulfilledBox);
+      form.append("photos", berkas);
+
+      await tambahNodeTimeline(batchId, form);
+      router.push(`/tenant/batch/${batchId}`);
+    } catch (err) {
+      setGalat(err instanceof GalatApi ? err.message : "Gagal menyimpan catatan.");
+      setProses(false);
+    }
+  }
 
   return (
-    <div className="min-h-screen bg-gray-100/50 flex flex-col sm:items-center sm:justify-center sm:p-6">
-      
-      {/* Mobile-first Container (Full width on mobile, max-md on desktop) */}
-      <div className="bg-white w-full h-full min-h-screen sm:min-h-0 sm:h-auto sm:max-h-[90vh] sm:max-w-md sm:rounded-2xl shadow-xl flex flex-col overflow-hidden relative">
-        
-        {/* Header */}
-        <div className="bg-[#0a381f] text-white p-4 flex justify-between items-center shrink-0">
+    <div className="p-8 max-w-2xl">
+      <Link
+        href={`/tenant/batch/${batchId}`}
+        className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 hover:text-emerald-600 mb-6"
+      >
+        <ArrowLeft className="w-4 h-4" /> Kembali ke Batch
+      </Link>
+
+      <h1 className="text-2xl font-bold text-emerald-950 mb-1">Catat Kegiatan</h1>
+      <p className="text-sm text-gray-500 mb-6">
+        Catatan bersifat <b>permanen</b>. Tidak bisa diubah atau dihapus — koreksi dilakukan
+        dengan menambah catatan Ralat yang menunjuk catatan lama, dan keduanya tetap terlihat
+        pembeli.
+      </p>
+
+      <form onSubmit={simpan} className="space-y-4">
+        <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
           <div>
-            <h2 className="font-bold text-sm">Lapor Progres Lapangan</h2>
-            <div className="text-[10px] text-emerald-200">Batch B-1001</div>
-          </div>
-          <button 
-            onClick={() => router.push("/tenant/batch/B-1001?po=open")} 
-            className="text-emerald-100 hover:text-white p-1 rounded-full hover:bg-[#114b2d] transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto bg-white p-5">
-          
-          {/* Info Banner */}
-          <div className="bg-[#f0f4f8] border border-blue-100 rounded-xl p-3 flex justify-between items-center mb-6">
-            <div>
-              <div className="text-[9px] font-bold text-gray-500 uppercase tracking-wider mb-1">LOKASI</div>
-              <div className="text-xs font-bold text-[#165634] flex items-start gap-1">
-                <MapPin className="w-3.5 h-3.5 text-red-500 mt-0.5 shrink-0" /> GPS: Akurasi Tinggi (Di dalam Poligon)
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-[9px] font-bold text-gray-500 uppercase tracking-wider mb-1">WAKTU</div>
-              <div className="text-xs font-bold text-gray-900 flex items-center gap-1 justify-end">
-                <Calendar className="w-3.5 h-3.5 text-gray-400" /> {new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB
-              </div>
-            </div>
-          </div>
-
-          {/* Tabs */}
-          <div className="flex gap-2 mb-6">
-            <button 
-              onClick={() => setProgressTab("lanjutan")}
-              className={`flex-1 py-3 rounded-lg text-xs font-bold border transition ${
-                progressTab === "lanjutan" 
-                  ? "bg-emerald-50 border-emerald-200 text-emerald-800" 
-                  : "bg-[#eff3f9] border-blue-100 text-gray-500 hover:bg-gray-100"
-              }`}
-            >
-              LANJUTAN
-            </button>
-            <button 
-              onClick={() => setProgressTab("ralat")}
-              className={`flex-1 py-3 rounded-lg text-xs font-bold border transition ${
-                progressTab === "ralat" 
-                  ? "bg-[#fdffe4] border-amber-200 text-amber-800" 
-                  : "bg-[#eff3f9] border-blue-100 text-gray-500 hover:bg-gray-100"
-              }`}
-            >
-              RALAT
-            </button>
-          </div>
-
-          {progressTab === "lanjutan" && (
-            <form id="progress-form" onSubmit={handleSubmitProgress} className="space-y-6">
-              {/* Step 1 */}
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="text-sm font-bold text-gray-900">Nama Aktivitas</label>
-                  <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-100">Langkah 1/3</span>
-                </div>
-                <input 
-                  type="text"
-                  placeholder="Isi nama aktivitas"
-                  value={newProgress.type}
-                  onChange={(e) => setNewProgress({...newProgress, type: e.target.value})}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3.5 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-
-              {/* Step 2 */}
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="text-sm font-bold text-gray-900">Deskripsi Singkat</label>
-                  <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-100">Langkah 2/3</span>
-                </div>
-                <textarea 
-                  required
-                  placeholder="Isi deskripsi singkat disini..."
-                  rows={3}
-                  value={newProgress.desc}
-                  onChange={(e) => setNewProgress({...newProgress, desc: e.target.value})}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
-                />
-              </div>
-
-              {/* Step 3 */}
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="text-sm font-bold text-gray-900">Bukti Foto</label>
-                  <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-100">Langkah 3/3</span>
-                </div>
-
-                {!newProgress.hasImage ? (
-                  <div className="space-y-3 relative">
-                    <button 
-                      type="button"
-                      onClick={() => setNewProgress({...newProgress, hasImage: true})}
-                      className="w-full border-2 border-dashed border-gray-300 rounded-xl bg-gray-50/50 p-6 flex flex-col items-center justify-center gap-3 hover:bg-gray-100 transition group"
-                    >
-                      <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center text-gray-600 group-hover:scale-110 transition-transform">
-                        <Camera className="w-6 h-6" />
-                      </div>
-                      <div className="text-center">
-                        <div className="font-bold text-xs text-gray-900 flex items-center justify-center gap-1.5 mb-1"><Camera className="w-3.5 h-3.5"/> Ambil Foto Langsung (In-App)</div>
-                        <div className="text-[10px] text-gray-500">Pastikan objek terlihat jelas di bawah cahaya matahari</div>
-                      </div>
-                    </button>
-                    
-                    <div className="text-center text-[10px] text-gray-400 font-bold uppercase tracking-wider relative">
-                      <span className="bg-white px-2 relative z-10">Atau</span>
-                      <div className="absolute top-1/2 inset-x-0 h-px bg-gray-100"></div>
-                    </div>
-
-                    <button 
-                      type="button"
-                      onClick={() => setNewProgress({...newProgress, hasImage: true})}
-                      className="w-full border-2 border-dashed border-gray-300 rounded-xl bg-blue-50/30 p-6 flex flex-col items-center justify-center gap-3 hover:bg-blue-50 transition group"
-                    >
-                      <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 group-hover:scale-110 transition-transform">
-                        <ImageIcon className="w-6 h-6" />
-                      </div>
-                      <div className="text-center">
-                        <div className="font-bold text-xs text-gray-900 flex items-center justify-center gap-1.5 mb-1"><AlertTriangle className="w-3.5 h-3.5 text-amber-500"/> Menurunkan Kepercayaan Node (Pilih dari galeri)</div>
-                      </div>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="relative w-full h-48 rounded-xl overflow-hidden border border-gray-200 group">
-                    <img src="https://images.unsplash.com/photo-1586771107445-d3ca888129ff?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80" alt="Preview" className="w-full h-full object-cover" />
-                    <button 
-                      type="button"
-                      onClick={() => setNewProgress({...newProgress, hasImage: false})}
-                      className="absolute top-2 right-2 bg-black/60 text-white p-1.5 rounded-full hover:bg-black/80 backdrop-blur"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </form>
-          )}
-
-          {progressTab === "ralat" && (
-            <form id="progress-form" onSubmit={handleSubmitProgress} className="space-y-6">
-              {/* Step 1 */}
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="text-sm font-bold text-gray-900">Nama Aktivitas</label>
-                  <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-100">Langkah 1/3</span>
-                </div>
-                <div className="relative">
-                  <select defaultValue="" className="w-full appearance-none border border-gray-300 rounded-xl px-4 py-3.5 text-sm text-gray-500 bg-[#f9fafb] focus:outline-none focus:ring-2 focus:ring-amber-500">
-                    <option value="" disabled>Pilih dari aktivitas apa</option>
-                    <option>Bibit Ditanam</option>
-                    <option>Penyiraman & Pupuk</option>
-                  </select>
-                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
-                </div>
-              </div>
-
-              {/* Step 2 */}
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="text-sm font-bold text-gray-900">Deskripsi Singkat</label>
-                  <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-100">Langkah 2/3</span>
-                </div>
-                <textarea 
-                  required
-                  placeholder="Isi deskripsi singkat disini"
-                  rows={3}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
-                />
-              </div>
-
-               {/* Step 3 */}
-               <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="text-sm font-bold text-gray-900">Bukti Foto</label>
-                  <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-100">Langkah 3/3</span>
-                </div>
-                <button type="button" className="w-full border-2 border-dashed border-gray-300 rounded-xl bg-[#f4f7f9] p-6 flex flex-col items-center justify-center gap-3 hover:bg-gray-100 transition group">
-                  <div className="w-12 h-12 bg-[#dde6ea] rounded-full flex items-center justify-center text-[#0a381f] group-hover:scale-110 transition-transform">
-                    <Camera className="w-6 h-6" />
-                  </div>
-                  <div className="text-center">
-                    <div className="font-bold text-xs text-gray-900 flex items-center justify-center gap-1.5 mb-1"><Camera className="w-3.5 h-3.5"/> Ambil Foto Langsung (In-App)</div>
-                    <div className="text-[10px] text-gray-500">Pastikan objek terlihat jelas di bawah cahaya matahari</div>
-                  </div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Jenis kegiatan</label>
+            <div className="grid grid-cols-2 gap-2">
+              {JENIS.map((j) => (
+                <button
+                  key={j.nilai}
+                  type="button"
+                  onClick={() => setJenis(j.nilai)}
+                  className={`px-3 py-2.5 rounded-lg text-sm font-medium border transition ${
+                    jenis === j.nilai
+                      ? "bg-emerald-950 text-white border-emerald-950"
+                      : j.nilai === "GAGAL_PANEN"
+                        ? "border-red-200 text-red-700 hover:bg-red-50"
+                        : "border-gray-200 text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  {j.label}
                 </button>
-              </div>
-            </form>
+              ))}
+            </div>
+          </div>
+
+          {(jenis === "PANEN" || jenis === "GAGAL_PANEN") && (
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900">
+              Catatan ini <b>menutup batch</b>. Shortfall tercatat permanen, memengaruhi rasio
+              publik Anda dan kuota siklus berikutnya. Pembeli yang pesanannya tidak terpenuhi
+              langsung ditawari substitusi, penjadwalan ulang, atau pengembalian dana.
+            </div>
           )}
 
+          {perluJumlahPanen && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Jumlah box hasil panen aktual
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={fulfilledBox}
+                onChange={(e) => setFulfilledBox(e.target.value)}
+                placeholder="mis. 150"
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Kosongkan bila seluruh kuota terjual terpenuhi.
+              </p>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Deskripsi</label>
+            <textarea
+              required
+              minLength={3}
+              maxLength={280}
+              rows={3}
+              value={deskripsi}
+              onChange={(e) => setDeskripsi(e.target.value)}
+              placeholder="Apa yang dikerjakan hari ini?"
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+            />
+            <p className="text-xs text-gray-400 mt-1">{deskripsi.length}/280 karakter</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Foto bukti</label>
+            <label className="flex items-center gap-3 px-3 py-3 border border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
+              <Camera className="w-5 h-5 text-emerald-700" />
+              <span className="text-sm text-gray-600">
+                {berkas ? berkas.name : "Ambil foto atau pilih berkas"}
+              </span>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(e) => setBerkas(e.target.files?.[0] ?? null)}
+                className="hidden"
+              />
+            </label>
+            <p className="text-xs text-gray-400 mt-1">
+              Foto ikut di-hash ke dalam rantai bukti, jadi tidak bisa ditukar belakangan.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Koordinat lokasi
+            </label>
+            <div className="flex gap-2">
+              <input
+                required
+                value={lat}
+                onChange={(e) => setLat(e.target.value)}
+                placeholder="lintang"
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+              />
+              <input
+                required
+                value={lng}
+                onChange={(e) => setLng(e.target.value)}
+                placeholder="bujur"
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+              />
+              <button
+                type="button"
+                onClick={ambilLokasi}
+                className="shrink-0 px-3 rounded-lg border border-gray-300 hover:bg-gray-50"
+              >
+                <MapPin className="w-4 h-4 text-gray-600" />
+              </button>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              Harus di dalam batas lahan terdaftar. Bila di luar, alasannya wajib diisi dan{" "}
+              <b>akan ditampilkan kepada pembeli</b>.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Alasan bila di luar lahan{" "}
+              <span className="font-normal text-gray-400">(opsional)</span>
+            </label>
+            <input
+              value={alasanLuar}
+              onChange={(e) => setAlasanLuar(e.target.value)}
+              placeholder="mis. sinyal GPS meleset, foto diambil dari tepi jalan"
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+            />
+          </div>
         </div>
 
-        {/* Sticky Bottom Button */}
-        <div className="p-4 bg-white border-t border-gray-100 shrink-0 shadow-[0_-4px_10px_rgba(0,0,0,0.05)] z-10 flex flex-col items-center">
-          <button 
-            type="submit"
-            form="progress-form"
-            className="w-full bg-[#0a381f] text-white py-3.5 rounded-xl font-bold text-sm shadow-md hover:bg-[#114b2d] transition flex items-center justify-center gap-2 mb-3"
-          >
-            Simpan Laporan <ArrowRight className="w-4 h-4" />
-          </button>
-          <div className="text-[9px] text-gray-400">Sistem AgroUs Precision Engine © 2024</div>
-        </div>
+        {galat && (
+          <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            {galat}
+          </p>
+        )}
 
-      </div>
+        <button
+          type="submit"
+          disabled={proses}
+          className="w-full bg-emerald-950 text-white text-sm font-semibold py-3 rounded-lg hover:bg-emerald-800 disabled:opacity-60 flex items-center justify-center gap-2"
+        >
+          {proses && <Loader2 className="w-4 h-4 animate-spin" />}
+          {proses ? "Menyimpan…" : "Simpan Catatan Permanen"}
+        </button>
+      </form>
     </div>
   );
 }
-
-// Icon Helper
-const MapPin = ({ className }: { className?: string }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
-    <path fillRule="evenodd" d="M11.54 22.351l.07.04.028.016a.76.76 0 00.723 0l.028-.015.071-.041a16.975 16.975 0 001.144-.742 19.58 19.58 0 002.683-2.282c1.944-1.99 3.963-4.98 3.963-8.827a8.25 8.25 0 00-16.5 0c0 3.846 2.02 6.837 3.963 8.827a19.58 19.58 0 002.682 2.282 16.975 16.975 0 001.145.742zM12 13.5a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
-  </svg>
-)
