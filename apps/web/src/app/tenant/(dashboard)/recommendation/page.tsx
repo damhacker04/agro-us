@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
-import { Lightbulb, Lock, TrendingUp } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { CalendarDays, Lightbulb, Lock, TrendingUp } from "lucide-react";
 import { GalatApi, aktifkanLangganan, ambilRekomendasi } from "@/lib/api";
 import type { PlantingRecommendation } from "@agro-os/shared";
 
@@ -22,6 +22,101 @@ const KEYAKINAN: Record<string, string> = {
   RENDAH: "Keyakinan rendah",
   TANPA_DATA: "Tanpa riwayat",
 };
+
+const tglPendek = (iso: string) =>
+  new Date(`${iso}T00:00:00Z`).toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+
+/**
+ * Satu kartu per (zona, komoditas), bukan per minggu panen.
+ *
+ * Server mengembalikan satu baris untuk SETIAP minggu dalam horizon 8–16 minggu, jadi
+ * satu komoditas menghasilkan sembilan baris yang nyaris identik. Angkanya tidak boleh
+ * dijumlahkan — permintaan 125 kg di lima minggu berbeda bukan permintaan 625 kg, dan
+ * Tenant hanya menanam untuk satu minggu panen. Maka minggunya jadi PILIHAN di dalam
+ * kartu, dan kalimat rakitan server tetap ditampilkan utuh per minggu yang dipilih.
+ *
+ * Default jatuh ke minggu dengan tenggat tanam paling dekat: itu yang paling cepat
+ * hangus kalau Tenant menunda.
+ */
+function KartuKomoditas({ minggu }: { minggu: PlantingRecommendation[] }) {
+  const urut = useMemo(
+    () => [...minggu].sort((a, b) => a.daysUntilPlantingDeadline - b.daysUntilPlantingDeadline),
+    [minggu],
+  );
+  const [dipilih, setDipilih] = useState(urut[0]!.harvestWeekStart);
+  const r = urut.find((x) => x.harvestWeekStart === dipilih) ?? urut[0]!;
+  const s = SATURASI[r.saturation]!;
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-5">
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Lightbulb className="w-4 h-4 text-amber-500 shrink-0" />
+          <h3 className="font-bold text-gray-900 truncate">{r.commodityName}</h3>
+          <span className="text-xs text-gray-400 shrink-0">· {r.zoneName}</span>
+        </div>
+        <div className="flex gap-1.5 shrink-0">
+          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${s.kelas}`}>
+            {s.label}
+          </span>
+          <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">
+            {KEYAKINAN[r.confidence]}
+          </span>
+        </div>
+      </div>
+
+      {urut.length > 1 && (
+        <div className="mb-3">
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 mb-1.5">
+            <CalendarDays className="w-3 h-3" />
+            Pilih minggu panen ({urut.length} pilihan)
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {[...urut]
+              .sort((a, b) => a.harvestWeekStart.localeCompare(b.harvestWeekStart))
+              .map((m) => (
+                <button
+                  key={m.harvestWeekStart}
+                  type="button"
+                  onClick={() => setDipilih(m.harvestWeekStart)}
+                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition ${
+                    m.harvestWeekStart === r.harvestWeekStart
+                      ? "bg-emerald-950 text-white border-emerald-950"
+                      : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {tglPendek(m.harvestWeekStart)}
+                </button>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* Kalimatnya dirakit server supaya angka dan kata selalu berubah bersamaan. */}
+      <p className="text-sm text-gray-700 leading-relaxed">{r.sentence}</p>
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
+        <span>
+          Batas untuk Anda:{" "}
+          <b className="text-gray-800">{r.suggestedKgForYou.toLocaleString("id-ID")} kg</b>
+        </span>
+        <span>
+          Sisa waktu tanam: <b className="text-gray-800">{r.daysUntilPlantingDeadline} hari</b>
+        </span>
+        <span>
+          Panen:{" "}
+          <b className="text-gray-800">
+            {tglPendek(r.harvestWeekStart)}–{tglPendek(r.harvestWeekEnd)}
+          </b>
+        </span>
+      </div>
+    </div>
+  );
+}
 
 export default function RecommendationPage() {
   const [data, setData] = useState<PlantingRecommendation[]>([]);
@@ -44,6 +139,24 @@ export default function RecommendationPage() {
   }, []);
 
   useEffect(muat, [muat]);
+
+  // Dikelompokkan per zona DAN komoditas: Tenant bisa melayani beberapa zona, dan
+  // kekurangan Wortel di Kota Malang bukan kekurangan yang sama dengan di Kota Batu.
+  // Urutan kartu mengikuti tenggat tanam terdekat di dalam tiap kelompok.
+  const kelompok = useMemo(() => {
+    const m = new Map<string, PlantingRecommendation[]>();
+    for (const r of data) {
+      const k = `${r.zoneId}|${r.commodityId}`;
+      const cur = m.get(k);
+      if (cur) cur.push(r);
+      else m.set(k, [r]);
+    }
+    return [...m.entries()].sort(
+      (a, b) =>
+        Math.min(...a[1].map((x) => x.daysUntilPlantingDeadline)) -
+        Math.min(...b[1].map((x) => x.daysUntilPlantingDeadline)),
+    );
+  }, [data]);
 
   if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat rekomendasi…</div>;
 
@@ -98,42 +211,9 @@ export default function RecommendationPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {data.map((r) => {
-            const s = SATURASI[r.saturation];
-            return (
-              <div
-                key={`${r.commodityId}-${r.harvestWeekStart}`}
-                className="bg-white border border-gray-200 rounded-xl p-5"
-              >
-                <div className="flex items-start justify-between gap-3 mb-2">
-                  <div className="flex items-center gap-2">
-                    <Lightbulb className="w-4 h-4 text-amber-500 shrink-0" />
-                    <h3 className="font-bold text-gray-900">{r.commodityName}</h3>
-                  </div>
-                  <div className="flex gap-1.5 shrink-0">
-                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${s.kelas}`}>
-                      {s.label}
-                    </span>
-                    <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">
-                      {KEYAKINAN[r.confidence]}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Kalimatnya dirakit server supaya angka dan kata selalu berubah bersamaan. */}
-                <p className="text-sm text-gray-700 leading-relaxed">{r.sentence}</p>
-
-                <div className="flex items-center gap-4 mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
-                  <span>
-                    Batas untuk Anda: <b className="text-gray-800">{r.suggestedKgForYou.toLocaleString("id-ID")} kg</b>
-                  </span>
-                  <span>
-                    Sisa waktu tanam: <b className="text-gray-800">{r.daysUntilPlantingDeadline} hari</b>
-                  </span>
-                </div>
-              </div>
-            );
-          })}
+          {kelompok.map(([kunci, minggu]) => (
+            <KartuKomoditas key={kunci} minggu={minggu} />
+          ))}
         </div>
       )}
     </div>
