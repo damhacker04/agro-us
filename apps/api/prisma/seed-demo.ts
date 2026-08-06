@@ -87,6 +87,18 @@ const TENANTS = [
     zona: ["Kabupaten Malang"],
     lahan: [{ lat: -7.8702, lng: 112.3504 }],
   },
+  // Satu Tenant sengaja MENUNGGU verifikasi. Tanpa ini antrean legalitas operator
+  // selalu kosong dan layar OP-03 tidak bisa diperagakan sama sekali — sama seperti
+  // substitusi yang mustahil muncul kalau tak ada dua Tenant sekomoditas.
+  // Belum punya lahan maupun produk, persis kondisi Tenant yang baru mendaftar.
+  {
+    kunci: "baru",
+    nama: "Tani Muda Wajak",
+    telepon: "081100000104",
+    zona: ["Kabupaten Malang"],
+    lahan: [],
+    legalitas: "PENDING",
+  },
 ] as const;
 
 /** Nomor operator — satu sumber untuk pembuatan akun DAN baris panduan yang dicetak. */
@@ -180,7 +192,8 @@ async function main() {
       data: {
         userId: user.id,
         companyName: t.nama,
-        legalityStatus: "APPROVED",
+        // Tenant tanpa properti `legalitas` dianggap sudah terverifikasi.
+        legalityStatus: ("legalitas" in t ? t.legalitas : "APPROVED") as "APPROVED" | "PENDING",
         tenantZones: { create: t.zona.map((n) => ({ zoneId: zona.get(n)!.id })) },
       },
     });

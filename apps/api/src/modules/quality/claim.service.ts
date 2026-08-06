@@ -301,6 +301,8 @@ export class ClaimService {
       shipmentId: c.shipmentId,
       orderItemId: c.orderItemId!,
       productName: item.batch.product.name,
+      photoUrl: c.photoUrl,
+      description: c.description,
       expectedKg,
       actualWeightKg: Number(c.actualWeightKg),
       shortfallKg: round2(expectedKg - Number(c.actualWeightKg)),

@@ -1,143 +1,152 @@
 "use client";
 
-import React from "react";
-import { AlertTriangle, Clock, Satellite } from "lucide-react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { AlertTriangle, ArrowRight, Clock, FileCheck2, Scale, ShieldCheck } from "lucide-react";
+import type { ClaimResponse, LegalityQueueItem } from "@agro-os/shared";
+import { GalatApi, ambilAntreanKlaim, ambilAntreanLegalitas } from "@/lib/api";
 
-export default function CommandCenterPage() {
+const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
+const jam = (iso: string) => new Date(iso).toLocaleString("id-ID");
+
+type Antrean = ClaimResponse & { overdue: boolean };
+
+/**
+ * Dashboard operator.
+ *
+ * Sengaja dirakit dari dua antrean yang SUDAH punya endpoint — klaim mutu dan
+ * legalitas — bukan dari endpoint ringkasan tersendiri. Yang ditampilkan hanya
+ * pekerjaan yang benar-benar bisa dikerjakan operator hari ini; kartu metrik yang
+ * angkanya tidak ada sumbernya lebih baik tidak ada sama sekali.
+ */
+export default function OperatorDashboardPage() {
+  const [klaim, setKlaim] = useState<Antrean[]>([]);
+  const [legalitas, setLegalitas] = useState<LegalityQueueItem[]>([]);
+  const [memuat, setMemuat] = useState(true);
+  const [galat, setGalat] = useState("");
+
+  useEffect(() => {
+    Promise.all([ambilAntreanKlaim(), ambilAntreanLegalitas("PENDING")])
+      .then(([k, l]) => {
+        setKlaim(k);
+        setLegalitas(l);
+        setGalat("");
+      })
+      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat dashboard"))
+      .finally(() => setMemuat(false));
+  }, []);
+
+  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat dashboard…</div>;
+
+  if (galat) {
+    return (
+      <div className="p-8">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
+          {galat}
+        </div>
+      </div>
+    );
+  }
+
+  const telat = klaim.filter((c) => c.overdue);
+  const nilaiTertahan = klaim.reduce((s, c) => s + c.claimValue, 0);
+
   return (
-    <div className="p-8">
-      <h1 className="text-4xl font-bold text-[#0a1c38] font-serif mb-2">Command Center</h1>
-      <p className="text-gray-600 mb-8 font-medium">Pantau antrean tugas dan pelanggaran SLA.</p>
+    <div className="p-8 max-w-5xl">
+      <div className="mb-8">
+        <h1 className="text-3xl font-black text-emerald-950 mb-2">Konsol Operator</h1>
+        <p className="text-gray-500">Pekerjaan yang menunggu keputusan manusia.</p>
+      </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-        <div className="bg-[#fee2e2] rounded-xl p-6 shadow-sm border border-red-200 cursor-pointer hover:shadow-md transition">
-          <div className="flex items-center gap-2 text-red-800 font-bold mb-4 text-sm">
-            <AlertTriangle className="w-4 h-4" />
-            SLA Klaim Kritis ({"<"} 2 Jam)
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <Link
+          href="/operator/claims"
+          className={`rounded-2xl p-6 border-2 shadow-sm transition ${
+            telat.length
+              ? "bg-red-50/40 border-red-200 hover:bg-red-50"
+              : "bg-white border-gray-200 hover:bg-gray-50"
+          }`}
+        >
+          <div className="flex justify-between items-start mb-2">
+            <div className="text-xs font-bold text-gray-700">Klaim Mutu</div>
+            <Scale className={`w-5 h-5 ${telat.length ? "text-red-600" : "text-gray-300"}`} />
           </div>
-          <div className="text-4xl font-bold text-red-700 font-serif mb-4">
-            3 Tiket
+          <div className="text-3xl font-black text-gray-900 mb-6">{klaim.length}</div>
+          <div className={`text-xs font-medium ${telat.length ? "text-red-700" : "text-gray-500"}`}>
+            {telat.length
+              ? `${telat.length} sudah melewati SLA.`
+              : "Semua masih dalam SLA."}
           </div>
-          <div className="text-sm text-red-700 font-bold flex items-center gap-1 group">
-            Proses Sekarang <span className="group-hover:translate-x-1 transition-transform">→</span>
-          </div>
-        </div>
+        </Link>
 
-        <div className="bg-[#fefce8] rounded-xl p-6 shadow-sm border border-yellow-200 cursor-pointer hover:shadow-md transition">
-          <div className="flex items-center gap-2 text-yellow-800 font-bold mb-4 text-sm">
-            <Clock className="w-4 h-4" />
-            Legalitas Menunggu
+        <Link
+          href="/operator/legality"
+          className="rounded-2xl p-6 border-2 border-gray-200 bg-white shadow-sm hover:bg-gray-50 transition"
+        >
+          <div className="flex justify-between items-start mb-2">
+            <div className="text-xs font-bold text-gray-700">Verifikasi Legalitas</div>
+            <FileCheck2 className="w-5 h-5 text-gray-300" />
           </div>
-          <div className="text-4xl font-bold text-yellow-700 font-serif mb-4">
-            12 Tenant
+          <div className="text-3xl font-black text-gray-900 mb-6">{legalitas.length}</div>
+          <div className="text-xs text-gray-500 font-medium">
+            Tenant menunggu persetujuan sebelum bisa membuka kuota.
           </div>
-        </div>
+        </Link>
 
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 cursor-pointer hover:shadow-md transition">
-          <div className="flex items-center gap-2 text-[#0a1c38] font-bold mb-4 text-sm">
-            <Satellite className="w-4 h-4" />
-            Anomali Satelit
+        <div className="rounded-2xl p-6 border-2 border-gray-200 bg-white shadow-sm">
+          <div className="flex justify-between items-start mb-2">
+            <div className="text-xs font-bold text-gray-700">Nilai Klaim Tertahan</div>
+            <ShieldCheck className="w-5 h-5 text-gray-300" />
           </div>
-          <div className="text-4xl font-bold text-[#0a1c38] font-serif mb-4">
-            5 Batch
+          <div className="text-3xl font-black text-gray-900 mb-6">{rp(nilaiTertahan)}</div>
+          <div className="text-xs text-gray-500 font-medium">
+            Selama belum diputus, dana ini tertahan bagi pembeli maupun Tenant.
           </div>
         </div>
       </div>
 
-      {/* Table Section */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="px-6 py-5 border-b border-gray-200 flex justify-between items-center">
-          <h2 className="text-xl font-bold text-[#0a1c38] font-serif">Antrean Prioritas Lintas Modul</h2>
-          <button className="text-gray-400 hover:text-gray-600">
-            <div className="flex flex-col gap-1">
-              <span className="w-1 h-1 bg-current rounded-full"></span>
-              <span className="w-1 h-1 bg-current rounded-full"></span>
-              <span className="w-1 h-1 bg-current rounded-full"></span>
-            </div>
-          </button>
-        </div>
-        
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-white border-b border-gray-100">
-                <th className="px-6 py-4 text-xs font-bold text-gray-500 tracking-wider">ID TIKET</th>
-                <th className="px-6 py-4 text-xs font-bold text-gray-500 tracking-wider">MODUL</th>
-                <th className="px-6 py-4 text-xs font-bold text-gray-500 tracking-wider">KETERANGAN</th>
-                <th className="px-6 py-4 text-xs font-bold text-gray-500 tracking-wider">TENGGAT WAKTU (SLA)</th>
-                <th className="px-6 py-4 text-xs font-bold text-gray-500 tracking-wider">AKSI</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              <tr className="hover:bg-gray-50 transition-colors">
-                <td className="px-6 py-5 text-sm font-semibold text-gray-800">KLM-091</td>
-                <td className="px-6 py-5">
-                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800">
-                    Klaim Sengketa
-                  </span>
-                </td>
-                <td className="px-6 py-5 text-sm text-gray-600 font-medium">Tomat Pakcoy Susut 15%</td>
-                <td className="px-6 py-5">
-                  <div className="flex items-center gap-1.5 text-red-600 text-sm font-medium">
-                    <Clock className="w-4 h-4" /> 1j 45m tersisa
+      {telat.length > 0 && (
+        <div className="bg-white border-2 border-red-200 rounded-2xl p-6 mb-8">
+          <div className="flex items-center gap-2 mb-1">
+            <AlertTriangle className="w-4 h-4 text-red-600" />
+            <h2 className="text-sm font-bold text-red-700">Klaim Melewati SLA</h2>
+          </div>
+          <p className="text-xs text-gray-500 mb-4">
+            SLA 1 hari kerja. Semakin lama menggantung, semakin lama uang kedua pihak
+            tertahan.
+          </p>
+          <div className="space-y-2">
+            {telat.map((c) => (
+              <Link
+                key={c.id}
+                href={`/operator/claims/${c.id}`}
+                className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 px-4 py-3 hover:bg-gray-50 transition"
+              >
+                <div className="min-w-0">
+                  <div className="font-semibold text-sm text-gray-900 truncate">
+                    {c.productName}
                   </div>
-                </td>
-                <td className="px-6 py-5">
-                  <button className="px-4 py-2 bg-[#b91c1c] text-white text-sm font-bold rounded hover:bg-red-800 transition">Tinjau</button>
-                </td>
-              </tr>
-
-              <tr className="hover:bg-gray-50 transition-colors">
-                <td className="px-6 py-5 text-sm font-semibold text-gray-800">LGL-102</td>
-                <td className="px-6 py-5">
-                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800">
-                    Legalitas
-                  </span>
-                </td>
-                <td className="px-6 py-5 text-sm text-gray-600 font-medium">Verifikasi NIB Koperasi</td>
-                <td className="px-6 py-5">
-                  <div className="flex items-center gap-1.5 text-yellow-600 text-sm font-medium">
-                    <Clock className="w-4 h-4" /> 5j 10m tersisa
+                  <div className="text-xs text-gray-500 flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    jatuh tempo {c.slaDueAt ? jam(c.slaDueAt) : "—"} · {rp(c.claimValue)}
                   </div>
-                </td>
-                <td className="px-6 py-5">
-                  <Link href="/operator/legality/LGL-102">
-                    <button className="px-4 py-2 bg-[#334155] text-white text-sm font-bold rounded hover:bg-slate-800 transition">Tinjau</button>
-                  </Link>
-                </td>
-              </tr>
-
-              <tr className="hover:bg-gray-50 transition-colors">
-                <td className="px-6 py-5 text-sm font-semibold text-gray-800">SAT-045</td>
-                <td className="px-6 py-5">
-                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800">
-                    Satelit
-                  </span>
-                </td>
-                <td className="px-6 py-5 text-sm text-gray-600 font-medium">Batch Lahan #890 - Anomali Hijau</td>
-                <td className="px-6 py-5">
-                  <div className="flex items-center gap-1.5 text-gray-500 text-sm font-medium">
-                    <Clock className="w-4 h-4" /> 12j 30m tersisa
-                  </div>
-                </td>
-                <td className="px-6 py-5">
-                  <button className="px-4 py-2 bg-blue-100 text-blue-800 text-sm font-bold rounded hover:bg-blue-200 transition">Tinjau</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        
-        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
-          <span className="text-sm text-gray-500 font-medium">Menampilkan 3 dari 24 tiket</span>
-          <div className="flex gap-2">
-            <button className="px-4 py-1.5 border border-gray-200 text-gray-400 rounded text-sm font-medium bg-gray-50" disabled>Sebelumnya</button>
-            <button className="px-4 py-1.5 border border-gray-300 text-gray-700 rounded text-sm font-medium hover:bg-gray-50">Selanjutnya</button>
+                </div>
+                <ArrowRight className="w-4 h-4 text-gray-400 shrink-0" />
+              </Link>
+            ))}
           </div>
         </div>
-      </div>
+      )}
+
+      {klaim.length === 0 && legalitas.length === 0 && (
+        <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center">
+          <ShieldCheck className="w-10 h-10 text-emerald-300 mx-auto mb-4" />
+          <h2 className="font-bold text-gray-800 mb-1">Tidak ada antrean</h2>
+          <p className="text-sm text-gray-500">
+            Semua klaim dan pengajuan legalitas sudah diputus.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

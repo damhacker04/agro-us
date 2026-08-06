@@ -1,202 +1,178 @@
 "use client";
 
-import React, { useState, use } from "react";
-import { ArrowLeft, FileText, CheckCircle2, ShieldAlert, X, Send } from "lucide-react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { AlertTriangle, ArrowLeft, FileText, Loader2, MapPin } from "lucide-react";
+import type { LegalityQueueItem } from "@agro-os/shared";
+import { GalatApi, ambilAntreanLegalitas, putuskanLegalitas } from "@/lib/api";
 
-export default function ReviewLegalityPage({ params }: { params: Promise<{ id: string }> }) {
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+const tgl = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "—";
+
+export default function OperatorLegalityDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = React.use(params);
   const router = useRouter();
-  const resolvedParams = use(params);
-  
-  // Use state to control the UI transitions
-  const [actionState, setActionState] = useState<'idle' | 'rejecting' | 'rejected' | 'approved'>('idle');
-  const [rejectReason, setRejectReason] = useState("");
 
-  const formatIdToName = (id: string) => {
-    return id.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-  };
+  const [tenant, setTenant] = useState<LegalityQueueItem | null>(null);
+  const [catatan, setCatatan] = useState("");
+  const [memuat, setMemuat] = useState(true);
+  const [proses, setProses] = useState(false);
+  const [galat, setGalat] = useState("");
 
-  const tenantName = formatIdToName(resolvedParams.id);
+  useEffect(() => {
+    // Tidak ada GET /operator/legality/:tenantId — hanya antrean per status, jadi
+    // ketiganya ditelusuri sampai Tenant-nya ketemu.
+    Promise.all([
+      ambilAntreanLegalitas("PENDING"),
+      ambilAntreanLegalitas("APPROVED"),
+      ambilAntreanLegalitas("REJECTED"),
+    ])
+      .then((semua) => {
+        const t = semua.flat().find((x) => x.tenantId === id) ?? null;
+        setTenant(t);
+        setGalat(t ? "" : "Tenant tidak ditemukan.");
+      })
+      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat Tenant"))
+      .finally(() => setMemuat(false));
+  }, [id]);
 
-  const handleApprove = () => {
-    setActionState('approved');
-  };
+  async function putuskan(setuju: boolean) {
+    // Penolakan tanpa alasan tidak bisa ditindaklanjuti Tenant — ia tidak akan tahu
+    // apa yang harus diperbaiki sebelum mengajukan ulang.
+    if (!setuju && catatan.trim().length === 0) {
+      return setGalat("Alasan penolakan wajib diisi.");
+    }
+    setProses(true);
+    setGalat("");
+    try {
+      await putuskanLegalitas(id, setuju, catatan.trim() || undefined);
+      router.push("/operator/legality");
+    } catch (e) {
+      setGalat(e instanceof GalatApi ? e.message : "Gagal menyimpan putusan.");
+      setProses(false);
+    }
+  }
 
-  const handleReject = () => {
-    if(!rejectReason.trim()) return alert("Alasan penolakan wajib diisi");
-    setActionState('rejected');
-  };
+  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat…</div>;
 
-  // Determine back link and text based on state
-  const backLink = (actionState === 'rejected' || actionState === 'approved') ? "/operator/legality?view=completed" : "/operator/legality";
-  const backText = (actionState === 'rejected' || actionState === 'approved') ? "Kembali ke Antrean (OP-03)" : "Kembali ke Antrean";
+  if (!tenant) {
+    return (
+      <div className="p-8">
+        <Link
+          href="/operator/legality"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 mb-6"
+        >
+          <ArrowLeft className="w-4 h-4" /> Kembali
+        </Link>
+        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
+          {galat}
+        </div>
+      </div>
+    );
+  }
+
+  const sudahDiputus = tenant.legalityStatus !== "PENDING";
+  const dokUrl = tenant.legalityDocUrl
+    ? tenant.legalityDocUrl.startsWith("http")
+      ? tenant.legalityDocUrl
+      : `${API_BASE}${tenant.legalityDocUrl}`
+    : null;
 
   return (
-    <div className="p-8 pb-20">
-      
-      <Link href={backLink} className="inline-flex items-center gap-2 text-sm font-bold text-emerald-800 hover:text-emerald-950 mb-6 transition">
-        <ArrowLeft className="w-4 h-4" /> {backText}
+    <div className="p-8 max-w-3xl">
+      <Link
+        href="/operator/legality"
+        className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 hover:text-emerald-600 mb-6"
+      >
+        <ArrowLeft className="w-4 h-4" /> Kembali ke Antrean
       </Link>
 
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8">
-        <div>
-          <h1 className="text-4xl font-bold text-[#0a1c38] font-serif mb-2">Tinjau Legalitas: {tenantName}</h1>
-          <p className="text-gray-600 font-medium">Review and verify tenant submitted legal documents.</p>
-        </div>
-        
-        {/* Status Pill */}
-        {(actionState === 'idle' || actionState === 'rejecting') && (
-          <div className="bg-[#fef3c7] text-[#92400e] px-4 py-2 rounded-full text-sm font-bold shadow-sm whitespace-nowrap">
-            Menunggu Tinjauan
-          </div>
-        )}
-        {actionState === 'rejected' && (
-          <div className="bg-[#fee2e2] text-[#991b1b] px-4 py-2 rounded-full text-sm font-bold shadow-sm whitespace-nowrap">
-            Ditolak
-          </div>
-        )}
-        {actionState === 'approved' && (
-          <div className="bg-[#dcfce7] text-[#166534] px-4 py-2 rounded-full text-sm font-bold shadow-sm whitespace-nowrap">
-            Disetujui
-          </div>
+      <h1 className="text-2xl font-bold text-emerald-950 mb-1">{tenant.companyName}</h1>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500 mb-6">
+        <span className="flex items-center gap-1">
+          <MapPin className="w-3.5 h-3.5" />
+          {tenant.zoneNames.length ? tenant.zoneNames.join(", ") : "belum pilih zona"}
+        </span>
+        <span>{tenant.landPlotCount} petak lahan</span>
+        <span>mendaftar {tgl(tenant.submittedAt)}</span>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-xl p-5 mb-5">
+        <h2 className="font-bold text-emerald-950 text-sm mb-3 flex items-center gap-2">
+          <FileText className="w-4 h-4 text-gray-400" /> Dokumen Legalitas
+        </h2>
+        {dokUrl ? (
+          <a
+            href={dokUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm font-semibold text-emerald-700 hover:underline break-all"
+          >
+            Buka dokumen (NIB / KTP pemilik)
+          </a>
+        ) : (
+          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            Tenant belum mengunggah dokumen. Tidak ada yang bisa ditinjau — tolak dengan
+            alasan ini agar Tenant tahu harus mengunggah dulu.
+          </p>
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Left Col: Documents */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-[#f8fafc] border border-gray-200 rounded-xl p-6 shadow-sm">
-            <h2 className="text-xl font-bold text-[#0a1c38] mb-6 flex items-center gap-3">
-              <FileText className="w-5 h-5 text-emerald-700" /> Dokumen Pendukung
-            </h2>
-            
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Scan KTP Pemilik</h3>
-                <div className="w-full bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 p-2 relative overflow-hidden aspect-[1.6]">
-                  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/c/ca/KTP_Indonesia.jpg/800px-KTP_Indonesia.jpg" alt="KTP" className="w-full h-full object-cover rounded opacity-80 mix-blend-multiply" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-gray-900/10 to-transparent"></div>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Sertifikat NIB (Nomor Induk Berusaha)</h3>
-                <div className="w-full bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 p-2 relative overflow-hidden aspect-[1.4]">
-                  <img src="https://1.bp.blogspot.com/-i5aC61Q0K1Q/YS2f2KzZBMI/AAAAAAAABU4/X44UoV1_f_wX5_B48-X6Xw_38-W9Z2_CgCLcBGAsYHQ/s1040/CONTOH%2BNIB.webp" alt="NIB" className="w-full h-full object-cover rounded opacity-80 mix-blend-multiply" />
-                </div>
-              </div>
-            </div>
-          </div>
+      {sudahDiputus ? (
+        <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 text-sm text-gray-600">
+          Legalitas Tenant ini sudah berstatus <b>{tenant.legalityStatus}</b>.
         </div>
+      ) : (
+        <div className="bg-white border border-gray-200 rounded-xl p-5">
+          <h2 className="font-bold text-emerald-950 text-sm mb-1">Putusan</h2>
+          <p className="text-xs text-gray-500 mb-4">
+            Menyetujui membuka akses Tenant untuk membuka kuota Pre-Order.
+          </p>
 
-        {/* Right Col: Extracted Data & Actions */}
-        <div className="space-y-6">
-          
-          {/* OCR Data */}
-          <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-            <h2 className="text-xl font-bold text-[#0a1c38] mb-6 flex items-center gap-3">
-              <CheckCircle2 className="w-5 h-5 text-emerald-700" /> Data Terekstraksi (OCR)
-            </h2>
-            
-            <div className="space-y-4">
-              <div className="flex flex-col gap-1 border-b border-gray-100 pb-3">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">NIK</span>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-900 font-medium">3573012345678901</span>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                </div>
-              </div>
-              
-              <div className="flex flex-col gap-1 border-b border-gray-100 pb-3">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Nama Lengkap</span>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-900 font-medium">Budi Santoso</span>
-                </div>
-              </div>
+          <label className="block text-xs font-semibold text-gray-700 mb-1">
+            Catatan <span className="font-normal text-gray-400">(wajib bila menolak)</span>
+          </label>
+          <textarea
+            rows={3}
+            maxLength={500}
+            value={catatan}
+            onChange={(e) => setCatatan(e.target.value)}
+            placeholder="Apa yang perlu diperbaiki Tenant?"
+            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm mb-4"
+          />
 
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">No. NIB</span>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-900 font-medium">1234567890123</span>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Actions - Only show if not approved */}
-          {actionState !== 'approved' && (
-            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-              
-              {actionState === 'rejected' ? (
-                // Rejected State View
-                <div className="animate-in fade-in">
-                  <div className="text-sm font-semibold text-gray-700 mb-4">
-                    Catatan / Alasan Penolakan
-                  </div>
-                  <div className="text-sm text-gray-800 leading-relaxed bg-gray-50 p-4 rounded-lg border border-gray-100">
-                    {rejectReason || "Lorem ipsum ini pokoknya alasan penolakannya. iosJDihSOIDsidc aiosCJOJCSJNxCnzjcs koasijcfp9wu eoghsl vgdsojvdsv soig esidjv oldjgudfn sgodov dnkvnsdoig vsndon vdlz nvcnvo ds"}
-                  </div>
-                </div>
-              ) : (
-                // Idle or Rejecting State View
-                <>
-                  <h2 className="text-lg font-bold text-[#0a1c38] mb-4">Tindakan Operator</h2>
-                  <hr className="mb-6 border-gray-100" />
-                  
-                  {actionState === 'idle' ? (
-                    <div className="flex flex-col xl:flex-row gap-4">
-                      <button 
-                        onClick={() => setActionState('rejecting')}
-                        className="flex-1 py-3 px-4 border-2 border-red-200 text-red-700 bg-white rounded-lg font-bold hover:bg-red-50 hover:border-red-300 transition-colors flex items-center justify-center gap-2 text-sm"
-                      >
-                        <X className="w-4 h-4" /> Tolak & Minta Revisi
-                      </button>
-                      <button 
-                        onClick={handleApprove}
-                        className="flex-1 py-3 px-4 bg-[#064e3b] text-white rounded-lg font-bold hover:bg-[#022c22] transition-colors flex items-center justify-center gap-2 text-sm"
-                      >
-                        <CheckCircle2 className="w-4 h-4" /> Verifikasi & Setujui Tenant
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="animate-in fade-in slide-in-from-top-2">
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        Catatan / Alasan Penolakan
-                      </label>
-                      <textarea
-                        value={rejectReason}
-                        onChange={(e) => setRejectReason(e.target.value)}
-                        placeholder="Jika menolak, tuliskan alasan spesifik..."
-                        className="w-full h-32 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none resize-none mb-4"
-                      ></textarea>
-                      
-                      <div className="flex flex-col xl:flex-row gap-4">
-                        <button 
-                          onClick={() => setActionState('idle')}
-                          className="flex-1 py-3 px-4 border-2 border-red-200 text-red-700 bg-white rounded-lg font-bold hover:bg-red-50 hover:border-red-300 transition-colors flex items-center justify-center gap-2 text-sm"
-                        >
-                          <X className="w-4 h-4" /> Batalkan Penolakan
-                        </button>
-                        <button 
-                          onClick={handleReject}
-                          className="flex-1 py-3 px-4 bg-[#b91c1c] text-white rounded-lg font-bold hover:bg-[#991b1b] transition-colors flex items-center justify-center gap-2 text-sm"
-                        >
-                          <Send className="w-4 h-4" /> Kirim Penolakan
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-
-            </div>
+          {galat && (
+            <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              {galat}
+            </p>
           )}
 
+          <div className="flex gap-3">
+            <button
+              onClick={() => putuskan(true)}
+              disabled={proses}
+              className="flex-1 bg-emerald-950 text-white text-sm font-semibold py-3 rounded-lg hover:bg-emerald-800 disabled:opacity-60 flex items-center justify-center gap-2"
+            >
+              {proses && <Loader2 className="w-4 h-4 animate-spin" />}
+              Setujui
+            </button>
+            <button
+              onClick={() => putuskan(false)}
+              disabled={proses}
+              className="flex-1 border border-red-300 text-red-700 text-sm font-semibold py-3 rounded-lg hover:bg-red-50 disabled:opacity-60"
+            >
+              Tolak
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

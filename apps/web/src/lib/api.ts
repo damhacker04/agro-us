@@ -15,6 +15,7 @@ import type {
   CatalogItem,
   ClaimResponse,
   FileClaimBody,
+  LegalityQueueItem,
   PendingAssurance,
   ResolveAssuranceBody,
   ResolveAssuranceResponse,
@@ -245,6 +246,24 @@ export const tandaiTanpaGps = (sessionId: string) =>
 
 export const ambilPelacakan = (shipmentId: string) =>
   ambil<TrackingSnapshot>(`/shipments/${shipmentId}/track`);
+
+// ============================== SISI OPERATOR ==============================
+
+/** Antrean klaim >10% yang harus diputus manusia, SLA 1 hari kerja (FR-5.6). */
+export const ambilAntreanKlaim = () =>
+  ambil<Array<ClaimResponse & { overdue: boolean }>>("/operator/claims");
+
+export const putuskanKlaim = (claimId: string, approvedValue: number, note: string) =>
+  kirim<ClaimResponse>(`/operator/claims/${claimId}/decide`, { approvedValue, note });
+
+export const ambilAntreanLegalitas = (status: "PENDING" | "APPROVED" | "REJECTED" = "PENDING") =>
+  ambil<LegalityQueueItem[]>(`/operator/legality?status=${status}`);
+
+export const putuskanLegalitas = (tenantId: string, approve: boolean, note?: string) =>
+  kirim<{ tenantId: string; legalityStatus: string; message: string }>(
+    `/operator/legality/${tenantId}/decide`,
+    { approve, ...(note ? { note } : {}) },
+  );
 
 export const ambilRekomendasi = () => ambil<PlantingRecommendation[]>("/tenant/rekomendasi");
 

@@ -758,6 +758,13 @@ export interface ClaimResponse {
   orderItemId: string;
   productName: string;
   /** Berat yang seharusnya diterima: jumlah box × kg per box. */
+  /**
+   * Bukti yang diajukan pembeli. Operator memutus klaim justru berdasarkan dua field
+   * ini — tanpa keduanya ia hanya melihat angka timbangan tanpa tahu barangnya kenapa,
+   * dan tidak punya dasar apa pun untuk menyetujui atau menolak.
+   */
+  photoUrl: string;
+  description: string;
   expectedKg: number;
   actualWeightKg: number;
   /** Selisih kotor sebelum dipotong toleransi. */

@@ -1,5 +1,6 @@
 import { Type } from "class-transformer";
-import { ArrayMaxSize, ArrayMinSize, ArrayNotEmpty, IsArray, IsBoolean, IsIn, IsOptional, IsString, IsUUID, IsUrl, MaxLength, MinLength, ValidateNested } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, ArrayNotEmpty, IsArray, IsBoolean, IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength, ValidateNested } from "class-validator";
+import { UPLOADED_FILE_URL } from "../storage/storage.service";
 
 export class CreateTenantProfileDto {
   @IsString()
@@ -8,7 +9,7 @@ export class CreateTenantProfileDto {
   companyName!: string;
 
   @IsOptional()
-  @IsUrl({}, { message: "logoUrl harus berupa URL" })
+  @Matches(UPLOADED_FILE_URL, { message: "logoUrl harus URL http(s) atau path unggahan /uploads/..." })
   logoUrl?: string;
 
   @IsArray()
@@ -25,7 +26,7 @@ export class UpdateTenantProfileDto {
   companyName?: string;
 
   @IsOptional()
-  @IsUrl({}, { message: "logoUrl harus berupa URL" })
+  @Matches(UPLOADED_FILE_URL, { message: "logoUrl harus URL http(s) atau path unggahan /uploads/..." })
   logoUrl?: string;
 
   @IsOptional()
@@ -36,7 +37,7 @@ export class UpdateTenantProfileDto {
 }
 
 export class SubmitLegalityDto {
-  @IsUrl({}, { message: "documentUrl harus berupa URL dokumen NIB/KTP" })
+  @Matches(UPLOADED_FILE_URL, { message: "documentUrl harus URL http(s) atau path unggahan /uploads/..." })
   documentUrl!: string;
 }
 

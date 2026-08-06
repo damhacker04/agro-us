@@ -1,7 +1,7 @@
 import { Type } from "class-transformer";
 import { IsDateString, IsLatitude, IsLongitude, IsString, Matches } from "class-validator";
 import { COURIER_PIN_LENGTH } from "@agro-os/shared";
-import { EVIDENCE_PHOTO_URL } from "../storage/storage.service";
+import { UPLOADED_FILE_URL } from "../storage/storage.service";
 
 export class VerifyCourierCodeDto {
   @IsString()
@@ -27,7 +27,7 @@ export class ReportPositionDto {
 
 export class ConfirmReceiptDto {
   /** Foto kondisi barang = Sinyal-2. Tanpa ini konfirmasi tidak membuktikan apa pun. */
-  @Matches(EVIDENCE_PHOTO_URL, {
+  @Matches(UPLOADED_FILE_URL, {
     message: "photoUrl harus URL http(s) atau path unggahan /uploads/...",
   })
   photoUrl!: string;

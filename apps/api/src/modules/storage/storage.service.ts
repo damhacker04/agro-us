@@ -10,17 +10,17 @@ export interface StoredObject {
 }
 
 /**
- * Bentuk URL foto bukti yang sah.
+ * Bentuk URL berkas unggahan yang sah.
  *
  * Menerima URL absolut (bila kelak dipindah ke S3/R2) DAN path relatif `/uploads/...`
  * yang dikembalikan `POST /uploads` hari ini. Divalidasi dengan pola ini, bukan dengan
  * `@IsUrl()`: validator itu mewajibkan host ber-TLD sehingga menolak persis keluaran
  * endpoint unggah kita sendiri — DTO yang memakainya jadi mustahil dipenuhi dari UI.
  *
- * Dipakai bersama oleh DTO PoD dan DTO klaim mutu supaya keduanya tidak pernah lagi
- * berbeda pendapat tentang apa itu "URL foto yang sah".
+ * Dipakai bersama oleh DTO PoD, klaim mutu, legalitas, dan logo Tenant supaya semuanya
+ * tidak pernah lagi berbeda pendapat tentang apa itu "URL berkas yang sah".
  */
-export const EVIDENCE_PHOTO_URL = /^(https?:\/\/\S+|\/uploads\/\S+\.(jpe?g|png|webp))$/i;
+export const UPLOADED_FILE_URL = /^(https?:\/\/\S+|\/uploads\/\S+\.(jpe?g|png|webp))$/i;
 
 /**
  * Port penyimpanan objek untuk foto bukti (PRD §6.4).
