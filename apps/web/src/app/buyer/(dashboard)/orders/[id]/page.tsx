@@ -12,15 +12,21 @@ import {
   Clock
 } from "lucide-react";
 
+/** Empat tahap yang dilihat pembeli saat menunggu barang, dari sisi penerimaan. */
+type TahapPenerimaan = "pending" | "approaching" | "arrived" | "completed";
+
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const unwrappedParams = React.use(params);
   
   // Determine initial status based on route ID (for demonstration purposes)
-  let initialStatus: "pending" | "approaching" | "arrived" | "completed" = "pending";
+  let initialStatus: TahapPenerimaan = "pending";
   if (unwrappedParams.id === "2") initialStatus = "approaching";
   if (unwrappedParams.id === "3") initialStatus = "completed";
 
-  const [status, setStatus] = useState(initialStatus);
+  // Tipe ditulis eksplisit, bukan `typeof initialStatus`: "arrived" tidak pernah jadi
+  // nilai AWAL — hanya dicapai setelah kurir masuk geofence — sehingga penyempitan alur
+  // TS akan membuangnya dari union dan menolak setStatus("arrived").
+  const [status, setStatus] = useState<TahapPenerimaan>(initialStatus);
 
   const subtotal = 1500000;
   const ongkir = 5000;

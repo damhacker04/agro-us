@@ -21,8 +21,12 @@ import type {
   LandPlotResponse,
   PlantingRecommendation,
   ProductResponse,
+  ReportPositionBody,
   RequestOtpResponse,
   Rupiah,
+  ScanTokenResponse,
+  TrackingSnapshot,
+  VerifyCourierCodeResponse,
   BoxQrItem,
   GenerateQrResponse,
   TenantOrderDetail,
@@ -185,6 +189,33 @@ export const ambilLembarQr = (shipmentId: string) =>
 
 export const terbitkanUlangKodeAntar = (shipmentId: string) =>
   kirim<{ courierCode: string }>(`/tenant/shipments/${shipmentId}/courier-code/reissue`, {});
+
+// ============================== SISI KURIR ==============================
+// Tanpa akun dan tanpa token JWT (§5.6.2). Kredensialnya adalah token QR, lalu
+// `sessionId` — keduanya acak dan tidak bisa ditebak. `ambil()` tetap dipakai:
+// bila kebetulan ada token pembeli/Tenant tersimpan di peramban yang sama, header
+// Authorization ikut terkirim tapi diabaikan endpoint ini.
+
+/** Halaman pertama setelah QR dipindai. TIDAK mengonsumsi token. */
+export const periksaToken = (token: string) =>
+  ambil<ScanTokenResponse>(`/scan/${encodeURIComponent(token)}`);
+
+/** Verifikasi Kode Antar → token terpakai, sesi terbuka, status jadi Dikirim. */
+export const verifikasiKodeAntar = (token: string, code: string) =>
+  kirim<VerifyCourierCodeResponse>(`/scan/${encodeURIComponent(token)}/verify`, { code });
+
+export const kirimPosisi = (sessionId: string, body: ReportPositionBody) =>
+  kirim<{ accepted: boolean; plausible: boolean; distanceToDestM: number; arrived: boolean }>(
+    `/scan/session/${sessionId}/position`,
+    body,
+  );
+
+/** Kurir menolak/tidak punya izin lokasi — jalur konfirmasi manual tetap jalan. */
+export const tandaiTanpaGps = (sessionId: string) =>
+  kirim<{ noGpsMode: boolean }>(`/scan/session/${sessionId}/no-gps`, {});
+
+export const ambilPelacakan = (shipmentId: string) =>
+  ambil<TrackingSnapshot>(`/shipments/${shipmentId}/track`);
 
 export const ambilRekomendasi = () => ambil<PlantingRecommendation[]>("/tenant/rekomendasi");
 
