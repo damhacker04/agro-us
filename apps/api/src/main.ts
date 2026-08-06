@@ -16,7 +16,18 @@ async function bootstrap() {
   // publik by design (§6.1: pembeli harus bisa memverifikasi tanpa mempercayai AgroUs).
   // ⚠️ Foto PoD & klaim ikut terlayani di sini; sebelum produksi tinjau apakah keduanya
   // boleh publik-lewat-URL, atau perlu jalur bertoken sendiri.
-  app.useStaticAssets(join(process.cwd(), "uploads"), { prefix: "/uploads" });
+  app.useStaticAssets(join(process.cwd(), "uploads"), {
+    prefix: "/uploads",
+    setHeaders: (res) => {
+      // Isi folder ini berasal dari unggahan pengguna. `nosniff` menahan peramban
+      // menebak-nebak tipe isinya, dan CSP sandbox memastikan berkas yang entah
+      // bagaimana lolos sebagai HTML tetap tidak bisa menjalankan skrip atau
+      // membaca origin API. Ekstensi sendiri sudah dibatasi di StorageService.
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
+      res.setHeader("Content-Disposition", "inline");
+    },
+  });
 
   // DTO divalidasi global; field di luar DTO dibuang (whitelist).
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));

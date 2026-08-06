@@ -225,6 +225,46 @@ export const aktifkanLangganan = (months = 1) =>
   });
 
 /**
+ * Unggah satu foto, kembalikan URL-nya (`POST /uploads`).
+ *
+ * Dipakai alur yang mewajibkan foto tapi menerimanya sebagai URL — terutama konfirmasi
+ * terima pembeli. Seperti `tambahNodeTimeline`, Content-Type TIDAK disetel sendiri:
+ * biarkan peramban menuliskannya beserta boundary multipart.
+ */
+export async function unggahFoto(berkas: File): Promise<{ url: string; sha256: string; bytes: number }> {
+  const token = ambilToken();
+  const form = new FormData();
+  form.append("file", berkas);
+  const res = await fetch(`${BASE}/uploads`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  if (!res.ok) {
+    let kode: string | null = null;
+    let pesan = `Unggahan gagal (${res.status})`;
+    try {
+      const j = (await res.json()) as { code?: string; message?: string };
+      kode = j.code ?? null;
+      if (j.message) pesan = j.message;
+    } catch {
+      /* respons bukan JSON — pakai pesan bawaan */
+    }
+    throw new GalatApi(res.status, kode, pesan);
+  }
+  return (await res.json()) as { url: string; sha256: string; bytes: number };
+}
+
+/** Konfirmasi terima barang — Sinyal-2 PoD yang membuka jendela klaim mutu. */
+export const konfirmasiTerima = (shipmentId: string, photoUrl: string) =>
+  kirim<{
+    shipmentId: string;
+    status: string;
+    receivedMode: string;
+    claimWindowEndsAt: string;
+  }>(`/shipments/${shipmentId}/receive`, { photoUrl });
+
+/**
  * Tambah node timeline (FR-4.1). Dikirim sebagai multipart karena membawa berkas foto,
  * jadi TIDAK lewat `ambil()` yang selalu menyetel Content-Type JSON — biarkan peramban
  * yang menuliskannya sendiri beserta boundary-nya.

@@ -14,6 +14,7 @@ import { IntelligenceModule } from "./modules/intelligence/intelligence.module";
 import { SubscriptionModule } from "./modules/subscription/subscription.module";
 import { JobsModule } from "./modules/jobs/jobs.module";
 import { AssuranceModule } from "./modules/assurance/assurance.module";
+import { StorageModule } from "./modules/storage/storage.module";
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { AssuranceModule } from "./modules/assurance/assurance.module";
     IntelligenceModule,
     SubscriptionModule,
     JobsModule,
+    StorageModule,
   ],
   controllers: [HealthController],
 })
