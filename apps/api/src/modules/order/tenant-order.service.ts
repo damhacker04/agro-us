@@ -69,9 +69,21 @@ export class TenantOrderService {
 
   private async shipmentIdsOf(tenantId: string): Promise<string[]> {
     const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
-      SELECT DISTINCT s.id::text, s.created_at_proxy
+      SELECT DISTINCT s.id::text, s.urgensi, s.created_at_proxy
       FROM (
-        SELECT sh.id, o.created_at AS created_at_proxy
+        SELECT sh.id,
+               o.created_at AS created_at_proxy,
+               -- Ini daftar PEKERJAAN, bukan arsip. Yang menunggu tindakan Tenant naik
+               -- ke atas; yang sudah selesai turun, sebanyak apa pun riwayatnya.
+               CASE sh.status
+                 WHEN 'PANEN'          THEN 0  -- siap dikemas & dicetak QR-nya
+                 WHEN 'MENUNGGU_PANEN' THEN 1  -- menunggu panen dicatat
+                 WHEN 'DIKIRIM'        THEN 2
+                 WHEN 'TIBA_DI_LOKASI' THEN 3
+                 WHEN 'DITERIMA'       THEN 4
+                 WHEN 'SELESAI'        THEN 5
+                 ELSE 6                        -- DIBATALKAN
+               END AS urgensi
         FROM shipments sh
         JOIN orders o ON o.id = sh.order_id
         JOIN order_items oi ON oi.shipment_id = sh.id
@@ -81,7 +93,7 @@ export class TenantOrderService {
         -- ditampilkan sebagai pekerjaan.
         WHERE p.tenant_id = ${tenantId}::uuid AND o.order_status <> 'DRAFT'
       ) s
-      ORDER BY s.created_at_proxy DESC
+      ORDER BY s.urgensi ASC, s.created_at_proxy DESC
     `;
     return rows.map((r) => r.id);
   }

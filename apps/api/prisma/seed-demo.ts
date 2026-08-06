@@ -496,6 +496,9 @@ async function main() {
           buyerId: buyerId.get("katering")!,
           totalAmount: subtotal + 85_000,
           orderStatus: "PAID",
+          // Dipesan jauh sebelum panennya, bukan hari ini — kalau dibiarkan default
+          // now(), pesanan musim lalu terbaca sebagai pesanan baru.
+          createdAt: hariLalu(mingguLalu * 7 + 30),
         },
       });
       const ship = await prisma.$queryRaw<Array<{ id: string }>>`

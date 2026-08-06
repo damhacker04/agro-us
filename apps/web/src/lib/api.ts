@@ -23,6 +23,8 @@ import type {
   ProductResponse,
   RequestOtpResponse,
   Rupiah,
+  BoxQrItem,
+  GenerateQrResponse,
   TenantOrderDetail,
   TenantOrderSummary,
   TenantProfileResponse,
@@ -172,6 +174,17 @@ export const ambilPesananTenant = () => ambil<TenantOrderSummary[]>("/tenant/ord
 
 export const ambilPesananTenantSatu = (shipmentId: string) =>
   ambil<TenantOrderDetail>(`/tenant/orders/${shipmentId}`);
+
+/** Terbitkan QR + Kode Antar. Kode antar HANYA dikembalikan di sini — tidak bisa diambil ulang. */
+export const terbitkanQr = (shipmentId: string) =>
+  kirim<GenerateQrResponse>(`/tenant/shipments/${shipmentId}/qr`, {});
+
+/** Lembar cetak ulang. Sengaja tanpa Kode Antar. */
+export const ambilLembarQr = (shipmentId: string) =>
+  ambil<{ shipmentId: string; boxes: BoxQrItem[] }>(`/tenant/shipments/${shipmentId}/qr`);
+
+export const terbitkanUlangKodeAntar = (shipmentId: string) =>
+  kirim<{ courierCode: string }>(`/tenant/shipments/${shipmentId}/courier-code/reissue`, {});
 
 export const ambilRekomendasi = () => ambil<PlantingRecommendation[]>("/tenant/rekomendasi");
 
