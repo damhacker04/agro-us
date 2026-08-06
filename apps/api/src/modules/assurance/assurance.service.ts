@@ -277,9 +277,16 @@ export class AssuranceService {
           // Mengunci kuota saja TIDAK cukup: tanpa item pesanan pada batch pengganti,
           // alokasi FIFO di panen berikutnya tidak menemukan siapa pun sebagai pemilik
           // kuota itu, dan pembeli yang sudah membayar tidak pernah menerima barang.
+          // Identitas penerima IKUT disalin. Barangnya berganti Tenant, tetapi tujuannya
+          // tidak berubah — dan `recipient_name`/`recipient_phone` NOT NULL, jadi
+          // melewatkannya membuat seluruh opsi substitusi gagal dengan galat 500.
           const ship = await tx.$queryRaw<Array<{ id: string }>>`
-            INSERT INTO shipments (order_id, zone_id, dest_point, dest_radius_m, receiving_hours, status)
-            SELECT order_id, zone_id, dest_point, dest_radius_m, receiving_hours, 'MENUNGGU_PANEN'::"ShipmentStatus"
+            INSERT INTO shipments (order_id, zone_id, dest_point, dest_radius_m,
+                                   recipient_name, recipient_phone, landmark,
+                                   receiving_hours, status)
+            SELECT order_id, zone_id, dest_point, dest_radius_m,
+                   recipient_name, recipient_phone, landmark,
+                   receiving_hours, 'MENUNGGU_PANEN'::"ShipmentStatus"
             FROM shipments WHERE id = ${item.shipmentId}::uuid
             RETURNING id::text
           `;

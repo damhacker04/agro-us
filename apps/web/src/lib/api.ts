@@ -9,8 +9,15 @@
 import { ambilToken } from "./auth";
 import type {
   AuthUser,
+  BuyerOrderDetail,
   BuyerProfileResponse,
+  CancelOrderResponse,
   CatalogItem,
+  ClaimResponse,
+  FileClaimBody,
+  PendingAssurance,
+  ResolveAssuranceBody,
+  ResolveAssuranceResponse,
   CheckoutBody,
   CheckoutResponse,
   NdviSeries,
@@ -140,6 +147,28 @@ export const bayarSimulasi = (invoiceRef: string) =>
   kirim<unknown>("/payments/webhook", { invoiceRef, status: "PAID" });
 
 export const ambilPesanan = () => ambil<OrderSummary[]>("/orders");
+
+export const ambilPesananSatu = (orderId: string) =>
+  ambil<BuyerOrderDetail>(`/orders/${orderId}`);
+
+/** FR-7.5 — pembatalan sepihak, hanya selama Menunggu Panen. Ada biaya 10% nilai barang. */
+export const batalkanPesanan = (orderId: string) =>
+  kirim<CancelOrderResponse>(`/orders/${orderId}/cancel`, {});
+
+// ---------- Harvest Assurance (FR-7.4, FR-7.10) ----------
+
+export const ambilAssuransiTertunda = () => ambil<PendingAssurance[]>("/assurance/pending");
+
+export const putuskanAssuransi = (orderItemId: string, body: ResolveAssuranceBody) =>
+  kirim<ResolveAssuranceResponse>(`/assurance/${orderItemId}/resolve`, body);
+
+// ---------- Klaim mutu (FR-5.x) ----------
+
+export const ajukanKlaim = (shipmentId: string, body: FileClaimBody) =>
+  kirim<ClaimResponse>(`/shipments/${shipmentId}/claims`, body);
+
+export const ambilKlaim = (shipmentId: string) =>
+  ambil<ClaimResponse[]>(`/shipments/${shipmentId}/claims`);
 
 export const ambilProfilPembeli = () => ambil<BuyerProfileResponse>("/buyer/profile");
 

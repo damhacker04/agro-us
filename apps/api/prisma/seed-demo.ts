@@ -122,6 +122,12 @@ const KATALOG = [
   { tenant: "batu", lahan: 0, komoditas: "Selada", produk: "Selada Keriting Batu", grade: "A", hargaBox: 132_000, kgBox: 6, kuota: 90, panenHari: 15, verifikasi: "TERVERIFIKASI" },
   { tenant: "batu", lahan: 1, komoditas: "Tomat", produk: "Tomat Beef Batu", grade: "A", hargaBox: 118_000, kgBox: 10, kuota: 140, panenHari: 21, verifikasi: "PERLU_DITINJAU" },
   { tenant: "ngantang", lahan: 0, komoditas: "Cabai Rawit", produk: "Cabai Rawit Ngantang", grade: "A", hargaBox: 285_000, kgBox: 10, kuota: 70, panenHari: 33, verifikasi: "FOTO_SAJA" },
+  // Wortel KEDUA, dari Tenant berbeda di zona yang sama. Tanpa baris ini opsi
+  // SUBSTITUSI mustahil ditawarkan pada data demo: syaratnya komoditas sama +
+  // Tenant berbeda + zona sama, dan setiap Tenant lain menjual komoditas yang
+  // berlainan. Harganya sengaja sedikit lebih mahal supaya selisih yang ditanggung
+  // Tenant gagal ikut terlihat, bukan nol.
+  { tenant: "batu", lahan: 0, komoditas: "Wortel", produk: "Wortel Batu Grade A", grade: "A", hargaBox: 152_000, kgBox: 10, kuota: 120, panenHari: 24, verifikasi: "TERVERIFIKASI" },
 ] as const;
 
 /** Kronologi budidaya yang wajar untuk satu batch — dipakai membangun Verified Timeline. */

@@ -52,6 +52,9 @@ export default function CheckoutPage() {
       // Kuota sudah direservasi di server; keranjang tidak boleh menyisakan salinannya.
       kosongkanKeranjang();
       const q = new URLSearchParams({
+        // Dibawa terus sampai halaman sukses: tanpa ini halaman itu tidak tahu
+        // pesanan mana yang baru saja dibayar dan hanya bisa menampilkan angka karangan.
+        pesanan: res.orderId,
         invoice: res.payment.invoiceRef,
         metode: res.payment.method,
         jumlah: String(res.payment.amount),

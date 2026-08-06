@@ -1,5 +1,6 @@
 import { Type } from "class-transformer";
-import { IsInt, IsNumber, IsPositive, IsString, IsUUID, IsUrl, MaxLength, Min, MinLength } from "class-validator";
+import { IsInt, IsNumber, IsPositive, IsString, IsUUID, Matches, MaxLength, Min, MinLength } from "class-validator";
+import { EVIDENCE_PHOTO_URL } from "../storage/storage.service";
 
 export class FileClaimDto {
   /** Klaim menunjuk satu item — tiap komoditas punya toleransi susut berbeda (FR-5.2). */
@@ -13,7 +14,9 @@ export class FileClaimDto {
   actualWeightKg!: number;
 
   /** Foto kondisi barang — wajib, tanpa ini klaim tidak membuktikan apa pun. */
-  @IsUrl({}, { message: "photoUrl harus berupa URL foto barang" })
+  @Matches(EVIDENCE_PHOTO_URL, {
+    message: "photoUrl harus URL http(s) atau path unggahan /uploads/...",
+  })
   photoUrl!: string;
 
   @IsString()

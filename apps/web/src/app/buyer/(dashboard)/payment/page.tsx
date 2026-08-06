@@ -15,6 +15,7 @@ function PaymentContent() {
   const jumlah = Number(sp.get("jumlah") ?? 0);
   const payload = sp.get("payload") ?? "";
   const kedaluwarsa = sp.get("kedaluwarsa");
+  const pesanan = sp.get("pesanan") ?? "";
 
   const [proses, setProses] = useState(false);
   const [galat, setGalat] = useState("");
@@ -24,7 +25,7 @@ function PaymentContent() {
     setGalat("");
     try {
       await bayarSimulasi(invoice);
-      router.push("/buyer/payment-success");
+      router.push(`/buyer/payment-success${pesanan ? `?pesanan=${pesanan}` : ""}`);
     } catch (e) {
       setGalat(e instanceof GalatApi ? e.message : "Gagal menandai pembayaran.");
       setProses(false);
