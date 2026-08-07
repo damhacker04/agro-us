@@ -1,0 +1,36 @@
+# Menjaga API tetap terjaga di Render free tier.
+#
+# Instance free tier TIDUR setelah ~15 menit menganggur, dan permintaan pertama
+# sesudahnya butuh 50+ detik untuk membangunkannya. Bagi orang yang baru pertama
+# membuka aplikasi — juri, calon pengguna — jeda itu tidak terbaca sebagai "sedang
+# bangun", melainkan sebagai aplikasi yang rusak. Mereka menutup tabnya sebelum
+# halaman pertama sempat muncul.
+#
+# Dijadwalkan lewat GitHub Actions, bukan layanan ping pihak ketiga, supaya
+# konfigurasinya ikut di repo dan tidak bergantung pada akun milik satu orang.
+name: keep-alive
+
+on:
+  schedule:
+    # Tiap 10 menit — di bawah ambang tidur 15 menit, dengan sisa waktu untuk
+    # penundaan penjadwal GitHub yang memang lazim beberapa menit.
+    - cron: "*/10 * * * *"
+  workflow_dispatch: # bisa dipicu manual sebelum sesi demo
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Bangunkan API
+        run: |
+          # --max-time 90 memberi ruang untuk cold start; instance yang tidur
+          # memang perlu ~50 detik dan itu BUKAN kegagalan.
+          kode=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 \
+                 https://agro-us.onrender.com/health)
+          echo "health -> $kode"
+          # Gagalkan hanya bila jawabannya bukan 200. Tanpa ini, API yang mati
+          # tetap terlihat "hijau" di daftar workflow dan tidak ada yang tahu.
+          test "$kode" = "200"
