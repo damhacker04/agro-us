@@ -1,114 +1,133 @@
 "use client";
 
-import React from "react";
-import { Info, Search, Filter, ChevronLeft, ChevronRight, TriangleAlert, AlertCircle } from "lucide-react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { CheckCircle2, Satellite, ShieldAlert } from "lucide-react";
+import type { SatelliteReviewItem, VerificationStatus } from "@agro-os/shared";
+import { GalatApi, ambilAntreanSatelit } from "@/lib/api";
 
-export default function SatelliteQueuePage() {
-  return (
-    <div className="p-8">
-      <h1 className="text-4xl font-bold text-[#0a1c38] font-serif mb-8">Antrean Anomali Satelit (NDVI)</h1>
+const tgl = (iso: string | null) =>
+  iso
+    ? new Date(`${iso}T00:00:00Z`).toLocaleDateString("id-ID", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        timeZone: "UTC",
+      })
+    : "—";
 
-      {/* Info Box */}
-      <div className="bg-[#f0f9ff] border border-[#bae6fd] rounded-xl p-5 mb-8 flex gap-4 shadow-sm items-start">
-        <div className="bg-[#0369a1] text-white p-1 rounded-full shrink-0">
-          <Info className="w-4 h-4" />
+const STATUS: Record<VerificationStatus, { label: string; kelas: string }> = {
+  TERVERIFIKASI: { label: "Terverifikasi", kelas: "bg-emerald-100 text-emerald-800" },
+  FOTO_SAJA: { label: "Bukti Foto Saja", kelas: "bg-amber-100 text-amber-900" },
+  PERLU_DITINJAU: { label: "Perlu Ditinjau", kelas: "bg-orange-100 text-orange-800" },
+  TIDAK_DAPAT: { label: "Citra Tidak Tersedia", kelas: "bg-gray-100 text-gray-700" },
+  TIDAK_SESUAI: { label: "Tidak Sesuai Klaim", kelas: "bg-red-100 text-red-800" },
+};
+
+/**
+ * Antrean tinjauan satelit (FR-4.6, OP-04).
+ *
+ * Hanya PERLU_DITINJAU dan TIDAK_SESUAI yang masuk sini — keduanya berarti pipeline
+ * menemukan ketidaksesuaian antara klaim Tenant dan citra, dan keduanya langsung
+ * memengaruhi badge yang dilihat pembeli. Status lain tidak menunggu keputusan siapa pun.
+ */
+export default function OperatorSatellitePage() {
+  const [antrean, setAntrean] = useState<SatelliteReviewItem[]>([]);
+  const [memuat, setMemuat] = useState(true);
+  const [galat, setGalat] = useState("");
+
+  useEffect(() => {
+    ambilAntreanSatelit()
+      .then((d) => {
+        setAntrean(d);
+        setGalat("");
+      })
+      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat antrean"))
+      .finally(() => setMemuat(false));
+  }, []);
+
+  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat antrean…</div>;
+
+  if (galat) {
+    return (
+      <div className="p-8">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
+          {galat}
         </div>
-        <div>
-          <h3 className="text-sm font-bold text-[#0369a1]">Filter Deteksi Anomali Aktif</h3>
-          <p className="text-sm text-[#0369a1] mt-1 leading-relaxed">
-            Sistem saat ini menandai batch di mana terdapat selisih antara laporan tanam manual dan deteksi vegetasi satelit (NDVI) sebesar <strong>7 hingga 21 hari</strong>. Anomali ini membutuhkan investigasi untuk memastikan kepatuhan tenant.
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-8 max-w-5xl">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-emerald-950">Verifikasi Satelit</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          Batch yang klaimnya tidak cocok dengan citra. Keputusan Anda langsung mengubah
+          badge yang dilihat pembeli.
+        </p>
+      </div>
+
+      {antrean.length === 0 ? (
+        <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center">
+          <CheckCircle2 className="w-10 h-10 text-emerald-300 mx-auto mb-4" />
+          <h2 className="font-bold text-gray-800 mb-1">Antrean bersih</h2>
+          <p className="text-sm text-gray-500">
+            Tidak ada batch yang menunggu tinjauan manusia.
           </p>
         </div>
-      </div>
-
-      {/* Table Section */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        
-        {/* Table Toolbar */}
-        <div className="px-6 py-5 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
-          <h2 className="text-lg font-semibold text-gray-800">Antrean Investigasi Aktif</h2>
-          <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm font-bold text-gray-700 hover:bg-gray-50 transition">
-            <Filter className="w-4 h-4" /> Filter
-          </button>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-center border-collapse">
-            <thead>
-              <tr className="bg-white border-b border-gray-100">
-                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest text-left">ID BATCH</th>
-                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest text-left">KOMODITAS</th>
-                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest text-left">LAPORAN TANAM</th>
-                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest text-left">DETEKSI SATELIT</th>
-                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest text-left">SELISIH</th>
-                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest">AKSI</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              
-              <tr className="hover:bg-gray-50 transition-colors">
-                <td className="px-6 py-5 text-sm font-bold text-[#0a1c38] text-left">B-1001</td>
-                <td className="px-6 py-5 text-left">
-                  <div className="flex items-center gap-2 text-red-600 text-sm font-bold">
-                    <span className="w-6 h-6 rounded bg-red-100 flex items-center justify-center">🍅</span>
-                    Tomat Beef
+      ) : (
+        <div className="space-y-3">
+          {antrean.map((b) => {
+            const s = STATUS[b.verificationStatus];
+            return (
+              <Link
+                key={b.batchId}
+                href={`/operator/satellite/${b.batchId}`}
+                className="block bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition"
+              >
+                <div className="flex items-start justify-between gap-4 mb-3">
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-gray-900 truncate">{b.productName}</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {b.tenantName} · {b.landPlotAreaHa.toFixed(2)} ha
+                    </p>
                   </div>
-                </td>
-                <td className="px-6 py-5 text-sm font-medium text-gray-700 text-left">01 Ags 2023</td>
-                <td className="px-6 py-5 text-sm font-medium text-gray-700 text-left">13 Ags 2023</td>
-                <td className="px-6 py-5 text-left">
-                  <div className="inline-flex items-center gap-1.5 text-red-700 text-sm font-bold bg-red-50 px-3 py-1.5 rounded border border-red-200">
-                    <TriangleAlert className="w-4 h-4" /> 12 Hari
-                  </div>
-                </td>
-                <td className="px-6 py-5">
-                  <Link href="/operator/satellite/B-1001">
-                    <button className="px-5 py-2.5 bg-[#334155] text-white text-sm font-bold rounded-lg shadow-sm hover:bg-[#1e293b] transition-all flex items-center justify-center gap-2 mx-auto">
-                      <Search className="w-4 h-4" /> Investigasi
-                    </button>
-                  </Link>
-                </td>
-              </tr>
+                  <span
+                    className={`shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1 ${s.kelas}`}
+                  >
+                    <ShieldAlert className="w-3 h-3" />
+                    {s.label}
+                  </span>
+                </div>
 
-              <tr className="hover:bg-gray-50 transition-colors">
-                <td className="px-6 py-5 text-sm font-bold text-[#0a1c38] text-left">B-1022</td>
-                <td className="px-6 py-5 text-left">
-                  <div className="flex items-center gap-2 text-emerald-700 text-sm font-bold">
-                    <span className="w-6 h-6 rounded bg-emerald-100 flex items-center justify-center">🥬</span>
-                    Sawi
+                <div className="grid grid-cols-2 gap-3 text-xs bg-gray-50 border border-gray-100 rounded-lg px-3 py-2.5">
+                  <div>
+                    <div className="text-gray-500 mb-0.5">Diklaim Tenant</div>
+                    <div className="text-gray-800">
+                      tanam {tgl(b.claimedPlantDate)} · panen {tgl(b.claimedHarvestDate)}
+                    </div>
                   </div>
-                </td>
-                <td className="px-6 py-5 text-sm font-medium text-gray-700 text-left">10 Ags 2023</td>
-                <td className="px-6 py-5 text-sm font-medium text-gray-700 text-left">18 Ags 2023</td>
-                <td className="px-6 py-5 text-left">
-                  <div className="inline-flex items-center gap-1.5 text-yellow-700 text-sm font-bold bg-yellow-50 px-3 py-1.5 rounded border border-yellow-200">
-                    <AlertCircle className="w-4 h-4" /> 8 Hari
+                  <div>
+                    <div className="text-gray-500 mb-0.5">Terdeteksi citra</div>
+                    <div className="text-gray-800">
+                      tanam {tgl(b.detectedPlantDate)} · panen {tgl(b.detectedHarvestDate)}
+                    </div>
                   </div>
-                </td>
-                <td className="px-6 py-5">
-                  <button className="px-5 py-2.5 bg-[#334155] text-white text-sm font-bold rounded-lg shadow-sm hover:bg-[#1e293b] transition-all flex items-center justify-center gap-2 mx-auto">
-                    <Search className="w-4 h-4" /> Investigasi
-                  </button>
-                </td>
-              </tr>
+                </div>
 
-            </tbody>
-          </table>
+                <div className="flex items-center gap-1.5 text-[11px] text-gray-500 mt-2">
+                  <Satellite className="w-3 h-3 shrink-0" />
+                  {b.usableObservationCount} dari {b.observationCount} pengamatan terpakai
+                  {b.observationCount > 0 &&
+                    b.usableObservationCount === 0 &&
+                    " — seluruhnya tertutup awan"}
+                </div>
+              </Link>
+            );
+          })}
         </div>
-        
-        <div className="p-8 text-center border-t border-gray-100">
-          <p className="text-sm text-gray-400 font-medium">Akhir dari antrean anomali saat ini.</p>
-        </div>
-
-        <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between bg-white">
-          <span className="text-sm text-gray-500 font-medium">Menampilkan 1–2 dari 2 anomali</span>
-          <div className="flex gap-2 text-gray-400">
-            <button className="p-1 hover:text-gray-700 transition" disabled><ChevronLeft className="w-5 h-5" /></button>
-            <button className="p-1 hover:text-gray-700 transition" disabled><ChevronRight className="w-5 h-5" /></button>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

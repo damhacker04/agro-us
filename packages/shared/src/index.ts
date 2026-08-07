@@ -1161,3 +1161,78 @@ export interface TimelineVerifyResponse {
   /** Jangkar eksternal terakhir, bila sudah dipublikasikan (§6.1). */
   anchor: { anchorDate: string; rootHash: string; externalRef: string | null } | null;
 }
+
+// ============================== KONSOL OPERATOR ==============================
+// Layar tinjauan & tata kelola. Semua endpoint di sini bertanda @Roles("OPERATOR").
+
+/** GET /operator/escrow — posisi dana seluruh Tenant, bukan satu Tenant (OP-07). */
+export interface OperatorEscrowSummary {
+  /** Jumlah seluruh HOLD dikurangi seluruh arus keluar. */
+  tertahan: Rupiah;
+  totalDitahan: Rupiah;
+  totalDicairkan: Rupiah;
+  totalPotonganKlaim: Rupiah;
+  totalRefund: Rupiah;
+  totalBiayaBatal: Rupiah;
+  totalAlihSubstitusi: Rupiah;
+  perTenant: Array<{
+    tenantId: string;
+    companyName: string;
+    tertahan: Rupiah;
+    ditahan: Rupiah;
+    dicairkan: Rupiah;
+  }>;
+}
+
+/** GET /operator/anchors — jangkar hash harian per batch (§6.1, OP-08). */
+export interface AnchorAuditItem {
+  batchId: string;
+  productName: string;
+  tenantName: string;
+  anchorDate: string;
+  rootHash: string;
+  externalRef: string | null;
+  publishedAt: string | null;
+  /** Hasil hitung ULANG rantai saat ini dibandingkan root yang dijangkarkan. */
+  matchesCurrent: boolean;
+  nodeCount: number;
+}
+
+/** GET /operator/satellite — batch yang butuh tinjauan manusia (FR-4.6, OP-04). */
+export interface SatelliteReviewItem {
+  batchId: string;
+  productName: string;
+  tenantName: string;
+  landPlotId: string;
+  landPlotAreaHa: number;
+  verificationStatus: VerificationStatus;
+  claimedHarvestDate: string;
+  claimedPlantDate: string | null;
+  detectedPlantDate: string | null;
+  detectedHarvestDate: string | null;
+  observationCount: number;
+  usableObservationCount: number;
+}
+
+/** POST /operator/satellite/:batchId/decide */
+export interface DecideSatelliteBody {
+  verificationStatus: VerificationStatus;
+  note?: string;
+}
+
+/** POST/PATCH /operator/zones */
+export interface UpsertZoneBody {
+  name: string;
+  city: string;
+  minOrderValue: Rupiah;
+}
+
+/** POST/PATCH /operator/commodities */
+export interface UpsertCommodityBody {
+  name: string;
+  category: CommodityCategory;
+  shrinkTolerancePct: number;
+  avgYieldKgPerHa: number;
+  growingDaysMin: number;
+  gradeStandards?: unknown;
+}

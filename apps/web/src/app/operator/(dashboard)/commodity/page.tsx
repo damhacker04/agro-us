@@ -1,109 +1,90 @@
 "use client";
 
-import React from "react";
-import { Filter, Download, Plus, Edit2, ChevronLeft, ChevronRight } from "lucide-react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { Leaf, Plus, Sprout } from "lucide-react";
+import type { CommoditySummary } from "@agro-os/shared";
+import { GalatApi, ambilKomoditasOperator } from "@/lib/api";
 
-export default function CommodityMasterDataPage() {
+/**
+ * Daftar komoditas (OP-10).
+ *
+ * Tiga angka di tiap baris punya konsekuensi berbeda dan semuanya berat:
+ * rendemen membatasi kuota PO seluruh Tenant, toleransi susut menentukan klaim mutu
+ * mana yang sah, dan umur tanam menjadi pagar kewajaran tanggal panen.
+ */
+export default function OperatorCommodityPage() {
+  const [komoditas, setKomoditas] = useState<CommoditySummary[]>([]);
+  const [memuat, setMemuat] = useState(true);
+  const [galat, setGalat] = useState("");
+
+  useEffect(() => {
+    ambilKomoditasOperator()
+      .then((d) => { setKomoditas(d); setGalat(""); })
+      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat komoditas"))
+      .finally(() => setMemuat(false));
+  }, []);
+
+  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat…</div>;
+
+  if (galat) {
+    return (
+      <div className="p-8">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">{galat}</div>
+      </div>
+    );
+  }
+
   return (
-    <div className="p-8">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+    <div className="p-8 max-w-5xl">
+      <div className="flex items-start justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-4xl font-bold text-[#0a1c38] font-serif mb-2">Master Data Komoditas</h1>
-          <p className="text-gray-600 font-medium">Manage agricultural commodity standards and grading criteria.</p>
+          <h1 className="text-2xl font-bold text-emerald-950">Manajemen Komoditas</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Angka di sini berlaku untuk seluruh Tenant — rendemen membatasi kuota, toleransi
+            susut menentukan klaim yang sah, umur tanam menjadi pagar tanggal panen.
+          </p>
         </div>
-        <button className="px-6 py-3 bg-[#022c22] text-white font-bold rounded-lg shadow-sm hover:bg-[#064e3b] transition flex items-center gap-2">
-          <Plus className="w-5 h-5" /> Tambah Komoditas
-        </button>
+        <Link href="/operator/commodity/baru"
+          className="shrink-0 flex items-center gap-2 bg-emerald-950 text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-emerald-800">
+          <Plus className="w-4 h-4" /> Tambah
+        </Link>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        
-        {/* Toolbar */}
-        <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
-          <div className="flex gap-3">
-            <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm font-bold text-gray-700 hover:bg-gray-50 transition">
-              <Filter className="w-4 h-4" /> Filter
-            </button>
-            <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm font-bold text-gray-700 hover:bg-gray-50 transition">
-              <Download className="w-4 h-4" /> Export
-            </button>
-          </div>
-          <div className="text-sm text-gray-500 font-medium">Showing 1 to 2 of 2 entries</div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-center border-collapse">
-            <thead>
-              <tr className="bg-[#f8fafc] border-b border-gray-200">
-                <th className="px-6 py-5 text-xs font-bold text-gray-600 uppercase tracking-widest text-left">KOMODITAS</th>
-                <th className="px-6 py-5 text-xs font-bold text-gray-600 uppercase tracking-widest text-left">RENDEMEN RATA-RATA</th>
-                <th className="px-6 py-5 text-xs font-bold text-gray-600 uppercase tracking-widest text-left">TOLERANSI SUSUT</th>
-                <th className="px-6 py-5 text-xs font-bold text-gray-600 uppercase tracking-widest text-left">KRITERIA GRADE A</th>
-                <th className="px-6 py-5 text-xs font-bold text-gray-600 uppercase tracking-widest">AKSI</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              
-              <tr className="hover:bg-gray-50 transition-colors group">
-                <td className="px-6 py-6 text-left">
-                  <div className="flex items-center gap-3">
-                    <span className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center text-xl">🍅</span>
-                    <span className="font-bold text-gray-900 text-base">Tomat Beef</span>
-                  </div>
-                </td>
-                <td className="px-6 py-6 text-sm font-medium text-gray-700 text-left">20 Ton/Ha</td>
-                <td className="px-6 py-6 text-left">
-                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800">
-                    Maks. 3%
-                  </span>
-                </td>
-                <td className="px-6 py-6 text-sm text-gray-600 font-medium text-left">
-                  Grade A: &gt;150g per buah
-                </td>
-                <td className="px-6 py-6">
-                  <Link href="/operator/commodity/CMD-001">
-                    <button className="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 text-sm font-bold rounded-lg shadow-sm hover:bg-gray-50 transition-all flex items-center justify-center gap-2 mx-auto">
-                      <Edit2 className="w-4 h-4 text-emerald-700" /> Edit
-                    </button>
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-xs text-gray-500">
+            <tr>
+              <th className="text-left font-semibold px-4 py-3">Komoditas</th>
+              <th className="text-right font-semibold px-4 py-3">Rendemen (kg/ha)</th>
+              <th className="text-right font-semibold px-4 py-3">Toleransi susut</th>
+              <th className="text-right font-semibold px-4 py-3">Umur tanam</th>
+            </tr>
+          </thead>
+          <tbody>
+            {komoditas.map((k) => (
+              <tr key={k.id} className="border-t border-gray-100 hover:bg-gray-50">
+                <td className="px-4 py-3">
+                  <Link href={`/operator/commodity/${k.id}`} className="flex items-center gap-2 font-medium text-gray-900 hover:text-emerald-700">
+                    {k.category === "DAUN" ? (
+                      <Leaf className="w-4 h-4 text-emerald-600 shrink-0" />
+                    ) : (
+                      <Sprout className="w-4 h-4 text-amber-600 shrink-0" />
+                    )}
+                    {k.name}
                   </Link>
                 </td>
-              </tr>
-
-              <tr className="hover:bg-gray-50 transition-colors group">
-                <td className="px-6 py-6 text-left">
-                  <div className="flex items-center gap-3">
-                    <span className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center text-xl">🥬</span>
-                    <span className="font-bold text-gray-900 text-base">Sawi Pakcoy</span>
-                  </div>
+                <td className="px-4 py-3 text-right text-gray-600">
+                  {k.avgYieldKgPerHa.toLocaleString("id-ID")}
                 </td>
-                <td className="px-6 py-6 text-sm font-medium text-gray-700 text-left">15 Ton/Ha</td>
-                <td className="px-6 py-6 text-left">
-                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800">
-                    Maks. 5%
-                  </span>
-                </td>
-                <td className="px-6 py-6 text-sm text-gray-600 font-medium text-left">
-                  Grade A: Daun Utuh 95%
-                </td>
-                <td className="px-6 py-6">
-                  <button className="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 text-sm font-bold rounded-lg shadow-sm hover:bg-gray-50 transition-all flex items-center justify-center gap-2 mx-auto">
-                    <Edit2 className="w-4 h-4 text-emerald-700" /> Edit
-                  </button>
+                <td className="px-4 py-3 text-right text-gray-600">{k.shrinkTolerancePct}%</td>
+                <td className="px-4 py-3 text-right text-gray-600">
+                  {(k as CommoditySummary & { growingDaysMin?: number }).growingDaysMin ?? "—"} hari
                 </td>
               </tr>
-
-            </tbody>
-          </table>
-        </div>
-        
-        <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end bg-[#f8fafc]">
-          <div className="flex gap-2">
-            <button className="p-1 text-gray-400 hover:text-gray-700 transition" disabled><ChevronLeft className="w-5 h-5" /></button>
-            <button className="w-8 h-8 rounded bg-[#022c22] text-white font-bold text-sm flex items-center justify-center shadow-sm">1</button>
-            <button className="p-1 text-gray-400 hover:text-gray-700 transition" disabled><ChevronRight className="w-5 h-5" /></button>
-          </div>
-        </div>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

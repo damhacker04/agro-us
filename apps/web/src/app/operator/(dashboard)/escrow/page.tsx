@@ -1,132 +1,107 @@
 "use client";
 
-import React from "react";
-import { Filter, Download, ExternalLink, Clock, ChevronLeft, ChevronRight } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Wallet } from "lucide-react";
+import type { OperatorEscrowSummary } from "@agro-os/shared";
+import { GalatApi, ambilEscrowOperator } from "@/lib/api";
 
-export default function EscrowLedgerPage() {
+const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
+
+export default function OperatorEscrowPage() {
+  const [data, setData] = useState<OperatorEscrowSummary | null>(null);
+  const [memuat, setMemuat] = useState(true);
+  const [galat, setGalat] = useState("");
+
+  useEffect(() => {
+    ambilEscrowOperator()
+      .then((d) => {
+        setData(d);
+        setGalat("");
+      })
+      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat escrow"))
+      .finally(() => setMemuat(false));
+  }, []);
+
+  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat escrow…</div>;
+
+  if (galat || !data) {
+    return (
+      <div className="p-8">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
+          {galat || "Data tidak tersedia"}
+        </div>
+      </div>
+    );
+  }
+
+  const RINCIAN = [
+    ["Total pernah ditahan", data.totalDitahan],
+    ["Sudah dicairkan ke Tenant", data.totalDicairkan],
+    ["Potongan klaim mutu", data.totalPotonganKlaim],
+    ["Dikembalikan ke pembeli", data.totalRefund],
+    ["Biaya pembatalan", data.totalBiayaBatal],
+    ["Dialihkan lewat substitusi", data.totalAlihSubstitusi],
+  ] as const;
+
   return (
-    <div className="p-8">
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold text-[#0a1c38] font-serif mb-2">Buku Besar Escrow (Append-Only)</h1>
-        <p className="text-gray-600 font-medium">Audit trail mutasi dana untuk transparansi finansial platform.</p>
+    <div className="p-8 max-w-5xl">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-emerald-950">Escrow Seluruh Tenant</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          Ledger bersifat append-only — angka di sini hasil penjumlahan entri, bukan saldo
+          yang bisa disunting.
+        </p>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        
-        {/* Toolbar */}
-        <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
-          <div className="flex gap-3">
-            <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm font-bold text-gray-700 hover:bg-gray-50 transition">
-              <Filter className="w-4 h-4" /> Filter
-            </button>
-            <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm font-bold text-gray-700 hover:bg-gray-50 transition">
-              <Download className="w-4 h-4" /> Export CSV
-            </button>
-          </div>
-          <div className="text-sm text-gray-500 font-medium">Showing <strong className="font-bold text-gray-800">1–3</strong> of 1,204 records</div>
+      <div className="bg-[#1e5033] text-white rounded-2xl p-6 mb-6 relative overflow-hidden">
+        <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-2xl" />
+        <div className="flex justify-between items-start mb-2">
+          <div className="text-xs font-semibold text-emerald-100">Total Dana Tertahan</div>
+          <Wallet className="w-5 h-5 text-emerald-200" />
         </div>
+        <div className="text-4xl font-black tracking-tight">{rp(data.tertahan)}</div>
+      </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-center border-collapse">
-            <thead>
-              <tr className="bg-[#eff6ff] border-b border-gray-200">
-                <th className="px-6 py-5 text-xs font-bold text-[#475569] uppercase tracking-widest text-left">WAKTU (TIME)</th>
-                <th className="px-6 py-5 text-xs font-bold text-[#475569] uppercase tracking-widest text-left">TX-ID</th>
-                <th className="px-6 py-5 text-xs font-bold text-[#475569] uppercase tracking-widest text-left">REFERENSI PO</th>
-                <th className="px-6 py-5 text-xs font-bold text-[#475569] uppercase tracking-widest text-center">TIPE MUTASI</th>
-                <th className="px-6 py-5 text-xs font-bold text-[#475569] uppercase tracking-widest text-right">NOMINAL</th>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+        {RINCIAN.map(([label, nilai]) => (
+          <div key={label} className="bg-white border border-gray-200 rounded-xl p-4">
+            <div className="text-[11px] font-bold text-gray-500 mb-1">{label}</div>
+            <div className="text-lg font-bold text-gray-900">{rp(nilai)}</div>
+          </div>
+        ))}
+      </div>
+
+      <h2 className="font-bold text-emerald-950 mb-3">Per Tenant</h2>
+      {data.perTenant.length === 0 ? (
+        <div className="rounded-xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-500">
+          Belum ada entri escrow.
+        </div>
+      ) : (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-xs text-gray-500">
+              <tr>
+                <th className="text-left font-semibold px-4 py-3">Tenant</th>
+                <th className="text-right font-semibold px-4 py-3">Pernah ditahan</th>
+                <th className="text-right font-semibold px-4 py-3">Dicairkan</th>
+                <th className="text-right font-semibold px-4 py-3">Tertahan</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
-              
-              {/* Row 1 */}
-              <tr className="hover:bg-gray-50 transition-colors">
-                <td className="px-6 py-5 text-left">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-bold text-gray-900 flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-gray-400" /> 14:00</span>
-                    <span className="text-xs text-gray-500 ml-5 font-medium">Today</span>
-                  </div>
-                </td>
-                <td className="px-6 py-5 text-sm font-medium text-gray-600 text-left">TX-9901</td>
-                <td className="px-6 py-5 text-left">
-                  <a href="#" className="inline-flex items-center gap-1.5 text-emerald-700 hover:text-emerald-800 font-bold text-sm transition-colors group">
-                    PO-0950 <ExternalLink className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100" />
-                  </a>
-                </td>
-                <td className="px-6 py-5 text-center">
-                  <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold tracking-wider bg-emerald-100 text-emerald-800 uppercase">
-                    RELEASE
-                  </span>
-                </td>
-                <td className="px-6 py-5 text-right font-bold text-emerald-600 text-sm">
-                  + Rp 4.000.000
-                </td>
-              </tr>
-
-              {/* Row 2 */}
-              <tr className="hover:bg-gray-50 transition-colors">
-                <td className="px-6 py-5 text-left">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-bold text-gray-900 flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-gray-400" /> 11:30</span>
-                    <span className="text-xs text-gray-500 ml-5 font-medium">Today</span>
-                  </div>
-                </td>
-                <td className="px-6 py-5 text-sm font-medium text-gray-600 text-left">TX-9900</td>
-                <td className="px-6 py-5 text-left">
-                  <a href="#" className="inline-flex items-center gap-1.5 text-[#0a1c38] hover:text-[#1e3a8a] font-bold text-sm transition-colors group">
-                    KLM-091 <ExternalLink className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100" />
-                  </a>
-                </td>
-                <td className="px-6 py-5 text-center">
-                  <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold tracking-wider bg-red-100 text-red-700 uppercase">
-                    POTONG_KLAIM
-                  </span>
-                </td>
-                <td className="px-6 py-5 text-right font-bold text-red-600 text-sm">
-                  - Rp 1.125.000
-                </td>
-              </tr>
-
-              {/* Row 3 */}
-              <tr className="hover:bg-gray-50 transition-colors">
-                <td className="px-6 py-5 text-left">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-bold text-gray-900 flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-gray-400" /> 09:15</span>
-                    <span className="text-xs text-gray-500 ml-5 font-medium">Today</span>
-                  </div>
-                </td>
-                <td className="px-6 py-5 text-sm font-medium text-gray-600 text-left">TX-9899</td>
-                <td className="px-6 py-5 text-left">
-                  <a href="#" className="inline-flex items-center gap-1.5 text-emerald-700 hover:text-emerald-800 font-bold text-sm transition-colors group">
-                    PO-0991 <ExternalLink className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100" />
-                  </a>
-                </td>
-                <td className="px-6 py-5 text-center">
-                  <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold tracking-wider bg-orange-100 text-orange-800 uppercase">
-                    HOLD
-                  </span>
-                </td>
-                <td className="px-6 py-5 text-right font-medium text-gray-600 text-sm">
-                  Rp 7.500.000
-                </td>
-              </tr>
-
+            <tbody>
+              {data.perTenant.map((t) => (
+                <tr key={t.tenantId} className="border-t border-gray-100">
+                  <td className="px-4 py-3 font-medium text-gray-900">{t.companyName}</td>
+                  <td className="px-4 py-3 text-right text-gray-600">{rp(t.ditahan)}</td>
+                  <td className="px-4 py-3 text-right text-gray-600">{rp(t.dicairkan)}</td>
+                  <td className="px-4 py-3 text-right font-bold text-gray-900">
+                    {rp(t.tertahan)}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
-        
-        <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-center bg-white">
-          <div className="flex items-center gap-2">
-            <button className="p-2 text-gray-400 hover:text-gray-700 transition" disabled><ChevronLeft className="w-4 h-4" /></button>
-            <button className="w-8 h-8 rounded bg-[#022c22] text-white font-bold text-sm flex items-center justify-center shadow-sm">1</button>
-            <button className="w-8 h-8 rounded text-gray-600 hover:bg-gray-100 font-bold text-sm flex items-center justify-center transition">2</button>
-            <button className="w-8 h-8 rounded text-gray-600 hover:bg-gray-100 font-bold text-sm flex items-center justify-center transition">3</button>
-            <span className="text-gray-400 px-1">...</span>
-            <button className="w-8 h-8 rounded text-gray-600 hover:bg-gray-100 font-bold text-sm flex items-center justify-center transition">40</button>
-            <button className="p-2 text-gray-500 hover:text-gray-800 transition"><ChevronRight className="w-4 h-4" /></button>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

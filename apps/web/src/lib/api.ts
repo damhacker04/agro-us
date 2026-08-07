@@ -15,8 +15,15 @@ import type {
   CatalogItem,
   ClaimResponse,
   FileClaimBody,
+  AnchorAuditItem,
+  DecideSatelliteBody,
   LegalityQueueItem,
+  OperatorEscrowSummary,
   PendingAssurance,
+  SatelliteReviewItem,
+  UpsertCommodityBody,
+  UpsertZoneBody,
+  VerificationStatus,
   ResolveAssuranceBody,
   ResolveAssuranceResponse,
   CheckoutBody,
@@ -300,6 +307,34 @@ export const putuskanLegalitas = (tenantId: string, approve: boolean, note?: str
     `/operator/legality/${tenantId}/decide`,
     { approve, ...(note ? { note } : {}) },
   );
+
+export const ambilEscrowOperator = () => ambil<OperatorEscrowSummary>("/operator/escrow");
+
+export const ambilJangkar = (limit = 50) =>
+  ambil<AnchorAuditItem[]>(`/operator/anchors?limit=${limit}`);
+
+export const ambilAntreanSatelit = () => ambil<SatelliteReviewItem[]>("/operator/satellite");
+
+export const putuskanSatelit = (batchId: string, body: DecideSatelliteBody) =>
+  kirim<{ batchId: string; verificationStatus: VerificationStatus }>(
+    `/operator/satellite/${batchId}/decide`,
+    body,
+  );
+
+export const ambilZonaOperator = () => ambil<ZoneSummary[]>("/operator/zones");
+
+export const buatZona = (body: UpsertZoneBody) => kirim<ZoneSummary>("/operator/zones", body);
+
+export const ubahZona = (id: string, body: UpsertZoneBody) =>
+  kirim<ZoneSummary>(`/operator/zones/${id}`, body, "PATCH");
+
+export const ambilKomoditasOperator = () => ambil<CommoditySummary[]>("/operator/commodities");
+
+export const buatKomoditas = (body: UpsertCommodityBody) =>
+  kirim<CommoditySummary>("/operator/commodities", body);
+
+export const ubahKomoditas = (id: string, body: UpsertCommodityBody) =>
+  kirim<CommoditySummary>(`/operator/commodities/${id}`, body, "PATCH");
 
 export const ambilRekomendasi = () => ambil<PlantingRecommendation[]>("/tenant/rekomendasi");
 

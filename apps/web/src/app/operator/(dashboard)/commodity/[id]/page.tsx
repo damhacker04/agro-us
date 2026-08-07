@@ -1,136 +1,198 @@
 "use client";
 
-import React from "react";
-import { Settings, CheckSquare, TriangleAlert, Save, X } from "lucide-react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, ArrowLeft, Loader2 } from "lucide-react";
+import type { CommoditySummary, UpsertCommodityBody } from "@agro-os/shared";
+import { GalatApi, ambilKomoditasOperator, buatKomoditas, ubahKomoditas } from "@/lib/api";
 
-export default function CommodityEditPage() {
+const KOSONG: UpsertCommodityBody = {
+  name: "",
+  category: "DAUN",
+  shrinkTolerancePct: 5,
+  avgYieldKgPerHa: 10000,
+  growingDaysMin: 30,
+};
+
+type Lengkap = CommoditySummary & { growingDaysMin?: number };
+
+/**
+ * Tambah/ubah komoditas (OP-10).
+ *
+ * Rute `/operator/commodity/baru` dipakai sebagai penanda buat-baru. Kata "baru" bukan
+ * UUID, jadi tidak akan pernah bentrok dengan id komoditas sungguhan.
+ */
+export default function OperatorCommodityFormPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = React.use(params);
+  const router = useRouter();
+  const baru = id === "baru";
+
+  const [isi, setIsi] = useState<UpsertCommodityBody>(KOSONG);
+  const [memuat, setMemuat] = useState(!baru);
+  const [proses, setProses] = useState(false);
+  const [galat, setGalat] = useState("");
+
+  useEffect(() => {
+    if (baru) return;
+    ambilKomoditasOperator()
+      .then((d) => {
+        const k = (d as Lengkap[]).find((x) => x.id === id);
+        if (!k) return setGalat("Komoditas tidak ditemukan.");
+        setIsi({
+          name: k.name,
+          category: k.category,
+          shrinkTolerancePct: Number(k.shrinkTolerancePct),
+          avgYieldKgPerHa: Number(k.avgYieldKgPerHa),
+          growingDaysMin: Number(k.growingDaysMin ?? 30),
+        });
+        setGalat("");
+      })
+      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat komoditas"))
+      .finally(() => setMemuat(false));
+  }, [id, baru]);
+
+  async function simpan(e: React.FormEvent) {
+    e.preventDefault();
+    setProses(true);
+    setGalat("");
+    try {
+      if (baru) await buatKomoditas(isi);
+      else await ubahKomoditas(id, isi);
+      router.push("/operator/commodity");
+    } catch (err) {
+      setGalat(err instanceof GalatApi ? err.message : "Gagal menyimpan komoditas.");
+      setProses(false);
+    }
+  }
+
+  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat…</div>;
+
   return (
-    <div className="p-8">
-      {/* Modal-like container */}
-      <div className="bg-white rounded-xl shadow-lg border border-gray-200 max-w-4xl mx-auto overflow-hidden">
-        
-        {/* Header */}
-        <div className="px-8 py-6 border-b border-gray-100 flex justify-between items-start bg-gray-50/50">
+    <div className="p-8 max-w-2xl">
+      <Link
+        href="/operator/commodity"
+        className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 hover:text-emerald-600 mb-6"
+      >
+        <ArrowLeft className="w-4 h-4" /> Kembali ke Daftar Komoditas
+      </Link>
+
+      <h1 className="text-2xl font-bold text-emerald-950 mb-1">
+        {baru ? "Tambah Komoditas" : "Ubah Komoditas"}
+      </h1>
+      <p className="text-sm text-gray-500 mb-6">
+        Perubahan berlaku untuk seluruh Tenant yang menanam komoditas ini.
+      </p>
+
+      <form onSubmit={simpan} className="space-y-4">
+        <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
           <div>
-            <h1 className="text-2xl font-bold text-[#0a1c38] font-serif mb-1">Edit Standar Komoditas</h1>
-            <div className="flex items-center gap-2 text-sm">
-              <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded">CMD-001</span>
-              <span className="text-gray-400">•</span>
-              <span className="text-gray-600 font-medium">Tomat Beef</span>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Nama</label>
+            <input
+              required
+              minLength={2}
+              value={isi.name}
+              onChange={(e) => setIsi({ ...isi, name: e.target.value })}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Kategori</label>
+            <div className="flex gap-2">
+              {(["DAUN", "BUAH_UMBI"] as const).map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setIsi({ ...isi, category: c })}
+                  className={`flex-1 px-3 py-2.5 rounded-lg text-sm font-medium border transition ${
+                    isi.category === c
+                      ? "bg-emerald-950 text-white border-emerald-950"
+                      : "border-gray-200 text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  {c === "DAUN" ? "Daun" : "Buah & Umbi"}
+                </button>
+              ))}
             </div>
           </div>
-          <Link href="/operator/commodity">
-            <button className="p-2 hover:bg-gray-200 rounded-full transition-colors text-gray-500">
-              <X className="w-5 h-5" />
-            </button>
-          </Link>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Rendemen rata-rata (kg/ha)
+            </label>
+            <input
+              required
+              type="number"
+              min={1}
+              step="0.01"
+              value={isi.avgYieldKgPerHa}
+              onChange={(e) => setIsi({ ...isi, avgYieldKgPerHa: Number(e.target.value) })}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+            />
+            <p className="text-xs text-amber-700 mt-1">
+              Membatasi kuota PO seluruh Tenant. Terlalu tinggi berarti Tenant boleh menjual
+              lebih banyak daripada yang bisa dipanen lahannya.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Toleransi susut (%)
+              </label>
+              <input
+                required
+                type="number"
+                min={0}
+                step="0.01"
+                value={isi.shrinkTolerancePct}
+                onChange={(e) => setIsi({ ...isi, shrinkTolerancePct: Number(e.target.value) })}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+              />
+              <p className="text-[11px] text-gray-500 mt-1">
+                Susut alami yang tidak bisa diklaim pembeli.
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Umur tanam minimal (hari)
+              </label>
+              <input
+                required
+                type="number"
+                min={1}
+                value={isi.growingDaysMin}
+                onChange={(e) => setIsi({ ...isi, growingDaysMin: Number(e.target.value) })}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+              />
+              <p className="text-[11px] text-gray-500 mt-1">
+                Panen lebih cepat dari ini ditolak sistem.
+              </p>
+            </div>
+          </div>
         </div>
 
-        <div className="p-8 space-y-10">
-          
-          {/* Section 1: Parameter Operasional */}
-          <section>
-            <h2 className="text-lg font-bold text-[#0a1c38] font-serif mb-6 flex items-center gap-2">
-              <Settings className="w-5 h-5 text-emerald-800" /> Parameter Operasional
-            </h2>
+        {galat && (
+          <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            {galat}
+          </p>
+        )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-              <div>
-                <label className="block text-xs font-bold text-gray-600 tracking-wider mb-2">Average Yield (Target)</label>
-                <div className="relative">
-                  <input 
-                    type="text" 
-                    defaultValue="20" 
-                    className="w-full pl-4 pr-16 py-3 bg-white border border-gray-300 rounded-lg text-gray-900 font-medium focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition outline-none"
-                  />
-                  <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-gray-500 text-sm font-medium">
-                    Ton/Ha
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-600 tracking-wider mb-2">Shrinkage Tolerance (Penyusutan)</label>
-                <div className="relative">
-                  <input 
-                    type="text" 
-                    defaultValue="3" 
-                    className="w-full pl-4 pr-12 py-3 bg-white border border-gray-300 rounded-lg text-gray-900 font-medium focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition outline-none"
-                  />
-                  <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-gray-500 text-sm font-medium">
-                    %
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-[#fdf3e7] border-l-4 border-[#b45309] rounded-r-lg p-5 flex gap-3">
-              <TriangleAlert className="w-5 h-5 text-[#b45309] shrink-0 mt-0.5" />
-              <div>
-                <h4 className="text-sm font-bold text-[#b45309]">Peringatan Sistem</h4>
-                <p className="text-sm text-[#b45309] mt-1 leading-relaxed">
-                  Klaim penyusutan yang melebihi ambang batas toleransi (3%) akan <strong className="font-bold">secara otomatis ditolak</strong> oleh sistem operasional HQ.
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <hr className="border-gray-100" />
-
-          {/* Section 2: Spesifikasi Grading */}
-          <section>
-            <h2 className="text-lg font-bold text-[#0a1c38] font-serif mb-6 flex items-center gap-2">
-              <CheckSquare className="w-5 h-5 text-emerald-800" /> Spesifikasi Grading
-            </h2>
-
-            <div className="space-y-4">
-              <div className="flex items-center gap-4 p-4 border border-gray-200 rounded-lg bg-white shadow-sm">
-                <div className="bg-[#064e3b] text-white text-xs font-bold px-3 py-1.5 rounded uppercase tracking-wider w-24 text-center shrink-0">
-                  GRADE A
-                </div>
-                <div className="text-gray-700 font-medium text-sm">
-                  &gt;150g per buah, mulus <strong className="font-bold text-gray-900">tanpa cacat</strong>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4 p-4 border border-gray-200 rounded-lg bg-white shadow-sm">
-                <div className="bg-[#e2e8f0] text-gray-700 text-xs font-bold px-3 py-1.5 rounded uppercase tracking-wider w-24 text-center shrink-0">
-                  GRADE B
-                </div>
-                <div className="text-gray-700 font-medium text-sm">
-                  100-150g per buah, toleransi cacat minor 5%
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4 p-4 border border-gray-200 rounded-lg bg-white shadow-sm">
-                <div className="bg-[#eff6ff] text-blue-700 text-xs font-bold px-3 py-1.5 rounded uppercase tracking-wider w-24 text-center shrink-0">
-                  GRADE C
-                </div>
-                <div className="text-gray-700 font-medium text-sm">
-                  &lt;100g per buah, khusus olahan <strong className="font-bold text-gray-900">saus</strong>
-                </div>
-              </div>
-            </div>
-          </section>
-
-        </div>
-
-        {/* Footer Actions */}
-        <div className="px-8 py-5 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-4">
-          <Link href="/operator/commodity">
-            <button className="text-sm font-bold text-gray-500 hover:text-gray-800 transition px-4 py-2">
-              Batal
-            </button>
-          </Link>
-          <Link href="/operator/commodity">
-            <button className="px-6 py-2.5 bg-[#022c22] text-white font-bold rounded-lg shadow-sm hover:bg-[#064e3b] transition flex items-center gap-2">
-              <Save className="w-4 h-4" /> Simpan Perubahan
-            </button>
-          </Link>
-        </div>
-
-      </div>
+        <button
+          type="submit"
+          disabled={proses}
+          className="w-full bg-emerald-950 text-white text-sm font-semibold py-3 rounded-lg hover:bg-emerald-800 disabled:opacity-60 flex items-center justify-center gap-2"
+        >
+          {proses && <Loader2 className="w-4 h-4 animate-spin" />}
+          {proses ? "Menyimpan…" : "Simpan"}
+        </button>
+      </form>
     </div>
   );
 }

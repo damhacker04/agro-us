@@ -1,173 +1,221 @@
 "use client";
 
-import React, { use } from "react";
-import { ArrowLeft, Clock, Camera, TriangleAlert, TrendingUp, XCircle, CloudOff, Droplets, Leaf, Package } from "lucide-react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, ArrowLeft, Loader2, Satellite } from "lucide-react";
+import type { NdviSeries, SatelliteReviewItem, VerificationStatus } from "@agro-os/shared";
+import { GalatApi, ambilAntreanSatelit, ambilNdvi, putuskanSatelit } from "@/lib/api";
 
-export default function SatelliteInvestigationPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params);
+const tgl = (iso: string | null) =>
+  iso
+    ? new Date(`${iso}T00:00:00Z`).toLocaleDateString("id-ID", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        timeZone: "UTC",
+      })
+    : "—";
+
+/** Empat putusan yang masuk akal diambil manusia setelah melihat datanya. */
+const PILIHAN: Array<{ nilai: VerificationStatus; label: string; jelas: string }> = [
+  {
+    nilai: "TERVERIFIKASI",
+    label: "Terverifikasi",
+    jelas: "Citra mendukung klaim Tenant. Badge tertinggi diberikan.",
+  },
+  {
+    nilai: "FOTO_SAJA",
+    label: "Bukti Foto Saja",
+    jelas: "Citra tidak menyangkal, tapi juga tidak cukup mendukung. Badge turun satu tingkat.",
+  },
+  {
+    nilai: "TIDAK_DAPAT",
+    label: "Citra Tidak Tersedia",
+    jelas: "Tutupan awan atau lahan terlalu kecil. Bukan kesalahan Tenant.",
+  },
+  {
+    nilai: "TIDAK_SESUAI",
+    label: "Tidak Sesuai Klaim",
+    jelas: "Citra menyangkal klaim Tenant. Ditampilkan terbuka kepada pembeli.",
+  },
+];
+
+export default function OperatorSatelliteDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = React.use(params);
+  const router = useRouter();
+
+  const [batch, setBatch] = useState<SatelliteReviewItem | null>(null);
+  const [ndvi, setNdvi] = useState<NdviSeries | null>(null);
+  const [pilihan, setPilihan] = useState<VerificationStatus | null>(null);
+  const [memuat, setMemuat] = useState(true);
+  const [proses, setProses] = useState(false);
+  const [galat, setGalat] = useState("");
+
+  useEffect(() => {
+    // Tidak ada GET /operator/satellite/:batchId — hanya antreannya.
+    ambilAntreanSatelit()
+      .then((d) => {
+        const b = d.find((x) => x.batchId === id) ?? null;
+        setBatch(b);
+        setGalat(b ? "" : "Batch tidak ada di antrean — mungkin sudah diputus.");
+      })
+      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat batch"))
+      .finally(() => setMemuat(false));
+
+    ambilNdvi(id)
+      .then(setNdvi)
+      .catch(() => setNdvi(null));
+  }, [id]);
+
+  async function putuskan() {
+    if (!pilihan) return;
+    setProses(true);
+    setGalat("");
+    try {
+      await putuskanSatelit(id, { verificationStatus: pilihan });
+      router.push("/operator/satellite");
+    } catch (e) {
+      setGalat(e instanceof GalatApi ? e.message : "Gagal menyimpan putusan.");
+      setProses(false);
+    }
+  }
+
+  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat…</div>;
+
+  if (!batch) {
+    return (
+      <div className="p-8">
+        <Link
+          href="/operator/satellite"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 mb-6"
+        >
+          <ArrowLeft className="w-4 h-4" /> Kembali
+        </Link>
+        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
+          {galat}
+        </div>
+      </div>
+    );
+  }
+
+  const titik = ndvi?.points ?? [];
+  const terpakai = titik.filter((p) => p.usable);
 
   return (
-    <div className="p-8 pb-24">
-      <Link href="/operator/satellite" className="inline-flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-gray-800 transition mb-6">
-        <ArrowLeft className="w-4 h-4" /> Kembali ke Antrean Anomali
+    <div className="p-8 max-w-3xl">
+      <Link
+        href="/operator/satellite"
+        className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 hover:text-emerald-600 mb-6"
+      >
+        <ArrowLeft className="w-4 h-4" /> Kembali ke Antrean
       </Link>
 
-      <div className="mb-8 border-b border-gray-100 pb-6">
-        <h1 className="text-3xl font-bold text-[#0a1c38] font-serif mb-2">Investigasi Anomali: Batch {resolvedParams.id}</h1>
-        <p className="text-gray-600 font-medium">Tomat Beef - Farm Fresh Berdikari</p>
+      <h1 className="text-2xl font-bold text-emerald-950 mb-1">{batch.productName}</h1>
+      <p className="text-sm text-gray-500 mb-6">
+        {batch.tenantName} · petak {batch.landPlotAreaHa.toFixed(2)} ha
+      </p>
+
+      <div className="bg-white border border-gray-200 rounded-xl p-5 mb-5">
+        <h2 className="font-bold text-emerald-950 text-sm mb-3">Klaim vs Deteksi</h2>
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          <div>
+            <div className="text-xs text-gray-500 mb-1">Diklaim Tenant</div>
+            <div className="text-gray-900">Tanam {tgl(batch.claimedPlantDate)}</div>
+            <div className="text-gray-900">Panen {tgl(batch.claimedHarvestDate)}</div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500 mb-1">Terdeteksi citra</div>
+            <div className="text-gray-900">Tanam {tgl(batch.detectedPlantDate)}</div>
+            <div className="text-gray-900">Panen {tgl(batch.detectedHarvestDate)}</div>
+          </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        
-        {/* Left Column: Timeline */}
-        <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-          <h2 className="text-lg font-bold text-[#0a1c38] mb-6 flex items-center gap-2">
-            <Clock className="w-5 h-5 text-emerald-700" /> Timeline Laporan Petani
-          </h2>
-
-          <div className="space-y-8 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-gray-300 before:to-transparent">
-            
-            {/* Timeline Item 1 */}
-            <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-              <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-emerald-100 text-emerald-600 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">
-                <Leaf className="w-5 h-5" />
-              </div>
-              <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-xl border border-gray-200 bg-white shadow-sm">
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="font-bold text-gray-900 text-sm">Bibit Ditanam</h3>
-                  <span className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded">10 Ags, 08:00 WIB</span>
-                </div>
-                <p className="text-sm text-gray-600 mb-2">Penanaman bibit di lahan blok utara.</p>
-                <div className="text-xs text-gray-500 mb-3 font-medium">
-                  Oleh: <span className="font-bold text-gray-700">Admin</span> • GPS: <span className="font-bold text-emerald-700">Cocok di dalam poligon</span>
-                </div>
-                <div className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded inline-flex items-center gap-1 mb-2">
-                  <Camera className="w-3 h-3" /> Dilengkapi foto In-App
-                </div>
-                <img src="https://assets.weforum.org/article/image/XJ-u4B8c90-953e_pS0rK72zM59j7f8v1n4mB6G9c.jpg" alt="Bibit" className="w-24 h-24 object-cover rounded-lg border border-gray-200" />
-              </div>
-            </div>
-
-            {/* Timeline Item 2 */}
-            <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-              <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-blue-100 text-blue-600 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">
-                <Droplets className="w-5 h-5" />
-              </div>
-              <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-xl border border-gray-200 bg-white shadow-sm">
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="font-bold text-gray-900 text-sm">Penyiraman & Pupuk</h3>
-                  <span className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded">12 Ags, 09:30 WIB</span>
-                </div>
-                <p className="text-sm text-gray-600 mb-2">Pemberian nutrisi AB Mix dosis 1.5 EC.</p>
-                <div className="text-xs text-gray-500 mb-3 font-medium">
-                  Oleh: <span className="font-bold text-gray-700">Admin</span> • GPS: <span className="font-bold text-emerald-700">Cocok di dalam poligon</span>
-                </div>
-                <div className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded inline-flex items-center gap-1 mb-2">
-                  <Camera className="w-3 h-3" /> Dilengkapi foto In-App
-                </div>
-                <img src="https://media.licdn.com/dms/image/C4D12AQExy-8Kj-wZ2w/article-cover_image-shrink_600_2000/0/1628189871790?e=2147483647&v=beta&t=H3-gJzj-sFjB6-zJ_c7J3j-zG8p8G8H3-gJzj-sFjB6" alt="Pupuk" className="w-24 h-24 object-cover rounded-lg border border-gray-200" />
-              </div>
-            </div>
-
-            {/* Timeline Item 3 (Anomali) */}
-            <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-              <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-yellow-100 text-yellow-600 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 ring-4 ring-yellow-50">
-                <Droplets className="w-5 h-5" />
-              </div>
-              <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-xl border-2 border-yellow-300 bg-yellow-50 shadow-sm relative">
-                <div className="absolute -top-3 -right-3 bg-yellow-400 text-yellow-900 rounded-full p-1 shadow-sm">
-                  <TriangleAlert className="w-4 h-4" />
-                </div>
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="font-bold text-gray-900 text-sm">Penyiraman & Pupuk</h3>
-                  <span className="text-xs font-bold text-gray-400 bg-white px-2 py-0.5 rounded">12 Ags, 09:30 WIB</span>
-                </div>
-                <p className="text-sm text-gray-600 mb-2">Pemberian nutrisi BC Mix dosis 1.5 EC.</p>
-                <div className="text-xs text-gray-500 mb-3 font-medium">
-                  Oleh: <span className="font-bold text-gray-700">Admin</span> • GPS: <span className="font-bold text-emerald-700">Cocok di dalam poligon</span>
-                </div>
-                <div className="bg-yellow-200 text-yellow-800 text-[10px] font-bold px-2 py-1 rounded inline-flex items-center gap-1 mb-2">
-                  <Camera className="w-3 h-3" /> Foto Diambil dari Galeri
-                </div>
-                <img src="https://media.licdn.com/dms/image/C4D12AQExy-8Kj-wZ2w/article-cover_image-shrink_600_2000/0/1628189871790?e=2147483647&v=beta&t=H3-gJzj-sFjB6-zJ_c7J3j-zG8p8G8H3-gJzj-sFjB6" alt="Pupuk 2" className="w-24 h-24 object-cover rounded-lg border border-yellow-300" />
-              </div>
-            </div>
-            
-            {/* Timeline Item 4 */}
-            <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-              <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-emerald-100 text-emerald-600 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">
-                <Package className="w-5 h-5" />
-              </div>
-              <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-xl border border-gray-200 bg-white shadow-sm">
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="font-bold text-gray-900 text-sm">Panen</h3>
-                  <span className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded">12 Ags, 09:30 WIB</span>
-                </div>
-                <p className="text-sm text-gray-600 mb-2">Pemanenan sayur.</p>
-                <div className="text-xs text-gray-500 mb-3 font-medium">
-                  Oleh: <span className="font-bold text-gray-700">Admin</span> • GPS: <span className="font-bold text-emerald-700">Cocok di dalam poligon</span>
-                </div>
-                <div className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded inline-flex items-center gap-1 mb-2">
-                  <Camera className="w-3 h-3" /> Dilengkapi foto In-App
-                </div>
-                <img src="https://media.licdn.com/dms/image/C4D12AQExy-8Kj-wZ2w/article-cover_image-shrink_600_2000/0/1628189871790?e=2147483647&v=beta&t=H3-gJzj-sFjB6-zJ_c7J3j-zG8p8G8H3-gJzj-sFjB6" alt="Panen" className="w-24 h-24 object-cover rounded-lg border border-gray-200" />
-              </div>
-            </div>
-
+      <div className="bg-white border border-gray-200 rounded-xl p-5 mb-5">
+        <h2 className="font-bold text-emerald-950 text-sm mb-1 flex items-center gap-2">
+          <Satellite className="w-4 h-4 text-gray-400" /> Pengamatan
+        </h2>
+        <p className="text-xs text-gray-500 mb-3">
+          {terpakai.length} dari {titik.length} pengamatan terpakai. Yang tertutup awan
+          dibuang oleh pipeline, bukan disembunyikan.
+        </p>
+        {titik.length === 0 ? (
+          <p className="text-sm text-gray-500">Belum ada pengamatan untuk petak ini.</p>
+        ) : (
+          <div className="max-h-56 overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="text-gray-500">
+                <tr>
+                  <th className="text-left font-semibold py-1.5">Tanggal</th>
+                  <th className="text-right font-semibold py-1.5">NDVI</th>
+                  <th className="text-right font-semibold py-1.5">Awan</th>
+                </tr>
+              </thead>
+              <tbody>
+                {titik.map((p) => (
+                  <tr
+                    key={p.date}
+                    className={`border-t border-gray-100 ${p.usable ? "" : "text-gray-400"}`}
+                  >
+                    <td className="py-1.5">{tgl(p.date)}</td>
+                    <td className="text-right py-1.5">
+                      {p.ndvi !== null ? p.ndvi.toFixed(3) : "—"}
+                    </td>
+                    <td className="text-right py-1.5">
+                      {p.cloudPct.toFixed(0)}%{!p.usable && " · dibuang"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
+        )}
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-xl p-5">
+        <h2 className="font-bold text-emerald-950 text-sm mb-1">Putusan</h2>
+        <p className="text-xs text-gray-500 mb-4">
+          Status ini menentukan badge yang dilihat pembeli di katalog dan riwayat pesanan.
+        </p>
+
+        <div className="space-y-2 mb-4">
+          {PILIHAN.map((o) => (
+            <button
+              key={o.nilai}
+              type="button"
+              onClick={() => setPilihan(o.nilai)}
+              className={`w-full text-left rounded-lg border p-3 transition ${
+                pilihan === o.nilai
+                  ? "border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600"
+                  : "border-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              <div className="font-semibold text-sm text-gray-900">{o.label}</div>
+              <p className="text-xs text-gray-600 mt-0.5">{o.jelas}</p>
+            </button>
+          ))}
         </div>
 
-        {/* Right Column: Analytics & Actions */}
-        <div className="space-y-6">
-          <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-            <h2 className="text-lg font-bold text-[#0a1c38] mb-2 flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-emerald-700" /> Kurva Pertumbuhan Vegetasi (NDVI) - Sentinel-2
-            </h2>
-            <p className="text-sm text-gray-500 mb-6">Analisis citra satelit mendeteksi anomali penanaman dibandingkan dengan laporan manual.</p>
+        {galat && (
+          <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            {galat}
+          </p>
+        )}
 
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="border border-red-100 bg-red-50/50 rounded-lg p-4">
-                <div className="text-[10px] text-red-600 font-bold mb-1 flex items-center gap-1">
-                  <TriangleAlert className="w-3 h-3" /> Titik Puncak Deteksi
-                </div>
-                <div className="text-sm font-bold text-red-900">13 Ags 2026</div>
-              </div>
-              <div className="border border-gray-200 bg-blue-50/50 rounded-lg p-4">
-                <div className="text-[10px] text-blue-600 font-bold mb-1 flex items-center gap-1">
-                  <TrendingUp className="w-3 h-3" /> Selisih Deteksi
-                </div>
-                <div className="text-sm font-bold text-[#0a1c38]">+12 Hari dari Laporan Tanam</div>
-              </div>
-            </div>
-
-            <div className="w-full h-64 bg-[#eff6ff] rounded-lg border-2 border-dashed border-blue-200 flex flex-col items-center justify-center p-6 text-center text-blue-800">
-              <TrendingUp className="w-8 h-8 mb-3 opacity-50" />
-              <p className="text-sm font-medium opacity-80">
-                [Grafik Garis NDVI: Menunjukkan tanah terbuka/kering pada 01-12 Ags, mulai hijau signifikan pada 13 Ags]
-              </p>
-            </div>
-          </div>
-
-          <div className="flex gap-4">
-            <button className="flex-1 py-4 px-4 border-2 border-[#b91c1c] text-[#b91c1c] bg-white rounded-lg font-bold hover:bg-red-50 transition-colors flex items-center justify-center gap-2 shadow-sm text-sm">
-              <XCircle className="w-5 h-5" /> 
-              <div className="text-left">
-                <div>Cabut Badge Verifikasi</div>
-                <div className="text-xs opacity-80">(Indikasi Fraud)</div>
-              </div>
-            </button>
-            <button className="flex-1 py-4 px-4 bg-[#475569] text-white rounded-lg font-bold hover:bg-[#334155] transition-colors flex items-center justify-center gap-2 shadow-sm text-sm">
-              <CloudOff className="w-5 h-5" /> 
-              <div className="text-left">
-                <div>Abaikan</div>
-                <div className="text-xs opacity-80">(Toleransi Awan/Cuaca)</div>
-              </div>
-            </button>
-          </div>
-
-        </div>
-
+        <button
+          onClick={putuskan}
+          disabled={!pilihan || proses}
+          className="w-full bg-emerald-950 text-white text-sm font-semibold py-3 rounded-lg hover:bg-emerald-800 disabled:opacity-50 flex items-center justify-center gap-2"
+        >
+          {proses && <Loader2 className="w-4 h-4 animate-spin" />}
+          {proses ? "Menyimpan…" : "Simpan Putusan"}
+        </button>
       </div>
     </div>
   );
