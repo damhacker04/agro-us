@@ -26,7 +26,25 @@ if (process.env["NODE_ENV"] === "production") {
   process.exit(1);
 }
 
-const adapter = new PrismaPg({ connectionString: process.env["DATABASE_URL"]! });
+/**
+ * Cetak SASARANNYA sebelum menghapus apa pun.
+ *
+ * Skrip ini TRUNCATE seluruh data transaksional. `dotenv` tidak menimpa variabel yang
+ * sudah ada di lingkungan, jadi `DATABASE_URL` yang disetel di terminal akan menang atas
+ * isi `.env` — dan sebaliknya, lupa menyetelnya berarti diam-diam menghapus database
+ * LOKAL sementara pengguna mengira sedang menyiapkan produksi. Satu baris ini membuat
+ * kekeliruan itu terlihat sebelum, bukan sesudah.
+ *
+ * Kata sandinya disamarkan supaya aman ditempel saat melapor atau minta bantuan.
+ */
+const dbUrl = process.env["DATABASE_URL"];
+if (!dbUrl) {
+  console.error("DITOLAK: DATABASE_URL belum disetel.");
+  process.exit(1);
+}
+console.log(`Sasaran: ${dbUrl.replace(/(:\/\/[^:]+:)[^@]+@/, "$1****@")}`);
+
+const adapter = new PrismaPg({ connectionString: dbUrl });
 const prisma = new PrismaClient({ adapter });
 
 const HARI = 86_400_000;
