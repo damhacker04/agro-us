@@ -1,17 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // ⚠️ SEMENTARA — dipasang untuk mengejar tenggat pengumpulan.
+  // Pengecekan tipe saat build DIAKTIFKAN kembali.
   //
-  // Halaman FE masih mockup statis dan menyimpan beberapa galat tipe (mis. state
-  // simulasi yang memakai nilai di luar union-nya). Galat itu TIDAK mengubah perilaku
-  // saat dijalankan — TypeScript dihapus saat kompilasi — tetapi menggagalkan
-  // `next build`, sehingga situsnya tidak bisa dideploy sama sekali.
-  //
-  // Konsekuensinya nyata: selama dua opsi di bawah menyala, kesalahan tipe yang
-  // sungguhan pun ikut lolos tanpa peringatan. Kembalikan ke false setelah galatnya
-  // dibereskan — terutama SEBELUM FE mulai memanggil API, karena di situlah
-  // pengecekan tipe justru paling berguna.
-  typescript: { ignoreBuildErrors: true },
+  // Sempat dimatikan sementara saat halaman FE masih mockup dan menyimpan galat tipe
+  // yang menggagalkan `next build`. Sekarang seluruh halaman memanggil API lewat
+  // kontrak `@agro-os/shared`, dan justru di situlah pengecekan tipe paling berguna:
+  // perubahan bentuk respons di backend harus menggagalkan build FE, bukan diam-diam
+  // lolos lalu muncul sebagai layar kosong di hadapan pengguna.
   eslint: { ignoreDuringBuilds: true },
 
   images: {
