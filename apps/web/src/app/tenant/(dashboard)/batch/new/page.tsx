@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useEffect, useState } from "react";
+import React, { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, ArrowLeft, Lightbulb, Loader2, MapPin, PackagePlus } from "lucide-react";
@@ -54,6 +54,8 @@ function FormBukaKuota() {
   const [tanam, setTanam] = useState("");
 
   const [kapasitas, setKapasitas] = useState<LandPlotCapacityResponse | null>(null);
+  /** Petak yang sudah pernah dicoba otomatis — penjaga agar pemindahan tidak berputar. */
+  const dicoba = useRef<Set<string>>(new Set());
   const [memuat, setMemuat] = useState(true);
   const [proses, setProses] = useState(false);
   const [galat, setGalat] = useState("");
@@ -101,9 +103,24 @@ function FormBukaKuota() {
   useEffect(() => {
     if (!landPlotId || !p) return setKapasitas(null);
     ambilKapasitasLahan(landPlotId, p.commodity.id, p.qtyKgPerBox)
-      .then(setKapasitas)
+      .then((k) => {
+        // Ketersediaan petak baru diketahui SETELAH ditanyakan ke server, jadi petak
+        // bawaan bisa saja yang sudah terpakai — dan Tenant mendarat di form dengan
+        // tombol simpan mati tanpa melakukan apa pun yang salah. Pindah sekali ke
+        // petak berikutnya yang belum dicoba; `dicoba` mencegahnya berputar terus
+        // saat SEMUA petak memang terpakai, sehingga pesannya tetap terbaca.
+        if (!k.available) {
+          const berikut = lahan.find((l) => !dicoba.current.has(l.id));
+          if (berikut) {
+            dicoba.current.add(berikut.id);
+            setLandPlotId(berikut.id);
+            return;
+          }
+        }
+        setKapasitas(k);
+      })
       .catch(() => setKapasitas(null));
-  }, [landPlotId, p]);
+  }, [landPlotId, p, lahan]);
 
   async function simpan(e: React.FormEvent) {
     e.preventDefault();
