@@ -1,14 +1,20 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { AlertTriangle, ArrowLeft, Loader2, MapPin } from "lucide-react";
-import type { LandPlotCapacityResponse, LandPlotResponse, ProductResponse } from "@agro-os/shared";
+import { useRouter, useSearchParams } from "next/navigation";
+import { AlertTriangle, ArrowLeft, Lightbulb, Loader2, MapPin, PackagePlus } from "lucide-react";
+import type {
+  LandPlotCapacityResponse,
+  LandPlotResponse,
+  OpenQuotaPrefill,
+  ProductResponse,
+} from "@agro-os/shared";
 import {
   GalatApi,
   ambilKapasitasLahan,
   ambilLahan,
+  ambilPrefillKuota,
   ambilProdukTenant,
   bukaKuota,
 } from "@/lib/api";
@@ -23,8 +29,20 @@ const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
  * batas itu terbaca sebagai informasi; kalau baru muncul setelah formulir dikirim,
  * yang sama persis terbaca sebagai penolakan.
  */
-export default function OpenQuotaPage() {
+function FormBukaKuota() {
   const router = useRouter();
+  const sp = useSearchParams();
+
+  // Penunjuk dari kartu Rekomendasi Tanam. Yang dibawa hanya identitasnya —
+  // angkanya dihitung ulang di server lewat prefill, karena kejenuhan zona bisa
+  // berubah antara Tenant membaca kartu dan membuka form ini.
+  const zonaRek = sp.get("zona");
+  const komoditasRek = sp.get("komoditas");
+  const mingguRek = sp.get("minggu");
+  const dariRekomendasi = Boolean(zonaRek && komoditasRek && mingguRek);
+
+  const [prefill, setPrefill] = useState<OpenQuotaPrefill | null>(null);
+  const [galatPrefill, setGalatPrefill] = useState("");
 
   const [produk, setProduk] = useState<ProductResponse[]>([]);
   const [lahan, setLahan] = useState<LandPlotResponse[]>([]);
@@ -41,21 +59,42 @@ export default function OpenQuotaPage() {
   const [galat, setGalat] = useState("");
 
   useEffect(() => {
-    Promise.all([ambilProdukTenant(), ambilLahan()])
-      .then(([p, l]) => {
+    const dasar = Promise.all([ambilProdukTenant(), ambilLahan()]);
+    // Prefill-nya OPSIONAL: kegagalannya tidak boleh mengosongkan form. Tenant tetap
+    // harus bisa membuka kuota manual meski rekomendasinya sudah basi.
+    const tambahan = dariRekomendasi
+      ? ambilPrefillKuota(zonaRek!, komoditasRek!, mingguRek!).catch((e) => {
+          setGalatPrefill(
+            e instanceof GalatApi ? e.message : "Rekomendasi tidak bisa dimuat ulang.",
+          );
+          return null;
+        })
+      : Promise.resolve(null);
+
+    Promise.all([dasar, tambahan])
+      .then(([[p, l], pre]) => {
         setProduk(p);
         setLahan(l);
-        if (p[0]) {
-          setProductId(p[0].id);
-          setHarga(String(p[0].pricePerBox));
-          setPanen(p[0].estHarvestDate.slice(0, 10));
+        setPrefill(pre);
+
+        // Produk dipilih berdasarkan KOMODITAS rekomendasinya. Memilih produk pertama
+        // begitu saja akan membuka kuota untuk komoditas yang sama sekali berbeda dari
+        // yang disarankan — dan angkanya tetap terisi, jadi kekeliruannya tidak terlihat.
+        const cocok = pre ? p.find((x) => x.commodity.id === pre.commodityId) : undefined;
+        const terpilih = cocok ?? (pre ? undefined : p[0]);
+
+        if (terpilih) {
+          setProductId(terpilih.id);
+          setHarga(String(pre?.suggestedLockedPrice ?? terpilih.pricePerBox));
+          setPanen(pre?.suggestedHarvestDate ?? terpilih.estHarvestDate.slice(0, 10));
         }
+        if (pre) setKuota(String(pre.suggestedQuotaBox));
         if (l[0]) setLandPlotId(l[0].id);
         setGalat("");
       })
       .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat data"))
       .finally(() => setMemuat(false));
-  }, []);
+  }, [dariRekomendasi, zonaRek, komoditasRek, mingguRek]);
 
   const p = produk.find((x) => x.id === productId);
 
@@ -122,6 +161,66 @@ export default function OpenQuotaPage() {
         Harga yang Anda kunci di sini berlaku sampai panen — tidak bisa diubah setelah ada
         yang memesan.
       </p>
+
+      {galatPrefill && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 mb-5 text-sm text-amber-900 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div>
+            {galatPrefill} Formulir tetap bisa diisi manual — angkanya saja yang tidak
+            terisi otomatis.
+          </div>
+        </div>
+      )}
+
+      {prefill && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 mb-5">
+          <div className="flex items-start gap-2">
+            <Lightbulb className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-emerald-900">
+                Terisi dari Rekomendasi Tanam — {prefill.commodityName}
+              </p>
+              <p className="text-xs text-emerald-800 mt-0.5">
+                Angka di bawah adalah saran, bukan kunci. Ubah sesukanya sebelum menyimpan.
+                {prefill.coveragePct !== null &&
+                  ` Pasokan zona kini ${prefill.coveragePct}% dari perkiraan permintaan.`}
+              </p>
+
+              {/* Peringatan ini dihitung ULANG server saat form dibuka, bukan disalin dari
+                  kartu. Justru di sinilah gunanya: Tenant yang menunda beberapa hari
+                  sebelum menekan tombol perlu tahu pasarnya sudah berubah. */}
+              {prefill.warning && (
+                <p className="text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-2 flex items-start gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                  {prefill.warning}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rekomendasi menyebut KOMODITAS, sedangkan kuota dibuka atas sebuah PRODUK.
+          Kalau Tenant belum punya produk untuk komoditas itu, jalannya buntu di sini —
+          jadi ditunjukkan jalan keluarnya, bukan sekadar dropdown berisi komoditas lain. */}
+      {prefill && !produk.some((x) => x.commodity.id === prefill.commodityId) && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 mb-5">
+          <p className="text-sm font-bold text-amber-900 mb-1">
+            Anda belum punya produk {prefill.commodityName}
+          </p>
+          <p className="text-xs text-amber-800 mb-3">
+            Kuota dibuka atas sebuah produk. Buat produknya dulu — isi box{" "}
+            {prefill.suggestedQtyKgPerBox} kg dan harga {rp(prefill.suggestedLockedPrice)}
+            /box mengikuti kebiasaan zona ini.
+          </p>
+          <Link
+            href={`/tenant/catalog/edit?komoditas=${prefill.commodityId}&kgBox=${prefill.suggestedQtyKgPerBox}&harga=${prefill.suggestedLockedPrice}&panen=${prefill.suggestedHarvestDate}`}
+            className="inline-flex items-center gap-2 bg-emerald-950 text-white text-xs font-semibold px-4 py-2.5 rounded-lg hover:bg-emerald-800"
+          >
+            <PackagePlus className="w-3.5 h-3.5" /> Buat Produk {prefill.commodityName}
+          </Link>
+        </div>
+      )}
 
       <form onSubmit={simpan} className="space-y-4">
         <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
@@ -262,5 +361,13 @@ export default function OpenQuotaPage() {
         </button>
       </form>
     </div>
+  );
+}
+
+export default function OpenQuotaPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-sm text-gray-500">Memuat…</div>}>
+      <FormBukaKuota />
+    </Suspense>
   );
 }

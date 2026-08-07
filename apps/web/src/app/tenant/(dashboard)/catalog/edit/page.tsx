@@ -17,8 +17,17 @@ const GRADE = ["A", "B", "C"] as const;
 
 function FormProduk() {
   const router = useRouter();
-  const id = useSearchParams().get("id");
+  const sp = useSearchParams();
+  const id = sp.get("id");
   const sedangUbah = Boolean(id);
+
+  // Nilai bawaan saat datang dari Rekomendasi Tanam: Tenant disuruh membuat produk
+  // untuk komoditas yang disarankan, jadi isian yang sudah diketahui dibawa serta.
+  // Tanpa ini ia harus mengingat sendiri angka yang baru saja dilihat di layar lain.
+  const komoditasAwal = sp.get("komoditas");
+  const kgBoxAwal = sp.get("kgBox");
+  const hargaAwal = sp.get("harga");
+  const panenAwal = sp.get("panen");
 
   const [komoditas, setKomoditas] = useState<CommoditySummary[]>([]);
   const [commodityId, setCommodityId] = useState("");
@@ -47,8 +56,11 @@ function FormProduk() {
           setKgBox(String(p.qtyKgPerBox));
           setPanen(p.estHarvestDate.slice(0, 10));
           setDeskripsi(p.description ?? "");
-        } else if (k[0]) {
-          setCommodityId(k[0].id);
+        } else {
+          setCommodityId(komoditasAwal ?? k[0]?.id ?? "");
+          if (kgBoxAwal) setKgBox(kgBoxAwal);
+          if (hargaAwal) setHarga(hargaAwal);
+          if (panenAwal) setPanen(panenAwal);
         }
         setGalat("");
       })

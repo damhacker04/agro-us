@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarDays, Lightbulb, Lock, TrendingUp } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, CalendarDays, Lightbulb, Lock, TrendingUp } from "lucide-react";
 import { GalatApi, aktifkanLangganan, ambilRekomendasi } from "@/lib/api";
 import type { PlantingRecommendation } from "@agro-os/shared";
 
@@ -114,6 +115,19 @@ function KartuKomoditas({ minggu }: { minggu: PlantingRecommendation[] }) {
           </b>
         </span>
       </div>
+
+      {/* Jembatan intelijen → aksi (FR-8.3).
+          Tanpa ini rekomendasi berhenti sebagai bacaan: Tenant harus mengetik ulang
+          sendiri komoditas, jumlah, harga, dan tanggalnya di layar Buka Kuota — dan
+          setiap ketikan ulang adalah peluang angkanya melenceng dari yang disarankan.
+          Yang dikirim hanya PENUNJUKNYA, bukan angkanya: form yang menghitung ulang
+          lewat endpoint prefill, supaya kejenuhan zona dinilai saat form dibuka. */}
+      <Link
+        href={`/tenant/batch/new?zona=${r.zoneId}&komoditas=${r.commodityId}&minggu=${r.harvestWeekStart}`}
+        className="mt-4 w-full flex items-center justify-center gap-2 bg-emerald-950 text-white text-sm font-semibold py-2.5 rounded-lg hover:bg-emerald-800 transition"
+      >
+        Buka Kuota untuk Minggu Ini <ArrowRight className="w-4 h-4" />
+      </Link>
     </div>
   );
 }

@@ -40,6 +40,7 @@ import type {
   LandPlotCapacityResponse,
   LandPlotResponse,
   OpenQuotaBody,
+  OpenQuotaPrefill,
   PlantingRecommendation,
   ProductResponse,
   ReportPositionBody,
@@ -337,6 +338,19 @@ export const ubahKomoditas = (id: string, body: UpsertCommodityBody) =>
   kirim<CommoditySummary>(`/operator/commodities/${id}`, body, "PATCH");
 
 export const ambilRekomendasi = () => ambil<PlantingRecommendation[]>("/tenant/rekomendasi");
+
+/**
+ * Angka siap-isi untuk form Buka Kuota, dari sebuah rekomendasi (FR-8.3).
+ *
+ * Dipanggil saat FORM DIBUKA, bukan saat kartu rekomendasi ditampilkan. Server
+ * menghitung ulang kejenuhan zona di sini, sehingga Tenant yang membuka kartu
+ * lama — atau menyimpan tautannya — tetap diperingatkan bila pasokan zona sudah
+ * berubah sejak kartu itu dibaca.
+ */
+export const ambilPrefillKuota = (zoneId: string, commodityId: string, harvestWeekStart: string) =>
+  ambil<OpenQuotaPrefill>(
+    `/tenant/rekomendasi/prefill?zoneId=${zoneId}&commodityId=${commodityId}&harvestWeekStart=${harvestWeekStart}`,
+  );
 
 export const aktifkanLangganan = (months = 1) =>
   kirim<{ status: string; periodEnd: string; message: string }>("/tenant/langganan/aktifkan", {
