@@ -1,236 +1,248 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { 
-  ArrowLeft, 
-  ImagePlus, 
-  Box, 
-  Truck,
-  CheckCircle2
-} from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeft, Loader2 } from "lucide-react";
+import type { CommoditySummary, ProductResponse } from "@agro-os/shared";
+import {
+  GalatApi,
+  ambilKomoditas,
+  ambilProdukTenant,
+  buatProduk,
+  ubahProduk,
+} from "@/lib/api";
 
-export default function TenantCatalogEditPage() {
-  // Mock states for image uploads
-  const [mainImg, setMainImg] = useState(false);
-  const [thumb1, setThumb1] = useState(false);
-  const [thumb2, setThumb2] = useState(false);
-  const [thumb3, setThumb3] = useState(false);
+const GRADE = ["A", "B", "C"] as const;
+
+function FormProduk() {
+  const router = useRouter();
+  const id = useSearchParams().get("id");
+  const sedangUbah = Boolean(id);
+
+  const [komoditas, setKomoditas] = useState<CommoditySummary[]>([]);
+  const [commodityId, setCommodityId] = useState("");
+  const [nama, setNama] = useState("");
+  const [grade, setGrade] = useState<"A" | "B" | "C">("A");
+  const [harga, setHarga] = useState("");
+  const [kgBox, setKgBox] = useState("");
+  const [panen, setPanen] = useState("");
+  const [deskripsi, setDeskripsi] = useState("");
+
+  const [memuat, setMemuat] = useState(true);
+  const [proses, setProses] = useState(false);
+  const [galat, setGalat] = useState("");
+
+  useEffect(() => {
+    Promise.all([ambilKomoditas(), sedangUbah ? ambilProdukTenant() : Promise.resolve([])])
+      .then(([k, produk]) => {
+        setKomoditas(k);
+        if (sedangUbah) {
+          const p = (produk as ProductResponse[]).find((x) => x.id === id);
+          if (!p) return setGalat("Produk tidak ditemukan.");
+          setCommodityId(p.commodity.id);
+          setNama(p.name);
+          setGrade(p.grade);
+          setHarga(String(p.pricePerBox));
+          setKgBox(String(p.qtyKgPerBox));
+          setPanen(p.estHarvestDate.slice(0, 10));
+          setDeskripsi(p.description ?? "");
+        } else if (k[0]) {
+          setCommodityId(k[0].id);
+        }
+        setGalat("");
+      })
+      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat data"))
+      .finally(() => setMemuat(false));
+  }, [id, sedangUbah]);
+
+  async function simpan(e: React.FormEvent) {
+    e.preventDefault();
+    setProses(true);
+    setGalat("");
+    const isi = {
+      commodityId,
+      name: nama,
+      grade,
+      pricePerBox: Number(harga),
+      qtyKgPerBox: Number(kgBox),
+      estHarvestDate: panen,
+      ...(deskripsi ? { description: deskripsi } : {}),
+    };
+    try {
+      if (sedangUbah && id) await ubahProduk(id, isi);
+      else await buatProduk(isi);
+      router.push("/tenant/catalog");
+    } catch (err) {
+      setGalat(err instanceof GalatApi ? err.message : "Gagal menyimpan produk.");
+      setProses(false);
+    }
+  }
+
+  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat…</div>;
+
+  const dipilih = komoditas.find((k) => k.id === commodityId);
 
   return (
-    <div className="p-8 pb-20 max-w-5xl mx-auto relative min-h-full bg-white">
-      
-      {/* Top Header */}
-      <div className="flex justify-between items-center mb-10">
-        <Link 
-          href="/tenant/catalog"
-          className="text-sm font-semibold text-emerald-900 hover:text-emerald-700 transition flex items-center gap-2"
-        >
-          <ArrowLeft className="w-4 h-4" /> Kembali ke Katalog
-        </Link>
-        <button 
-          className="bg-[#dcfce7] text-[#166534] border border-[#bbf7d0] font-bold text-sm px-10 py-2 rounded-lg hover:bg-[#bbf7d0] transition shadow-sm"
-        >
-          Simpan
-        </button>
-      </div>
+    <div className="p-8 max-w-2xl">
+      <Link
+        href="/tenant/catalog"
+        className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 hover:text-emerald-600 mb-6"
+      >
+        <ArrowLeft className="w-4 h-4" /> Kembali ke Katalog
+      </Link>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 mb-12">
-        {/* Left Col: Images */}
-        <div className="space-y-4">
-          
-          {/* Main Image */}
-          <label className="border-2 border-emerald-700/20 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition aspect-square relative overflow-hidden group">
-            <input type="file" accept="image/*" className="hidden" onChange={() => setMainImg(true)} />
-            {mainImg ? (
-              <div className="flex flex-col items-center gap-2">
-                <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 mb-2 group-hover:scale-110 transition-transform">
-                  <CheckCircle2 className="w-8 h-8" />
-                </div>
-                <span className="font-bold text-emerald-900 text-sm">Gambar Utama Tersimpan</span>
-                <span className="text-xs text-emerald-600">Klik untuk mengganti</span>
-              </div>
-            ) : (
-              <ImagePlus className="w-12 h-12 text-gray-900 group-hover:scale-110 transition-transform" />
+      <h1 className="text-2xl font-bold text-emerald-950 mb-1">
+        {sedangUbah ? "Ubah Produk" : "Tambah Produk"}
+      </h1>
+      <p className="text-sm text-gray-500 mb-6">
+        Produk belum bisa dipesan sebelum Anda membuka kuota Pre-Order untuknya dari
+        Manajemen Batch.
+      </p>
+
+      <form onSubmit={simpan} className="space-y-4">
+        <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Komoditas</label>
+            <select
+              required
+              value={commodityId}
+              onChange={(e) => setCommodityId(e.target.value)}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white"
+            >
+              {komoditas.map((k) => (
+                <option key={k.id} value={k.id}>
+                  {k.name}
+                </option>
+              ))}
+            </select>
+            {/* Toleransi susut menentukan berapa kekurangan berat yang masih dianggap
+                wajar saat pembeli mengajukan klaim — angkanya melekat pada komoditas,
+                bukan pada produk, jadi Tenant perlu tahu sebelum memilih. */}
+            {dipilih && (
+              <p className="text-xs text-gray-500 mt-1">
+                Toleransi susut {dipilih.shrinkTolerancePct}% · rendemen rata-rata{" "}
+                {dipilih.avgYieldKgPerHa.toLocaleString("id-ID")} kg/ha
+              </p>
             )}
-          </label>
-
-          {/* Thumbnails */}
-          <div className="grid grid-cols-3 gap-4">
-            <label className="border-2 border-emerald-700/20 rounded-xl flex items-center justify-center cursor-pointer hover:bg-gray-50 transition aspect-square relative group overflow-hidden">
-              <input type="file" accept="image/*" className="hidden" onChange={() => setThumb1(true)} />
-              {thumb1 ? <CheckCircle2 className="w-6 h-6 text-emerald-600 group-hover:scale-110 transition-transform" /> : <ImagePlus className="w-6 h-6 text-gray-700 group-hover:scale-110 transition-transform" />}
-            </label>
-            <label className="border-2 border-emerald-700/20 rounded-xl flex items-center justify-center cursor-pointer hover:bg-gray-50 transition aspect-square relative group overflow-hidden">
-              <input type="file" accept="image/*" className="hidden" onChange={() => setThumb2(true)} />
-              {thumb2 ? <CheckCircle2 className="w-6 h-6 text-emerald-600 group-hover:scale-110 transition-transform" /> : <ImagePlus className="w-6 h-6 text-gray-700 group-hover:scale-110 transition-transform" />}
-            </label>
-            <label className="border-2 border-emerald-700/20 rounded-xl flex items-center justify-center cursor-pointer hover:bg-gray-50 transition aspect-square relative group overflow-hidden">
-              <input type="file" accept="image/*" className="hidden" onChange={() => setThumb3(true)} />
-              {thumb3 ? <CheckCircle2 className="w-6 h-6 text-emerald-600 group-hover:scale-110 transition-transform" /> : <ImagePlus className="w-6 h-6 text-gray-700 group-hover:scale-110 transition-transform" />}
-            </label>
           </div>
-        </div>
 
-        {/* Right Col: Basic Info */}
-        <div className="pt-4 flex flex-col justify-start">
-          <input 
-            type="text" 
-            placeholder="Nama Komoditas (cth: Tomat Beef Premium)" 
-            className="text-3xl font-black text-gray-900 placeholder:text-gray-400 border-none p-0 focus:ring-0 w-full mb-4 bg-transparent"
-            defaultValue="Tomat Beef Premium"
-          />
-          
-          <div className="flex items-end gap-2 mb-8">
-            <span className="text-xl text-gray-400 font-medium">cth: Rp</span>
-            <input 
-              type="text"
-              placeholder="100.000"
-              defaultValue="100.000"
-              className="text-2xl font-medium text-gray-900 border-b border-gray-300 w-32 pb-1 focus:ring-0 focus:border-emerald-500 bg-transparent px-0 text-center"
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Nama produk</label>
+            <input
+              required
+              minLength={3}
+              maxLength={120}
+              value={nama}
+              onChange={(e) => setNama(e.target.value)}
+              placeholder="mis. Wortel Pujon Grade A"
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
             />
-            <span className="text-gray-500 font-medium">/ Box</span>
           </div>
 
-          <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-5 inline-block w-fit">
-            <div className="text-[10px] font-bold text-gray-500 mb-1">KAPASITAS KG/BOX</div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-gray-400 text-sm">cth:</span>
-              <input 
-                type="text"
-                defaultValue="15"
-                className="w-12 border-b border-gray-300 bg-transparent pb-1 px-0 text-center font-bold text-gray-900 focus:ring-0 focus:border-emerald-500"
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Grade</label>
+            <div className="flex gap-2">
+              {GRADE.map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => setGrade(g)}
+                  className={`flex-1 px-3 py-2.5 rounded-lg text-sm font-medium border transition ${
+                    grade === g
+                      ? "bg-emerald-950 text-white border-emerald-950"
+                      : "border-gray-200 text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  Grade {g}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Harga per box (Rp)
+              </label>
+              <input
+                required
+                type="number"
+                min={1}
+                step={1}
+                value={harga}
+                onChange={(e) => setHarga(e.target.value)}
+                placeholder="145000"
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
               />
-              <span className="font-bold text-gray-900">Kg/Box</span>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Isi per box (kg)
+              </label>
+              <input
+                required
+                type="number"
+                min={0.01}
+                step={0.01}
+                value={kgBox}
+                onChange={(e) => setKgBox(e.target.value)}
+                placeholder="10"
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+              />
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Tabs */}
-      <div className="border-b border-gray-200 mb-8">
-        <div className="inline-block border-b-2 border-[#1e5033] py-3 text-sm font-bold text-[#1e5033]">
-          Spesifikasi & Logistik
-        </div>
-      </div>
-
-      {/* Detailed Form Section */}
-      <div className="border border-gray-200 rounded-2xl p-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-          
-          {/* Col 1: Detail Komoditas */}
           <div>
-            <div className="flex items-center gap-3 mb-8">
-              <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center text-emerald-700">
-                <Box className="w-4 h-4" />
-              </div>
-              <h3 className="font-bold text-lg text-emerald-950">Detail Komoditas</h3>
-            </div>
-
-            <div className="space-y-6">
-              <div className="flex items-center justify-between border-b border-gray-100 pb-4">
-                <span className="text-xs text-gray-600">Kategori</span>
-                <input type="text" defaultValue="Sayur Buah" className="bg-gray-100 border-none rounded-md px-2 py-1 text-xs font-bold text-gray-700 w-32 text-right" />
-              </div>
-              
-              <div className="flex items-center justify-between border-b border-gray-100 pb-4">
-                <span className="text-xs text-gray-600">Grade Mutu</span>
-                <input type="text" defaultValue="A" className="bg-gray-100 border-none rounded-md px-2 py-1 text-xs font-bold text-gray-700 w-12 text-center" />
-              </div>
-
-              <div className="flex items-center justify-between border-b border-gray-100 pb-4">
-                <span className="text-xs text-gray-600">Tingkat Kemanisan (Brix)</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-gray-400">cth:</span>
-                  <input type="text" defaultValue="4.5" className="bg-gray-100 border-none rounded-md px-2 py-1 text-xs font-bold text-gray-700 w-12 text-center" />
-                  <span className="text-xs font-bold text-gray-900">% hingga</span>
-                  <span className="text-[10px] text-gray-400">cth:</span>
-                  <input type="text" defaultValue="5.5" className="bg-gray-100 border-none rounded-md px-2 py-1 text-xs font-bold text-gray-700 w-12 text-center" />
-                  <span className="text-xs font-bold text-gray-900">%</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between border-b border-gray-100 pb-4">
-                <span className="text-xs text-gray-600">Suhu Penyimpanan Optimal</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-gray-400">cth:</span>
-                  <input type="text" defaultValue="10" className="bg-gray-100 border-none rounded-md px-2 py-1 text-xs font-bold text-gray-700 w-12 text-center" />
-                  <span className="text-xs font-bold text-gray-900">°C hingga</span>
-                  <span className="text-[10px] text-gray-400">cth:</span>
-                  <input type="text" defaultValue="12" className="bg-gray-100 border-none rounded-md px-2 py-1 text-xs font-bold text-gray-700 w-12 text-center" />
-                  <span className="text-xs font-bold text-gray-900">°C</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between border-b border-gray-100 pb-4">
-                <span className="text-xs text-gray-600">Estimasi Masa Simpan (Shelf Life)</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-gray-400">cth:</span>
-                  <input type="text" defaultValue="7" className="bg-gray-100 border-none rounded-md px-2 py-1 text-xs font-bold text-gray-700 w-10 text-center" />
-                  <span className="text-xs font-bold text-gray-900">hingga</span>
-                  <input type="text" defaultValue="10" className="bg-gray-100 border-none rounded-md px-2 py-1 text-xs font-bold text-gray-700 w-10 text-center" />
-                  <span className="text-xs font-bold text-gray-900">hari</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between border-b border-gray-100 pb-4">
-                <span className="text-xs text-gray-600">Tempat Menyimpan</span>
-                <input type="text" defaultValue="chiller" className="bg-gray-100 border-none rounded-md px-2 py-1 text-xs font-bold text-gray-700 w-24 text-right" />
-              </div>
-            </div>
-
-            <div className="mt-6 bg-blue-50/50 border border-blue-100 rounded-xl p-4">
-              <p className="text-xs text-gray-600 italic">
-                "Cocok digunakan untuk kebutuhan salad, burger, dan panggangan restoran. Buah padat dan tidak mudah berair."
-              </p>
-            </div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Perkiraan tanggal panen
+            </label>
+            <input
+              required
+              type="date"
+              value={panen}
+              onChange={(e) => setPanen(e.target.value)}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+            />
           </div>
 
-          {/* Col 2: Informasi Pengemasan */}
           <div>
-            <div className="flex items-center gap-3 mb-8">
-              <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center text-emerald-700">
-                <Box className="w-4 h-4" />
-              </div>
-              <h3 className="font-bold text-lg text-emerald-950">Informasi Pengemasan</h3>
-            </div>
-
-            <div className="space-y-6">
-              <div className="flex items-center justify-between border-b border-gray-100 pb-4">
-                <span className="text-xs text-gray-600">Dimensi Kemasan</span>
-                <div className="flex items-center gap-1.5">
-                  <input type="text" defaultValue="40" className="bg-gray-100 border-none rounded-md px-2 py-1 text-xs font-bold text-gray-700 w-10 text-center" />
-                  <span className="text-xs font-bold text-gray-900">cm x</span>
-                  <input type="text" defaultValue="30" className="bg-gray-100 border-none rounded-md px-2 py-1 text-xs font-bold text-gray-700 w-10 text-center" />
-                  <span className="text-xs font-bold text-gray-900">cm x</span>
-                  <input type="text" defaultValue="15" className="bg-gray-100 border-none rounded-md px-2 py-1 text-xs font-bold text-gray-700 w-10 text-center" />
-                  <span className="text-xs font-bold text-gray-900">cm</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between border-b border-gray-100 pb-4">
-                <span className="text-xs text-gray-600">Titik Keberangkatan</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-gray-400">cth:</span>
-                  <input type="text" defaultValue="Gudang Tani Jos, Malang, Jawa Timur" className="bg-gray-100 border-none rounded-md px-2 py-1 text-xs font-bold text-gray-700 w-64 text-right" />
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-8 bg-blue-50/50 border border-blue-200 rounded-xl p-5">
-              <div className="flex items-center gap-2 font-bold text-sm text-gray-900 mb-2">
-                <Truck className="w-4 h-4 text-blue-700" /> Pengiriman Terkonsolidasi
-              </div>
-              <p className="text-xs text-gray-600 leading-relaxed">
-                Komoditas ini mendukung skema pengiriman gabungan. Ongkos kirim akan dihitung otomatis saat checkout berdasarkan total volume belanja dari area Malang Raya.
-              </p>
-            </div>
-
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Deskripsi <span className="font-normal text-gray-400">(opsional)</span>
+            </label>
+            <textarea
+              rows={3}
+              maxLength={2000}
+              value={deskripsi}
+              onChange={(e) => setDeskripsi(e.target.value)}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+            />
           </div>
-
         </div>
-      </div>
 
+        {galat && (
+          <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            {galat}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={proses}
+          className="w-full bg-emerald-950 text-white text-sm font-semibold py-3 rounded-lg hover:bg-emerald-800 disabled:opacity-60 flex items-center justify-center gap-2"
+        >
+          {proses && <Loader2 className="w-4 h-4 animate-spin" />}
+          {proses ? "Menyimpan…" : sedangUbah ? "Simpan Perubahan" : "Tambah Produk"}
+        </button>
+      </form>
     </div>
+  );
+}
+
+export default function CatalogEditPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-sm text-gray-500">Memuat…</div>}>
+      <FormProduk />
+    </Suspense>
   );
 }

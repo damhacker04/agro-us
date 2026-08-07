@@ -26,7 +26,13 @@ import type {
   OrderSummary,
   PreviewOrderBody,
   BatchResponse,
+  CommoditySummary,
+  CreateLandPlotBody,
+  CreateProductBody,
+  CreateTenantProfileBody,
+  LandPlotCapacityResponse,
   LandPlotResponse,
+  OpenQuotaBody,
   PlantingRecommendation,
   ProductResponse,
   ReportPositionBody,
@@ -191,6 +197,36 @@ export const ambilTimelineTenant = (batchId: string) =>
   ambil<TimelineNodeResponse[]>(`/tenant/batches/${batchId}/timeline`);
 
 export const ambilProdukTenant = () => ambil<ProductResponse[]>("/tenant/products");
+
+export const ambilKomoditas = () => ambil<CommoditySummary[]>("/commodities");
+
+export const buatProduk = (body: CreateProductBody) =>
+  kirim<ProductResponse>("/tenant/products", body);
+
+export const ubahProduk = (id: string, body: Partial<CreateProductBody>) =>
+  kirim<ProductResponse>(`/tenant/products/${id}`, body, "PATCH");
+
+/**
+ * Batas kuota yang boleh dibuka di satu lahan (TN-16). Dipanggil SEBELUM Tenant
+ * mengetik jumlahnya, supaya batasnya terbaca sebagai informasi, bukan sebagai
+ * penolakan setelah formulir dikirim.
+ */
+export const ambilKapasitasLahan = (landPlotId: string, commodityId: string, qtyKgPerBox: number) =>
+  ambil<LandPlotCapacityResponse>(
+    `/tenant/land-plots/${landPlotId}/capacity?commodityId=${commodityId}&qtyKgPerBox=${qtyKgPerBox}`,
+  );
+
+export const bukaKuota = (productId: string, body: OpenQuotaBody) =>
+  kirim<BatchResponse>(`/tenant/products/${productId}/batches`, body);
+
+export const buatLahan = (body: CreateLandPlotBody) =>
+  kirim<LandPlotResponse>("/tenant/land-plots", body);
+
+export const buatProfilTenant = (body: CreateTenantProfileBody) =>
+  kirim<TenantProfileResponse>("/tenant/profile", body);
+
+export const kirimLegalitas = (documentUrl: string) =>
+  kirim<{ legalityStatus: string; message: string }>("/tenant/legality", { documentUrl }, "PUT");
 
 export const ambilLahan = () => ambil<LandPlotResponse[]>("/tenant/land-plots");
 
