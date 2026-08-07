@@ -60,9 +60,25 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SYNTHETIC_SCENES: ${{ inputs.synthetic && '1' || '0' }}
+          DIPICU: ${{ github.event_name }}
         run: |
+          # Tanpa secret, perlakuannya BERBEDA menurut siapa yang memicu.
+          #
+          # Terjadwal: lewati dan tetap hijau. Secret ini sengaja belum disetel,
+          # jadi gagal tiap malam hanya menghasilkan tanda merah beruntun di tab
+          # Actions dan email harian — kebisingan yang membuat kegagalan SUNGGUHAN
+          # nanti tidak lagi terlihat, dan membuat repo tampak rusak bagi siapa pun
+          # yang membukanya.
+          #
+          # Manual: gagalkan dengan lantang. Orang yang menekan tombol jelas ingin
+          # job ini benar-benar berjalan, jadi diam-diam melewatinya justru menipu.
           if [ -z "$DATABASE_URL" ]; then
-            echo "::error::Secret DATABASE_URL belum disetel di repo (Settings → Secrets → Actions)."
+            if [ "$DIPICU" = "schedule" ]; then
+              echo "::notice::Dilewati — secret DATABASE_URL belum disetel, jadi verifikasi satelit belum aktif."
+              echo "Setel di Settings → Secrets and variables → Actions untuk mengaktifkannya."
+              exit 0
+            fi
+            echo "::error::Secret DATABASE_URL belum disetel (Settings → Secrets and variables → Actions)."
             exit 1
           fi
           python -m src.main

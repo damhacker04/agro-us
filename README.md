@@ -165,8 +165,23 @@ Kami mencantumkannya supaya penilaian berdasarkan keadaan sebenarnya:
 | **Escrow** | Ledger dan aturan dananya berjalan penuh, tapi belum ada mitra escrow berlisensi |
 | **Login mode peragaan** | `DEMO_EXPOSE_OTP` aktif — siapa pun yang tahu nomor bisa masuk. Aman karena seluruh data karangan, **wajib dimatikan** sebelum ada data sungguhan |
 | **Penyimpanan foto** | Masih disk kontainer yang ephemeral. Foto bukti hilang tiap redeploy dan perlu diunggah ulang; harus pindah ke S3/R2 sebelum produksi |
-| **Citra satelit** | Pipeline Sentinel-2 berjalan, tetapi data pada demo ini disiapkan sebagai contoh, bukan hasil tarikan langsung |
+| **Citra satelit** | Pipeline Sentinel-2 lengkap dan kini **terjadwal harian** ([`satellite-verify.yml`](.github/workflows/satellite-verify.yml)), tetapi belum menyala: secret `DATABASE_URL` sengaja belum disetel, jadi data NDVI pada demo ini masih data contoh, bukan hasil tarikan langsung |
 | **Peta** | Pemetaan lahan memakai GPS perangkat tanpa peta latar. Peta hiasan dengan koordinat karangan justru menyesatkan, jadi sengaja tidak dipakai |
+| **Uji otomatis** | Hanya aturan keputusan fenologi satelit yang punya uji (`apps/satellite-worker/tests`). API dan web belum |
+
+### Dua pekerjaan terjadwal
+
+| Workflow | Jadwal | Butuh secret? |
+| --- | --- | --- |
+| [`keep-alive`](.github/workflows/keep-alive.yml) | tiap 10 menit | Tidak — langsung aktif |
+| [`satellite-verify`](.github/workflows/satellite-verify.yml) | harian 02:00 WIB | Ya, `DATABASE_URL`. Tanpa itu jalannya dilewati, bukan digagalkan |
+
+`keep-alive` ada karena Render free tier menidurkan instance setelah ~15 menit
+menganggur, dan permintaan pertama sesudahnya butuh 50+ detik — jeda yang dibaca
+pengunjung baru sebagai aplikasi rusak, bukan sebagai aplikasi yang sedang bangun.
+
+> GitHub menonaktifkan workflow terjadwal setelah 60 hari repo tidak ada aktivitas.
+> Kalau nanti tampak berhenti sendiri, aktifkan lagi dari tab **Actions**.
 
 ---
 
