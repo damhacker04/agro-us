@@ -216,6 +216,7 @@ model Tenant {
   subscriptions Subscription[]
   tenantZones   TenantZone[]
   escrowEntries EscrowLedgerEntry[]
+  shortfallSeniority ShortfallSeniority[]
 
   @@map("tenants")
 }
@@ -231,6 +232,7 @@ model Buyer {
   orders              Order[]
   traceabilityReports TraceabilityReport[]
   demandSignals       DemandSignal[]
+  shortfallSeniority  ShortfallSeniority[]
 
   @@map("buyers")
 }
@@ -708,4 +710,38 @@ model OtpRequest {
 
   @@index([phone, expiresAt])
   @@map("otp_requests")
+}
+
+/**
+ * Senioritas shortfall (FR-7.13, baru v2.3).
+ *
+ * Alokasi FIFO atas `payments.paid_at` bersifat STRUKTURAL, bukan acak: pembeli yang
+ * selalu membayar lambat — biasanya justru yang perlu persetujuan finance, artinya akun
+ * yang lebih besar — akan selalu berada di ekor antrean dan terkena shortfall berulang
+ * hingga churn. Pro-rata menyebar kerugian; FIFO memusatkannya pada subset yang tetap.
+ *
+ * Pembeli yang terkena shortfall naik ke prioritas teratas pada batch berikutnya dari
+ * TENANT YANG SAMA. Berlaku satu siklus dan gugur setelah terpakai (`consumedAt`).
+ * Sesama penyandang senioritas tetap diurutkan FIFO `paid_at`.
+ *
+ * Baris tidak dihapus saat terpakai — riwayatnya dipertahankan supaya bisa diaudit
+ * mengapa suatu alokasi mendahulukan pembeli tertentu.
+ */
+model ShortfallSeniority {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  buyerId       String    @map("buyer_id") @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  /** Batch yang shortfall-nya melahirkan senioritas ini. */
+  grantedBatchId String   @map("granted_batch_id") @db.Uuid
+  grantedAt     DateTime  @default(now()) @map("granted_at") @db.Timestamptz(6)
+  /** Terisi saat senioritas dipakai pada batch berikutnya — sesudah itu gugur. */
+  consumedAt     DateTime? @map("consumed_at") @db.Timestamptz(6)
+  consumedBatchId String?  @map("consumed_batch_id") @db.Uuid
+
+  buyer  Buyer  @relation(fields: [buyerId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, consumedAt])
+  @@index([buyerId, consumedAt])
+  @@map("shortfall_seniority")
 }

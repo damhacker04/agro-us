@@ -160,10 +160,24 @@ export const PRENOTIFY_RADIUS_M = 1000;
  * Panen sebagian / shortfall (§5.7.2).
  * Alokasi FIFO memakai PAYMENTS.paid_at — bukan waktu order dibuat (FR-7.9).
  */
-/** Cap tanggungan Tenant atas selisih harga substitusi. Gugur bila gagal panen tak terverifikasi (FR-7.11). */
+/** Cap tanggungan Tenant atas selisih harga substitusi. Gugur bila shortfall dinilai TIDAK_WAJAR (FR-7.11). */
 export const SUBSTITUTION_PRICE_GAP_CAP_PCT = 10;
-/** Ambang shortfall terverifikasi pemicu penalti kuota, rolling 2 siklus (FR-7.12). */
-export const SHORTFALL_PENALTY_THRESHOLD_PCT = 15;
+
+/**
+ * ⚠️ AMBANG PENALTI SENGAJA TIDAK ADA DI SINI (FR-7.12c).
+ *
+ * Sampai v2.2 nilainya `SHORTFALL_PENALTY_THRESHOLD_PCT = 15` dan diekspor lewat kontrak
+ * bersama — artinya ikut ter-bundel ke JavaScript yang dikirim ke peramban Tenant, dan
+ * memang ditampilkan di layar reputasi sebagai "ambang batas kritis 15%".
+ *
+ * Itu mematikan mekanismenya sendiri. Angka shortfall dilaporkan oleh pihak yang
+ * diuntungkan bila angkanya salah; ambang tetap yang diketahui berubah dari pagar
+ * menjadi papan petunjuk — cukup melaporkan tepat di bawahnya setiap siklus, selamanya.
+ *
+ * Sejak v2.3 ambangnya adalah deviasi terhadap benchmark lintas-Tenant, disimpan sebagai
+ * parameter server (env), dikalibrasi ulang tiap musim, dan TIDAK PERNAH dikirim ke FE.
+ * Yang boleh dilihat Tenant hanyalah posisi relatifnya terhadap rata-rata zona.
+ */
 export const SHORTFALL_PENALTY_ROLLING_CYCLES = 2;
 /** quota_multiplier: normal → penalti. Pulih setelah 2 siklus bersih (FR-7.12). */
 export const QUOTA_MULTIPLIER_NORMAL = 0.7;
@@ -814,11 +828,24 @@ export interface AllocationPreview {
 export interface AllocationLine {
   orderItemId: string;
   buyerName: string;
-  /** Waktu pembayaran masuk escrow — INILAH kunci urutan FIFO, bukan waktu order dibuat. */
+  /** Waktu pembayaran masuk escrow — kunci urutan FIFO, bukan waktu order dibuat. */
   paidAt: string;
   qtyBox: number;
   allocatedBox: number;
   shortfallBox: number;
+  /**
+   * Pembeli ini menyandang senioritas dari shortfall siklus lalu (FR-7.13), sehingga
+   * MENDAHULUI urutan `paidAt`. Ditampilkan pada pratinjau alokasi (TN-19a) supaya Tenant
+   * melihat alasan urutannya, bukan sekadar daftar yang tampak tidak berurutan waktu.
+   */
+  senioritas: boolean;
+}
+
+/** GET /buyer/seniority — dasar banner BY-11d di layar Pesanan Saya. */
+export interface BuyerSeniority {
+  tenantId: string;
+  tenantName: string;
+  grantedAt: string;
 }
 
 /** Item yang menunggu keputusan pembeli (layar BY-11). */

@@ -2,20 +2,31 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, TrendingDown, ThumbsUp, Scale, Settings2 } from "lucide-react";
+import { Info, Scale, Settings2, ThumbsUp, TrendingDown } from "lucide-react";
 import {
   QUOTA_MULTIPLIER_NORMAL,
   QUOTA_MULTIPLIER_PENALTY,
   SHORTFALL_PENALTY_ROLLING_CYCLES,
-  SHORTFALL_PENALTY_THRESHOLD_PCT,
 } from "@agro-os/shared";
 import type { TenantProfileResponse } from "@agro-os/shared";
 import { GalatApi, ambilProfilTenant } from "@/lib/api";
 
 /**
- * Rasio disimpan sebagai pecahan 0–1 di basis data, ditampilkan sebagai persen.
- * `null` berarti BELUM ADA RIWAYAT — berbeda dari 0% (ada riwayat, tanpa kegagalan),
- * dan keduanya tidak boleh terlihat sama: Tenant baru bukan Tenant sempurna.
+ * TN-33 — Kinerja & Reputasi Tenant.
+ *
+ * ⚠️ HALAMAN INI TIDAK BOLEH MENAMPILKAN ANGKA AMBANG PENALTI (FR-7.12c).
+ *
+ * Versi sebelumnya menampilkannya di tujuh tempat, termasuk kalimat "mendekati ambang
+ * batas kritis 15%" dan progress bar yang mengukur jarak menuju ambang itu. Karena angka
+ * shortfall dilaporkan Tenant sendiri, ambang yang terlihat berhenti menjadi pagar dan
+ * berubah menjadi target: cukup melaporkan tepat di bawahnya setiap siklus, selamanya.
+ *
+ * Yang boleh ditampilkan adalah posisi RELATIF terhadap rata-rata zona (TN-34, menyusul
+ * setelah benchmark FR-7.12b ada). Sampai itu tersedia, halaman ini menampilkan rasio apa
+ * adanya tanpa membandingkannya dengan ambang mana pun.
+ *
+ * Nada: informatif, bukan mengancam (aturan desain v2.3 butir 4). Tenant adalah sisi
+ * pasok yang harus diakuisisi, bukan tersangka yang diawasi.
  */
 const persen = (r: number | null) => (r === null ? null : Math.round(r * 1000) / 10);
 
@@ -49,10 +60,7 @@ export default function ReputationPage() {
   const shortfall = persen(profil.shortfallRatioCached);
   const klaim = persen(profil.claimRatioCached);
   const pengali = profil.quotaMultiplier;
-
   const kenaPenalti = pengali <= QUOTA_MULTIPLIER_PENALTY;
-  const mendekatiAmbang =
-    shortfall !== null && !kenaPenalti && shortfall >= SHORTFALL_PENALTY_THRESHOLD_PCT * 0.8;
 
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-8 bg-white min-h-screen font-serif">
@@ -64,32 +72,23 @@ export default function ReputationPage() {
         </p>
       </div>
 
-      {(kenaPenalti || mendekatiAmbang) && (
+      {/* Muncul HANYA setelah penalti benar-benar berlaku, dan isinya penjelasan
+          perhitungan — bukan peringatan "Anda mendekati ambang". Peringatan semacam itu
+          memberi tahu persis seberapa jauh Tenant boleh menyimpang. */}
+      {kenaPenalti && (
         <div className="bg-[#fdf2f2] border border-[#fbd5d5] rounded-xl p-6 font-sans">
           <div className="flex items-start gap-4">
             <div className="w-8 h-8 rounded-full bg-[#f8b4b4] text-[#9b1c1c] flex items-center justify-center shrink-0 mt-1">
-              <AlertTriangle className="w-4 h-4" />
+              <Info className="w-4 h-4" />
             </div>
-            <div className="flex-1">
-              <h2 className="text-lg font-bold text-[#9b1c1c] mb-2">
-                {kenaPenalti ? "Kuota Anda sedang dibatasi" : "Tindakan Diperlukan"}
-              </h2>
+            <div>
+              <h2 className="text-lg font-bold text-[#9b1c1c] mb-2">Kuota Anda sedang dibatasi</h2>
               <p className="text-sm text-[#c81e1e] leading-relaxed">
-                {kenaPenalti ? (
-                  <>
-                    Rasio shortfall Anda melewati ambang{" "}
-                    <strong className="font-black">{SHORTFALL_PENALTY_THRESHOLD_PCT}%</strong>,
-                    sehingga pengali kuota diturunkan ke{" "}
-                    <strong className="font-black">{pengali}x</strong>. Pengali kembali normal
-                    setelah rasio turun di bawah ambang pada siklus berikutnya.
-                  </>
-                ) : (
-                  <>
-                    Rasio shortfall Anda <strong className="font-black">({shortfall}%)</strong>{" "}
-                    mendekati ambang batas kritis {SHORTFALL_PENALTY_THRESHOLD_PCT}%. Jika
-                    terlewati, kuota pembukaan PO Anda dikurangi otomatis pada siklus berikutnya.
-                  </>
-                )}
+                Realisasi panen Anda menyimpang dari pola wajar pada beberapa siklus
+                terakhir, sehingga pengali kuota diturunkan ke{" "}
+                <strong className="font-black">{pengali}x</strong>. Pengali kembali normal
+                setelah {SHORTFALL_PENALTY_ROLLING_CYCLES} siklus realisasi Anda kembali
+                dalam batas wajar.
               </p>
             </div>
           </div>
@@ -97,46 +96,29 @@ export default function ReputationPage() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-sans">
-        {/* Rasio Shortfall */}
+        {/* Rasio Shortfall — angka apa adanya, tanpa bar "jarak ke ambang". */}
         <div className="border border-gray-200 rounded-xl p-6 shadow-sm flex flex-col justify-between min-h-[220px]">
           <div>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2 font-bold text-gray-900">
-                <AlertTriangle
-                  className={`w-4 h-4 ${shortfall !== null && shortfall >= SHORTFALL_PENALTY_THRESHOLD_PCT ? "text-red-600" : "text-gray-400"}`}
-                />{" "}
-                Rasio Shortfall
+                <TrendingDown className="w-4 h-4 text-gray-400" /> Rasio Shortfall
               </div>
-              <TrendingDown className="w-12 h-12 text-[#fbd5d5] opacity-50" />
             </div>
             <div
-              className={`text-4xl font-black mb-4 ${
-                shortfall === null
-                  ? "text-gray-300"
-                  : shortfall >= SHORTFALL_PENALTY_THRESHOLD_PCT
-                    ? "text-[#c81e1e]"
-                    : "text-[#0a381f]"
-              }`}
+              className={`text-4xl font-black mb-2 ${shortfall === null ? "text-gray-300" : "text-[#0a381f]"}`}
             >
               {shortfall === null ? "—" : `${shortfall}%`}
-            </div>
-            <div className="w-full bg-[#fdf2f2] rounded-full h-2 mb-4">
-              <div
-                className="bg-[#c81e1e] h-2 rounded-full"
-                style={{
-                  width: `${Math.min(((shortfall ?? 0) / SHORTFALL_PENALTY_THRESHOLD_PCT) * 100, 100)}%`,
-                }}
-              />
             </div>
           </div>
           <p className="text-[10px] text-gray-500">
             {shortfall === null
               ? "Belum ada siklus panen selesai — rasio baru muncul setelah batch pertama ditutup."
-              : `Bagian kuota terjual yang gagal dikirim. Ambang penalti ${SHORTFALL_PENALTY_THRESHOLD_PCT}%.`}
+              : "Bagian kuota terjual yang tidak terpenuhi, dirata-rata pada siklus terakhir."}
           </p>
         </div>
 
-        {/* Rasio Klaim Mutu */}
+        {/* Rasio Klaim Mutu — TIDAK punya masalah yang sama: pengajunya PEMBELI, bukan
+            pihak yang diuntungkan bila angkanya salah. Target 5% boleh ditampilkan. */}
         <div className="border border-gray-200 rounded-xl p-6 shadow-sm flex flex-col justify-between min-h-[220px]">
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -174,7 +156,7 @@ export default function ReputationPage() {
           </p>
         </div>
 
-        {/* Quota Multiplier */}
+        {/* Quota Multiplier — nilai berjalan, tanpa skala yang membocorkan batasnya. */}
         <div className="border border-gray-200 rounded-xl p-6 shadow-sm flex flex-col justify-between min-h-[220px]">
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -183,23 +165,11 @@ export default function ReputationPage() {
               </div>
               <Scale className="w-12 h-12 text-[#f3e8d2] opacity-50" />
             </div>
-            <div className="text-4xl font-black text-amber-900 mb-4">{pengali}x</div>
-            <div className="flex gap-1 mb-4 h-2">
-              {Array.from({ length: 5 }, (_, i) => (
-                <div
-                  key={i}
-                  className={`flex-1 rounded-full ${
-                    i < Math.round((pengali / QUOTA_MULTIPLIER_NORMAL) * 5)
-                      ? "bg-amber-900"
-                      : "bg-[#eef3fb]"
-                  }`}
-                />
-              ))}
-            </div>
+            <div className="text-4xl font-black text-amber-900 mb-2">{pengali}x</div>
           </div>
           <p className="text-[10px] text-gray-500">
             {kenaPenalti
-              ? `Dibatasi ke ${pengali}x akibat shortfall siklus lalu (normal ${QUOTA_MULTIPLIER_NORMAL}x).`
+              ? `Dibatasi ke ${pengali}x. Nilai normal ${QUOTA_MULTIPLIER_NORMAL}x.`
               : `Kuota PO maksimum = luas lahan × rendemen × ${pengali}x. Ini nilai normal.`}
           </p>
         </div>

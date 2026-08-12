@@ -2,9 +2,9 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { Package, Truck } from "lucide-react";
-import { GalatApi, ambilPesanan } from "@/lib/api";
-import type { OrderSummary, ShipmentStatus } from "@agro-os/shared";
+import { Package, Star, Truck } from "lucide-react";
+import { GalatApi, ambilPesanan, ambilSenioritas } from "@/lib/api";
+import type { BuyerSeniority, OrderSummary, ShipmentStatus } from "@agro-os/shared";
 
 const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
 const tgl = (iso: string) =>
@@ -23,6 +23,7 @@ const TAHAP: Record<ShipmentStatus, { label: string; kelas: string }> = {
 
 export default function OrdersPage() {
   const [pesanan, setPesanan] = useState<OrderSummary[]>([]);
+  const [senioritas, setSenioritas] = useState<BuyerSeniority[]>([]);
   const [memuat, setMemuat] = useState(true);
   const [galat, setGalat] = useState("");
 
@@ -31,6 +32,12 @@ export default function OrdersPage() {
       .then((d) => { setPesanan(d); setGalat(""); })
       .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat pesanan"))
       .finally(() => setMemuat(false));
+
+    // Senioritas bukan bagian dari pesanan mana pun, jadi diambil terpisah — dan
+    // kegagalannya tidak boleh menggagalkan daftar pesanan.
+    ambilSenioritas()
+      .then(setSenioritas)
+      .catch(() => setSenioritas([]));
   }, []);
 
   if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat pesanan…</div>;
@@ -65,6 +72,29 @@ export default function OrdersPage() {
   return (
     <div className="p-8 max-w-4xl">
       <h1 className="text-2xl font-bold text-emerald-950 mb-6">Pesanan Saya</h1>
+
+      {/* BY-11d — separuh nilai FR-7.13 ada di banner ini.
+          Senioritas yang tidak diberitahukan tidak menghasilkan retensi: pembeli tetap
+          merasa dirugikan dan tetap pergi, sementara platform sudah membayar biayanya
+          dengan mengurangi prioritas orang lain. Kompensasinya harus terlihat. */}
+      {senioritas.length > 0 && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 mb-6">
+          <div className="flex items-start gap-3">
+            <Star className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-emerald-900">
+                Pesanan Anda diprioritaskan pada panen berikutnya
+              </p>
+              <p className="text-xs text-emerald-800 mt-0.5">
+                Karena panen sebelumnya tidak mencukupi, pesanan Anda didahulukan pada
+                panen berikutnya dari{" "}
+                <b>{senioritas.map((s) => s.tenantName).join(", ")}</b> — mendahului urutan
+                waktu pembayaran. Berlaku satu siklus.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-4">
         {pesanan.map((o) => (

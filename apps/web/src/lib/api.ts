@@ -11,6 +11,7 @@ import type {
   AuthUser,
   BuyerOrderDetail,
   BuyerProfileResponse,
+  BuyerSeniority,
   CancelOrderResponse,
   CatalogItem,
   ClaimResponse,
@@ -184,6 +185,12 @@ export const ajukanKlaim = (shipmentId: string, body: FileClaimBody) =>
 
 export const ambilKlaim = (shipmentId: string) =>
   ambil<ClaimResponse[]>(`/shipments/${shipmentId}/claims`);
+
+/**
+ * FR-7.13 / BY-11d — Tenant yang akan memprioritaskan pesanan pembeli ini pada panen
+ * berikutnya, karena siklus lalu ia terkena shortfall.
+ */
+export const ambilSenioritas = () => ambil<BuyerSeniority[]>("/buyer/seniority");
 
 export const ambilProfilPembeli = () => ambil<BuyerProfileResponse>("/buyer/profile");
 

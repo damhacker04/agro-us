@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import type { BuyerProfileResponse } from "@agro-os/shared";
+import type { BuyerProfileResponse, BuyerSeniority } from "@agro-os/shared";
 import { PrismaService } from "../../prisma/prisma.service";
 
 @Injectable()
@@ -47,6 +47,30 @@ export class BuyerService {
       },
     });
     return this.getProfile(userId);
+  }
+
+  /**
+   * Senioritas aktif pembeli ini (FR-7.13) — dasar banner BY-11d.
+   *
+   * Diberi endpoint sendiri, bukan ditempelkan ke tiap OrderSummary: senioritas melekat
+   * pada pasangan (pembeli, Tenant), bukan pada satu pesanan. Menyalinnya ke setiap
+   * pesanan akan membuat banner yang sama terulang dan tidak jelas merujuk siklus mana.
+   *
+   * Yang dikembalikan hanya yang BELUM terpakai — begitu dipakai pada panen berikutnya,
+   * senioritasnya gugur dan bannernya harus ikut hilang.
+   */
+  async listSeniority(userId: string): Promise<BuyerSeniority[]> {
+    const buyer = await this.requireBuyer(userId);
+    const rows = await this.prisma.shortfallSeniority.findMany({
+      where: { buyerId: buyer.id, consumedAt: null },
+      orderBy: { grantedAt: "desc" },
+      include: { tenant: { select: { id: true, companyName: true } } },
+    });
+    return rows.map((r) => ({
+      tenantId: r.tenant.id,
+      tenantName: r.tenant.companyName,
+      grantedAt: r.grantedAt.toISOString(),
+    }));
   }
 
   async requireBuyer(userId: string) {

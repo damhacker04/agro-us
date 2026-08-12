@@ -30,6 +30,12 @@ export class BuyerController {
   update(@CurrentUser() u: JwtPayload, @Body() dto: UpdateBuyerProfileDto) {
     return this.buyers.updateProfile(u.sub, dto);
   }
+
+  /** FR-7.13 / BY-11d — Tenant mana saja yang akan memprioritaskan pesanan pembeli ini. */
+  @Get("seniority")
+  seniority(@CurrentUser() u: JwtPayload) {
+    return this.buyers.listSeniority(u.sub);
+  }
 }
 
 @Controller("orders")
