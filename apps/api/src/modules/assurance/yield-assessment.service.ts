@@ -385,7 +385,16 @@ export class YieldAssessmentService {
              p.qty_kg_per_box::text,
              c.avg_yield_kg_per_ha::text,
              lp.effective_area_ha::text,
-             b.peak_ndvi::text,
+             -- Puncak NDVI hanya sah bila ADA amatan yang mendukungnya.
+             --
+             -- Kolomnya diisi worker satelit dari deret amatan. Nilai yang muncul tanpa
+             -- satu pun amatan layak berarti ia datang dari tempat lain — seed, migrasi,
+             -- atau tangan manusia — dan membangun pita di atasnya sama dengan menilai
+             -- orang memakai bukti yang tidak pernah ada. Lebih baik TIDAK_DAPAT_DINILAI.
+             CASE WHEN EXISTS (
+                    SELECT 1 FROM satellite_observations o
+                     WHERE o.land_plot_id = lp.id AND o.usable
+                  ) THEN b.peak_ndvi::text END AS peak_ndvi,
              c.id::text AS commodity_id,
              b.claimed_harvest_date,
              -- Zona pengiriman batch ini, diambil dari tujuan terbanyak.
