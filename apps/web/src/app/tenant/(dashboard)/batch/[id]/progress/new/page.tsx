@@ -4,8 +4,9 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Camera, Loader2, MapPin } from "lucide-react";
 import Link from "next/link";
-import { GalatApi, tambahNodeTimeline } from "@/lib/api";
-import { TimelineActivity } from "@agro-os/shared";
+import { GalatApi, deklarasiPanen, konfirmasiPanen, tambahNodeTimeline } from "@/lib/api";
+import { TimelineActivity, type HarvestPreviewResponse } from "@agro-os/shared";
+import { PenilaianPanen } from "./PenilaianPanen";
 
 /** Tujuh jenis kegiatan terstruktur, bukan teks bebas (§5.4.1) — supaya bisa dibandingkan
  *  antar batch dan antar Tenant, dan supaya satelit punya acuan yang jelas. */
@@ -33,6 +34,10 @@ export default function TambahNodePage({ params }: { params: Promise<{ id: strin
   const [proses, setProses] = useState(false);
   const [galat, setGalat] = useState("");
 
+  // Alur panen dua langkah (sequence 04b). Selama `pratinjau` terisi, layar berpindah ke
+  // TN-19b/19c/19a dan BELUM ada apa pun yang tertulis — itu seluruh gunanya.
+  const [pratinjau, setPratinjau] = useState<HarvestPreviewResponse | null>(null);
+
   const perluJumlahPanen = jenis === "PANEN";
 
   function ambilLokasi() {
@@ -45,29 +50,56 @@ export default function TambahNodePage({ params }: { params: Promise<{ id: strin
     );
   }
 
+  /** Susun badan multipart node timeline. Sama untuk jalur biasa maupun konfirmasi panen. */
+  function susunForm(): FormData {
+    const form = new FormData();
+    form.append("activityType", jenis);
+    form.append("description", deskripsi);
+    form.append("lat", lat);
+    form.append("lng", lng);
+    // Waktu perangkat direkam otomatis, tidak diketik pengguna (§5.4.1). Server menolak
+    // stempel waktu yang lebih maju dari waktunya sendiri.
+    form.append("deviceTs", new Date().toISOString());
+    form.append("captureSource", "IN_APP_CAMERA");
+    if (alasanLuar) form.append("outsidePolygonReason", alasanLuar);
+    if (perluJumlahPanen && fulfilledBox) form.append("fulfilledBox", fulfilledBox);
+    if (berkas) form.append("photos", berkas);
+    return form;
+  }
+
   async function simpan(e: React.FormEvent) {
     e.preventDefault();
     if (!berkas) return setGalat("Foto bukti wajib dilampirkan.");
     setGalat("");
     setProses(true);
     try {
-      const form = new FormData();
-      form.append("activityType", jenis);
-      form.append("description", deskripsi);
-      form.append("lat", lat);
-      form.append("lng", lng);
-      // Waktu perangkat direkam otomatis, tidak diketik pengguna (§5.4.1). Server menolak
-      // stempel waktu yang lebih maju dari waktunya sendiri.
-      form.append("deviceTs", new Date().toISOString());
-      form.append("captureSource", "IN_APP_CAMERA");
-      if (alasanLuar) form.append("outsidePolygonReason", alasanLuar);
-      if (perluJumlahPanen && fulfilledBox) form.append("fulfilledBox", fulfilledBox);
-      form.append("photos", berkas);
-
-      await tambahNodeTimeline(batchId, form);
+      // PANEN tidak langsung ditulis. Nilai kewajarannya dulu, tampilkan dampaknya, baru
+      // minta konfirmasi — supaya peringatan datang sebelum konsekuensi, bukan sesudah.
+      if (perluJumlahPanen) {
+        setPratinjau(await deklarasiPanen(batchId, Number(fulfilledBox || 0)));
+        setProses(false);
+        return;
+      }
+      await tambahNodeTimeline(batchId, susunForm());
       router.push(`/tenant/batch/${batchId}`);
     } catch (err) {
       setGalat(err instanceof GalatApi ? err.message : "Gagal menyimpan catatan.");
+      setProses(false);
+    }
+  }
+
+  /** Langkah 2 — angka yang dikonfirmasi wajib angka yang dinilai, karena itu id-nya ikut. */
+  async function konfirmasi() {
+    if (!pratinjau) return;
+    setGalat("");
+    setProses(true);
+    try {
+      const form = susunForm();
+      form.append("assessmentId", pratinjau.assessment.assessmentId);
+      await konfirmasiPanen(batchId, form);
+      router.push(`/tenant/batch/${batchId}`);
+    } catch (err) {
+      setGalat(err instanceof GalatApi ? err.message : "Gagal mengonfirmasi panen.");
       setProses(false);
     }
   }
@@ -81,13 +113,30 @@ export default function TambahNodePage({ params }: { params: Promise<{ id: strin
         <ArrowLeft className="w-4 h-4" /> Kembali ke Batch
       </Link>
 
-      <h1 className="text-2xl font-bold text-emerald-950 mb-1">Catat Kegiatan</h1>
+      <h1 className="text-2xl font-bold text-emerald-950 mb-1">
+        {pratinjau ? "Periksa dampaknya" : "Catat Kegiatan"}
+      </h1>
       <p className="text-sm text-gray-500 mb-6">
-        Catatan bersifat <b>permanen</b>. Tidak bisa diubah atau dihapus — koreksi dilakukan
-        dengan menambah catatan Ralat yang menunjuk catatan lama, dan keduanya tetap terlihat
-        pembeli.
+        {pratinjau
+          ? "Belum ada yang tercatat. Anda masih bisa kembali dan mengubah angkanya."
+          : "Catatan bersifat permanen. Tidak bisa diubah atau dihapus — koreksi dilakukan dengan menambah catatan Ralat yang menunjuk catatan lama, dan keduanya tetap terlihat pembeli."}
       </p>
 
+      {pratinjau ? (
+        <div className="space-y-4">
+          <PenilaianPanen
+            data={pratinjau}
+            memproses={proses}
+            onBatal={() => setPratinjau(null)}
+            onLanjut={konfirmasi}
+          />
+          {galat && (
+            <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {galat}
+            </p>
+          )}
+        </div>
+      ) : (
       <form onSubmit={simpan} className="space-y-4">
         <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
           <div>
@@ -123,7 +172,7 @@ export default function TambahNodePage({ params }: { params: Promise<{ id: strin
           {perluJumlahPanen && (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                Jumlah box hasil panen aktual
+                Total box hasil panen
               </label>
               <input
                 type="number"
@@ -133,8 +182,12 @@ export default function TambahNodePage({ params }: { params: Promise<{ id: strin
                 placeholder="mis. 150"
                 className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
               />
+              {/* Wajib TOTAL, bukan "porsi untuk pesanan". Pita kewajaran membandingkannya
+                  dengan kapasitas lahan; kalau yang diisi hanya porsi terjual, Tenant yang
+                  jujur pun akan tampak kekurangan hasil. */}
               <p className="text-xs text-gray-400 mt-1">
-                Kosongkan bila seluruh kuota terjual terpenuhi.
+                Seluruh hasil panen dari lahan ini, termasuk yang tidak terjual lewat AgroUs.
+                Yang masuk ke pesanan dihitung otomatis.
               </p>
             </div>
           )}
@@ -233,9 +286,16 @@ export default function TambahNodePage({ params }: { params: Promise<{ id: strin
           className="w-full bg-emerald-950 text-white text-sm font-semibold py-3 rounded-lg hover:bg-emerald-800 disabled:opacity-60 flex items-center justify-center gap-2"
         >
           {proses && <Loader2 className="w-4 h-4 animate-spin" />}
-          {proses ? "Menyimpan…" : "Simpan Catatan Permanen"}
+          {proses
+            ? perluJumlahPanen
+              ? "Memeriksa…"
+              : "Menyimpan…"
+            : perluJumlahPanen
+              ? "Lihat dampaknya sebelum mencatat"
+              : "Simpan Catatan Permanen"}
         </button>
       </form>
+      )}
     </div>
   );
 }

@@ -10,6 +10,17 @@ import { PrismaService } from "../../prisma/prisma.service";
  * ST_Area(::geography). Angka ini yang nantinya membatasi kuota PO 70% (FR-3.3),
  * jadi kalau bisa dikirim klien, Tenant bisa mengarang kapasitas lahannya.
  */
+/**
+ * Lebar pinggiran poligon yang dibuang saat menghitung luas EFEKTIF — satu piksel
+ * Sentinel-2 (FR-4.10, ERD v2.3 poin 8).
+ *
+ * Piksel di tepi poligon selalu bercampur jalan, pematang, saluran, dan tajuk pohon
+ * tetangga. NDVI-nya bukan NDVI tanaman Tenant. Pita kewajaran memakai luas efektif;
+ * kuota PO tetap memakai luas nominal — menyamakan keduanya membuat pita sistematis
+ * terlalu tinggi sehingga SETIAP Tenant terlihat kekurangan hasil.
+ */
+const EDGE_PIXEL_M = 10;
+
 @Injectable()
 export class LandPlotService {
   constructor(private readonly prisma: PrismaService) {}
@@ -61,14 +72,26 @@ export class LandPlotService {
 
     const geojson = JSON.stringify(polygon);
 
-    let rows: Array<{ valid: boolean; reason: string | null; gtype: string; area_ha: string }>;
+    let rows: Array<{
+      valid: boolean;
+      reason: string | null;
+      gtype: string;
+      area_ha: string;
+      effective_area_ha: string | null;
+    }>;
     try {
       rows = await this.prisma.$queryRaw`
         SELECT
           ST_IsValid(g)            AS valid,
           ST_IsValidReason(g)      AS reason,
           ST_GeometryType(g)       AS gtype,
-          (ST_Area(g::geography) / 10000.0)::numeric(12,4) AS area_ha
+          (ST_Area(g::geography) / 10000.0)::numeric(12,4) AS area_ha,
+          -- Buffer NEGATIF: kikis selebar satu piksel, sisakan bagian dalam yang
+          -- pikselnya benar-benar milik lahan ini. NULL bila poligon habis terkikis —
+          -- lahan sesempit itu tidak punya interior yang teramati andal, dan menuliskan
+          -- 0 akan terbaca sebagai "luasnya nol" alih-alih "tidak dapat dihitung".
+          NULLIF(ST_Area(ST_Buffer(g::geography, ${-EDGE_PIXEL_M})) / 10000.0, 0)::numeric(12,4)
+                                   AS effective_area_ha
         FROM ST_SetSRID(ST_GeomFromGeoJSON(${geojson}), 4326) AS g
       `;
     } catch {
@@ -98,11 +121,12 @@ export class LandPlotService {
     if (!Number.isFinite(areaHa) || areaHa <= 0) {
       throw new BadRequestException({ code: "POLYGON_ZERO_AREA", message: "Luas poligon nol." });
     }
-    return { areaHa };
+    const efektif = row.effective_area_ha === null ? null : Number(row.effective_area_ha);
+    return { areaHa, effectiveAreaHa: efektif && efektif > 0 ? efektif : null };
   }
 
   async create(tenantId: string, polygon: GeoJsonPolygon, captureMethod: "GAMBAR_PETA" | "WALK_AROUND") {
-    const { areaHa } = await this.inspectPolygon(polygon);
+    const { areaHa, effectiveAreaHa } = await this.inspectPolygon(polygon);
 
     // FR-1.6 — di bawah 0,1 ha resolusi Sentinel-2 tidak andal. Lahan tetap boleh
     // didaftarkan, tapi ditandai TERBATAS dan ditampilkan apa adanya ke pembeli.
@@ -110,11 +134,13 @@ export class LandPlotService {
     const geojson = JSON.stringify(polygon);
 
     const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
-      INSERT INTO land_plots (tenant_id, polygon, area_ha, capture_method, verification_tier)
+      INSERT INTO land_plots
+        (tenant_id, polygon, area_ha, effective_area_ha, capture_method, verification_tier)
       VALUES (
         ${tenantId}::uuid,
         ST_SetSRID(ST_GeomFromGeoJSON(${geojson}), 4326),
         ${areaHa},
+        ${effectiveAreaHa},
         ${captureMethod}::"CaptureMethod",
         ${verificationTier}::"VerificationTier"
       )

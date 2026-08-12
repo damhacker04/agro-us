@@ -904,6 +904,40 @@ export interface AllocationPreview {
   unfulfilled: AllocationLine[];
 }
 
+/**
+ * Hasil penilaian Pita Kewajaran Hasil (FR-4.10) — dikirim ke layar TN-19b/TN-19c.
+ *
+ * Perhatikan yang TIDAK ada di sini: tidak ada ambang, tidak ada "seberapa jauh lagi
+ * sampai dihukum", tidak ada skor. Rentang pita boleh tampil karena itu perkiraan
+ * sistem tentang lahan Tenant sendiri; ambangnya parameter server (FR-7.12c).
+ */
+export interface YieldAssessmentResult {
+  /** Wajib disertakan saat konfirmasi — angka yang dikonfirmasi harus angka yang dinilai. */
+  assessmentId: string;
+  verdict: YieldPlausibility;
+  basis: AssessmentBasis;
+  reportedBox: number;
+  /** null saat `TIDAK_DAPAT_DINILAI` — pita memang tidak dihitung, bukan dihitung nol. */
+  expectedMinBox: number | null;
+  expectedMaxBox: number | null;
+  peakNdvi: number | null;
+  zoneBenchmarkRatio: number | null;
+  /** Di bawah `MIN_BENCHMARK_SAMPLE`, benchmark tidak dipakai (FR-7.12e). */
+  zoneSampleCount: number;
+  /** Kalimat siap tampil untuk Tenant. Nada informatif, bukan menuduh. */
+  reason: string;
+}
+
+/** Balasan `POST /tenant/batches/:id/harvest` — penilaian + pratinjau, belum menulis apa pun. */
+export interface HarvestPreviewResponse {
+  assessment: YieldAssessmentResult;
+  allocation: AllocationPreview;
+  /** true bila melanjutkan akan menggugurkan cap 10% (FR-7.11) — dasar layar TN-19b. */
+  capWillBeWaived: boolean;
+  /** Box yang benar-benar masuk ke pesanan: min(dilaporkan, kuota terjual). */
+  allocatableBox: number;
+}
+
 export interface AllocationLine {
   orderItemId: string;
   buyerName: string;

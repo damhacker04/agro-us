@@ -7,12 +7,13 @@ import {
 } from "./assurance.controller";
 import { AllocationService } from "./allocation.service";
 import { AssuranceService } from "./assurance.service";
+import { YieldAssessmentService } from "./yield-assessment.service";
 
 @Module({
   imports: [TenantModule],
   controllers: [AssuranceController, OrderCancellationController, TenantAllocationController],
-  providers: [AllocationService, AssuranceService],
-  // TimelineModule memakai AllocationService saat node PANEN disimpan.
-  exports: [AllocationService],
+  providers: [AllocationService, AssuranceService, YieldAssessmentService],
+  // TimelineModule memakai keduanya pada alur panen dua langkah (HarvestService).
+  exports: [AllocationService, YieldAssessmentService],
 })
 export class AssuranceModule {}

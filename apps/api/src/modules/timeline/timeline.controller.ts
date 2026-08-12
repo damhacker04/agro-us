@@ -19,10 +19,24 @@ import { TenantService } from "../tenant/tenant.service";
 import { TimelineService, type UploadedPhoto } from "./timeline.service";
 import { AnchorService } from "./anchor.service";
 import { NdviService } from "./ndvi.service";
-import { CreateNodeDto } from "./timeline.dto";
+import { CreateNodeDto, DeclareHarvestDto } from "./timeline.dto";
+import { HarvestService } from "./harvest.service";
 
 const MAX_PHOTOS = 5;
 const MAX_PHOTO_BYTES = 12 * 1024 * 1024; // 12 MB — foto ponsel tanpa kompresi ulang
+
+/** Multer menerima berkas apa pun; tipe gambar diperiksa di sini sebelum menyentuh disk. */
+function bacaFoto(files: Express.Multer.File[]): UploadedPhoto[] {
+  return files.map((f) => {
+    if (!f.mimetype.startsWith("image/")) {
+      throw new BadRequestException({
+        code: "PHOTO_NOT_IMAGE",
+        message: `Berkas "${f.originalname}" bukan gambar.`,
+      });
+    }
+    return { buffer: f.buffer, originalname: f.originalname, mimetype: f.mimetype, size: f.size };
+  });
+}
 
 /** Sisi Tenant: HANYA menambah node. Tidak ada endpoint ubah/hapus (FR-4.1). */
 @Controller("tenant/batches/:batchId/timeline")
@@ -48,20 +62,54 @@ export class TenantTimelineController {
   ) {
     const t = await this.tenant.requireTenant(u.sub);
 
-    const photos: UploadedPhoto[] = files.map((f) => {
-      if (!f.mimetype.startsWith("image/")) {
-        throw new BadRequestException({ code: "PHOTO_NOT_IMAGE", message: `Berkas "${f.originalname}" bukan gambar.` });
-      }
-      return { buffer: f.buffer, originalname: f.originalname, mimetype: f.mimetype, size: f.size };
-    });
-
-    return this.timeline.appendNode(t.id, batchId, dto, photos);
+    return this.timeline.appendNode(t.id, batchId, dto, bacaFoto(files));
   }
 
   @Get()
   async list(@CurrentUser() u: JwtPayload, @Param("batchId", ParseUUIDPipe) batchId: string) {
     await this.tenant.requireTenant(u.sub);
     return this.timeline.listNodes(batchId);
+  }
+}
+
+/**
+ * Alur panen dua langkah (sequence 04b) — TN-19 → TN-19b/19c → TN-19a.
+ *
+ * Terpisah dari controller node timeline di atas supaya jalur lama tetap utuh selama
+ * jalur ini belum terverifikasi di produksi.
+ */
+@Controller("tenant/batches/:batchId/harvest")
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles("TENANT")
+export class TenantHarvestController {
+  constructor(
+    private readonly tenant: TenantService,
+    private readonly harvest: HarvestService,
+  ) {}
+
+  /** Langkah 1 — menilai dan memperagakan dampak. Tidak menulis timeline. */
+  @Post()
+  @HttpCode(200)
+  async declare(
+    @CurrentUser() u: JwtPayload,
+    @Param("batchId", ParseUUIDPipe) batchId: string,
+    @Body() dto: DeclareHarvestDto,
+  ) {
+    const t = await this.tenant.requireTenant(u.sub);
+    return this.harvest.declare(t.id, batchId, dto.actualBox);
+  }
+
+  /** Langkah 2 — konfirmasi: node timeline + alokasi + penalti. */
+  @Post("confirm")
+  @UseInterceptors(FilesInterceptor("photos", MAX_PHOTOS, { limits: { fileSize: MAX_PHOTO_BYTES } }))
+  async confirm(
+    @CurrentUser() u: JwtPayload,
+    @Param("batchId", ParseUUIDPipe) batchId: string,
+    @Body() dto: CreateNodeDto,
+    @UploadedFiles() files: Express.Multer.File[] = [],
+  ) {
+    const t = await this.tenant.requireTenant(u.sub);
+    return this.harvest.confirm(t.id, batchId, dto, bacaFoto(files));
   }
 }
 

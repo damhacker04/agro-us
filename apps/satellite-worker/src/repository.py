@@ -169,14 +169,23 @@ class Repository:
         status: str,
         detected_plant_date: date | None,
         detected_harvest_date: date | None,
+        peak_ndvi: float | None = None,
     ) -> None:
+        """Simpan hasil verifikasi + puncak NDVI siklus (masukan pita kewajaran, FR-4.10).
+
+        `peak_ndvi` HANYA ditimpa bila nilai baru tersedia. Satu hari mendung tidak boleh
+        menghapus puncak yang sudah terukur benar minggu lalu — kalau dihapus, batch yang
+        tadinya dapat dinilai berubah menjadi TIDAK_DAPAT_DINILAI hanya karena cuaca hari
+        ini, dan hasil penilaian Tenant ikut berubah tanpa ada yang benar-benar berubah.
+        """
         sql = """
             UPDATE batches
             SET verification_status = %s::"VerificationStatus",
                 detected_plant_date = %s,
-                detected_harvest_date = %s
+                detected_harvest_date = %s,
+                peak_ndvi = COALESCE(%s, peak_ndvi)
             WHERE id = %s::uuid
         """
         with self._connect() as conn, conn.cursor() as cur:
-            cur.execute(sql, (status, detected_plant_date, detected_harvest_date, batch_id))
+            cur.execute(sql, (status, detected_plant_date, detected_harvest_date, peak_ndvi, batch_id))
             conn.commit()

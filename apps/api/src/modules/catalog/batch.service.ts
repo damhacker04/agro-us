@@ -11,14 +11,27 @@ export class BatchService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Batas kuota PO (FR-3.3):
+   * Batas kuota PO (FR-3.3, aturan integritas ERD #2):
    *
-   *   maxBox = floor( areaHa × avgYieldKgPerHa ÷ qtyKgPerBox × quotaMultiplier )
+   *   maxBox = floor( luasEfektifHa × avgYieldKgPerHa ÷ qtyKgPerBox × quotaMultiplier )
    *
    * `quotaMultiplier` merangkap dua peran: bantalan 70% terhadap gagal panen (Risiko 2)
    * DAN penalti shortfall yang menurunkannya ke 0,50 (FR-7.12).
    *
    * Kapasitas dihitung dari luas poligon hasil ukur PostGIS — bukan angka kiriman Tenant.
+   *
+   * ⚠️ MEMAKAI LUAS EFEKTIF, BUKAN NOMINAL — dan itu bukan detail sepele.
+   *
+   * Pita kewajaran hasil (FR-4.10) dihitung dari luas efektif. Bila kuota memakai luas
+   * nominal sementara pita memakai luas efektif, pita SELALU berada di bawah kuota, dengan
+   * selisih yang melebar makin kecil lahannya (~77% nominal pada 2,7 ha, ~25% pada 0,15 ha).
+   * Akibatnya Tenant yang memenuhi kuotanya selalu berada di atas pita dan tidak pernah
+   * dapat ditandai — FR-4.10 berubah menjadi hiasan.
+   *
+   * Dokumen ERD memuat kedua versi: catatan poin 8 menulis "kuota memakai luas nominal",
+   * sedangkan aturan integritas #2 menulis rumusnya memakai `effective_area_ha`. Yang
+   * dipakai di sini adalah aturan #2, karena hanya versi itu yang membuat mekanismenya
+   * bekerja. Alasan poin 8 sendiri — jangan pakai nominal untuk PITA — tetap dihormati.
    */
   async getCapacity(
     tenantId: string,
@@ -27,7 +40,10 @@ export class BatchService {
     qtyKgPerBox: number,
   ): Promise<LandPlotCapacityResponse> {
     const [plot, commodity, tenant] = await Promise.all([
-      this.prisma.landPlot.findFirst({ where: { id: landPlotId, tenantId }, select: { id: true, areaHa: true } }),
+      this.prisma.landPlot.findFirst({
+        where: { id: landPlotId, tenantId },
+        select: { id: true, areaHa: true, effectiveAreaHa: true },
+      }),
       this.prisma.commodity.findUnique({ where: { id: commodityId }, select: { avgYieldKgPerHa: true } }),
       this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { quotaMultiplier: true } }),
     ]);
@@ -35,7 +51,10 @@ export class BatchService {
     if (!commodity) throw new BadRequestException({ code: "COMMODITY_UNKNOWN", message: "Komoditas tidak dikenal." });
     if (qtyKgPerBox <= 0) throw new BadRequestException({ code: "BOX_SIZE_INVALID", message: "Isi per box harus > 0." });
 
-    const areaHa = Number(plot.areaHa);
+    // Fallback ke luas nominal hanya bila luas efektif belum pernah terhitung — poligon
+    // lama, atau lahan yang habis terkikis satu piksel. Ini jalur yang lebih longgar,
+    // jadi sengaja dibiarkan sempit: poligon baru selalu mengisi kolomnya saat dibuat.
+    const areaHa = Number(plot.effectiveAreaHa ?? plot.areaHa);
     const avgYieldKgPerHa = Number(commodity.avgYieldKgPerHa);
     const quotaMultiplier = Number(tenant!.quotaMultiplier);
     const maxQuotaBox = Math.floor((areaHa * avgYieldKgPerHa * quotaMultiplier) / qtyKgPerBox);
@@ -86,7 +105,7 @@ export class BatchService {
         code: "QUOTA_EXCEEDS_CAPACITY",
         message:
           `Kuota melebihi kapasitas lahan. Maksimal ${cap.maxQuotaBox} box ` +
-          `(luas ${cap.areaHa} ha × rendemen ${cap.avgYieldKgPerHa} kg/ha ÷ ${cap.qtyKgPerBox} kg per box, ` +
+          `(luas efektif ${cap.areaHa} ha × rendemen ${cap.avgYieldKgPerHa} kg/ha ÷ ${cap.qtyKgPerBox} kg per box, ` +
           `dibatasi ${Math.round(cap.quotaMultiplier * 100)}% sebagai cadangan gagal panen).`,
         maxQuotaBox: cap.maxQuotaBox,
       });

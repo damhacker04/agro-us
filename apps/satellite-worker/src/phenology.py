@@ -70,6 +70,11 @@ class Phenology:
     detected_plant_date: date | None
     detected_harvest_date: date | None
     reason: str
+    # Puncak NDVI sepanjang siklus — masukan pita kewajaran hasil (FR-4.10).
+    # None berarti siklusnya tidak pernah teramati cukup untuk menyebut ada puncak;
+    # itu bukan "puncaknya rendah", melainkan "tidak tahu", dan bedanya menentukan
+    # apakah Tenant boleh dinilai sama sekali.
+    peak_ndvi: float | None = None
 
 
 @dataclass(frozen=True)
@@ -80,6 +85,7 @@ class Verdict:
     plant_diff_days: int | None
     harvest_diff_days: int | None
     reason: str
+    peak_ndvi: float | None = None
 
 
 def detect_phenology(observations: list[Observation], expected_harvest: date | None = None) -> Phenology:
@@ -140,9 +146,16 @@ def detect_phenology(observations: list[Observation], expected_harvest: date | N
             harvest = o.scene_date
             break
 
+    # Puncak NDVI diukur dari SAAT TAJUK MULAI TERBENTUK sampai panen — bukan dari
+    # seluruh deret. Di luar rentang itu yang terekam adalah tanaman siklus sebelumnya
+    # atau gulma pascapanen, dan keduanya akan menaikkan pita untuk tanaman yang salah.
+    akhir = next((i for i, o in enumerate(usable) if harvest and o.scene_date > harvest), len(usable))
+    siklus = usable[canopy_idx:akhir]
+    peak = max((o.ndvi_mean for o in siklus), default=None)
+
     if harvest is None:
-        return Phenology(plant, None, "Penanaman terdeteksi, panen belum terlihat")
-    return Phenology(plant, harvest, "Penanaman dan panen terdeteksi")
+        return Phenology(plant, None, "Penanaman terdeteksi, panen belum terlihat", peak)
+    return Phenology(plant, harvest, "Penanaman dan panen terdeteksi", peak)
 
 
 def _diff_days(a: date | None, b: date | None) -> int | None:
@@ -172,6 +185,7 @@ def classify(
                 f"Hanya {len(usable)} dari {len(observations)} citra yang layak pakai "
                 "(tutupan awan atau lahan terlalu kecil). Bukti foto menjadi lapis kedua."
             ),
+            peak_ndvi=None,
         )
 
     ph = detect_phenology(observations, expected_harvest=claimed_harvest_date)
@@ -187,6 +201,7 @@ def classify(
             plant_diff_days=None,
             harvest_diff_days=None,
             reason=ph.reason,
+            peak_ndvi=ph.peak_ndvi,
         )
 
     # Selisih terburuk yang menentukan status — satu klaim meleset sudah cukup
@@ -211,4 +226,5 @@ def classify(
         plant_diff_days=plant_diff,
         harvest_diff_days=harvest_diff,
         reason=reason,
+        peak_ndvi=ph.peak_ndvi,
     )

@@ -68,10 +68,42 @@ export class CreateNodeDto {
   @IsUUID("4")
   ralatOfId?: string;
 
-  /** Hanya untuk PANEN — jumlah box hasil panen aktual (FR-7.8). */
+  /**
+   * Hanya untuk PANEN — jumlah box hasil panen aktual, TOTAL dari lahan (FR-7.8).
+   *
+   * Ini angka panen seluruhnya, bukan "yang disisihkan untuk pesanan". Pita kewajaran
+   * membandingkannya dengan kapasitas lahan, jadi kalau yang dikirim hanya porsi yang
+   * terjual, Tenant yang jujur pun akan tampak kekurangan hasil. Yang masuk ke pesanan
+   * adalah min(angka ini, kuota terjual) — dihitung server, bukan di sini.
+   */
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
   fulfilledBox?: number;
+
+  /**
+   * Penilaian kewajaran yang sedang dikonfirmasi (FR-4.10) — wajib pada PANEN.
+   *
+   * Mengikat konfirmasi ke ANGKA YANG DINILAI. Tanpa ini, Tenant bisa meminta pratinjau
+   * dengan angka aman lalu mengonfirmasi angka lain, dan seluruh layar peringatan
+   * TN-19b menjadi hiasan.
+   */
+  @IsOptional()
+  @IsUUID()
+  assessmentId?: string;
+}
+
+/**
+ * Langkah 1 alur panen — `POST /tenant/batches/:id/harvest` (sequence 04b baris 39).
+ *
+ * Hanya satu angka: TOTAL box hasil panen dari lahan ini. Tanpa foto, tanpa GPS —
+ * langkah ini belum menulis apa pun ke timeline, jadi memintanya di sini berarti
+ * membuat Tenant mengumpulkan bukti untuk sesuatu yang mungkin ia batalkan.
+ */
+export class DeclareHarvestDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  actualBox!: number;
 }

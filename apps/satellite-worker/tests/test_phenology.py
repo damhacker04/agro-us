@@ -163,3 +163,52 @@ class TestPesanTidakMenuduh:
         ph = detect_phenology(obs, expected_harvest=harvest)
         assert ph.detected_plant_date is None
         assert "tidak ditanami" in ph.reason.lower()
+
+
+class TestPuncakNdvi:
+    """Puncak NDVI adalah masukan langsung pita kewajaran hasil (FR-4.10).
+
+    Salah di sini berarti pita salah, dan pita yang salah menghukum Tenant yang tidak
+    bersalah — jadi diuji terpisah dari status verifikasi.
+    """
+
+    def test_puncak_diambil_dari_dalam_siklus(self):
+        plant, harvest = date(2026, 7, 1), date(2026, 9, 29)
+        ph = detect_phenology(series(plant, harvest))
+        assert ph.peak_ndvi is not None
+        # Fixture memuncak di ~0,80; toleransi mengikuti langkah revisit.
+        assert 0.70 <= ph.peak_ndvi <= 0.81
+
+    def test_gulma_pascapanen_tidak_menaikkan_puncak(self):
+        """Setelah panen, lahan bisa menghijau lagi oleh gulma atau siklus berikutnya.
+
+        Kalau ikut terhitung, pita dinaikkan untuk tanaman yang bahkan bukan tanaman
+        yang dilaporkan — dan Tenant terlihat kekurangan hasil karena rumput.
+        """
+        plant, harvest = date(2026, 7, 1), date(2026, 9, 29)
+        obs = series(plant, harvest)
+        bersih = detect_phenology(obs).peak_ndvi
+        assert bersih is not None
+
+        d = obs[-1].scene_date
+        rimbun = obs + [
+            Observation(d + timedelta(days=5 * (i + 1)), 0.95, 0.4, 5.0, usable=True) for i in range(4)
+        ]
+        assert detect_phenology(rimbun).peak_ndvi == pytest.approx(bersih)
+
+    def test_tanpa_deteksi_puncak_tetap_none(self):
+        """Lahan yang tak pernah bertajuk tidak punya puncak — bukan puncak rendah.
+
+        Bedanya menentukan apakah Tenant boleh dinilai sama sekali (FR-7.12e).
+        """
+        obs = [Observation(date(2026, 7, 1) + timedelta(days=5 * i), 0.12, 0.2, 5.0, True) for i in range(10)]
+        assert detect_phenology(obs).peak_ndvi is None
+
+    def test_awan_berkepanjangan_tidak_melaporkan_puncak(self):
+        obs = [
+            Observation(date(2026, 7, 1) + timedelta(days=5 * i), 0.80, 0.4, 90.0, usable=False)
+            for i in range(10)
+        ]
+        v = classify(obs, date(2026, 7, 1), date(2026, 9, 29))
+        assert v.status == "TIDAK_DAPAT"
+        assert v.peak_ndvi is None

@@ -132,17 +132,22 @@ def process_batch(repo: Repository, batch: ActiveBatch) -> str:
         has_photo_evidence=batch.has_photo_evidence,
     )
     repo.update_batch_verification(
-        batch.batch_id, verdict.status, verdict.detected_plant_date, verdict.detected_harvest_date
+        batch.batch_id,
+        verdict.status,
+        verdict.detected_plant_date,
+        verdict.detected_harvest_date,
+        verdict.peak_ndvi,
     )
 
     log.info(
-        "  %s (%s): %s — %s [%d/%d citra layak]",
+        "  %s (%s): %s — %s [%d/%d citra layak, puncak %s]",
         batch.batch_id[:8],
         batch.commodity_name,
         verdict.status,
         verdict.reason,
         kept,
         len(scenes),
+        f"NDVI {verdict.peak_ndvi:.2f}" if verdict.peak_ndvi is not None else "puncak tak terukur",
     )
     return verdict.status
 

@@ -60,6 +60,7 @@ import type {
   VerifyOtpBody,
   VerifyOtpResponse,
   ZoneSummary,
+  HarvestPreviewResponse,
 } from "@agro-os/shared";
 
 /**
@@ -405,20 +406,22 @@ export const konfirmasiTerima = (shipmentId: string, photoUrl: string) =>
   }>(`/shipments/${shipmentId}/receive`, { photoUrl });
 
 /**
- * Tambah node timeline (FR-4.1). Dikirim sebagai multipart karena membawa berkas foto,
- * jadi TIDAK lewat `ambil()` yang selalu menyetel Content-Type JSON — biarkan peramban
- * yang menuliskannya sendiri beserta boundary-nya.
+ * Kirim FormData ke endpoint multipart.
+ *
+ * TIDAK lewat `ambil()` yang selalu menyetel Content-Type JSON — biarkan peramban yang
+ * menuliskannya sendiri beserta boundary-nya. Menyetelnya manual menghapus boundary dan
+ * server menerima badan permintaan yang tidak bisa diurai.
  */
-export async function tambahNodeTimeline(batchId: string, form: FormData) {
+async function kirimMultipart<T>(jalur: string, form: FormData, pesanBaku: string): Promise<T> {
   const token = ambilToken();
-  const res = await fetch(`${BASE}/tenant/batches/${batchId}/timeline`, {
+  const res = await fetch(`${BASE}${jalur}`, {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: form,
   });
   if (!res.ok) {
     let kode: string | null = null;
-    let pesan = `Gagal menyimpan catatan (${res.status})`;
+    let pesan = `${pesanBaku} (${res.status})`;
     try {
       const isi = await res.json();
       kode = isi?.code ?? null;
@@ -428,5 +431,33 @@ export async function tambahNodeTimeline(batchId: string, form: FormData) {
     }
     throw new GalatApi(res.status, kode, pesan);
   }
-  return res.json() as Promise<TimelineNodeResponse>;
+  return res.json() as Promise<T>;
 }
+
+/** Tambah node timeline (FR-4.1). */
+export const tambahNodeTimeline = (batchId: string, form: FormData) =>
+  kirimMultipart<TimelineNodeResponse>(
+    `/tenant/batches/${batchId}/timeline`,
+    form,
+    "Gagal menyimpan catatan",
+  );
+
+/**
+ * Alur panen LANGKAH 1 — nilai kewajaran + pratinjau dampak (FR-4.10, FR-7.8).
+ *
+ * Belum menulis node timeline dan belum menyentuh pesanan. Inilah yang memungkinkan
+ * layar peringatan TN-19b muncul SEBELUM konsekuensinya jatuh.
+ */
+export const deklarasiPanen = (batchId: string, actualBox: number) =>
+  kirim<HarvestPreviewResponse>(`/tenant/batches/${batchId}/harvest`, { actualBox });
+
+/**
+ * Alur panen LANGKAH 2 — konfirmasi. `assessmentId` wajib ikut: server menolak bila
+ * angka yang dikonfirmasi berbeda dari angka yang dinilai.
+ */
+export const konfirmasiPanen = (batchId: string, form: FormData) =>
+  kirimMultipart<TimelineNodeResponse>(
+    `/tenant/batches/${batchId}/harvest/confirm`,
+    form,
+    "Gagal mengonfirmasi panen",
+  );
