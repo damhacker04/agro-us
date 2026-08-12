@@ -10,6 +10,16 @@ import { PrismaService } from "../../prisma/prisma.service";
 
 type Tx = Parameters<Parameters<PrismaService["$transaction"]>[0]>[0];
 
+/** Satu baris antrean alokasi, sudah terurut senioritas lalu waktu bayar. */
+type BarisAntrean = {
+  order_item_id: string;
+  buyer_id: string;
+  buyer_name: string;
+  paid_at: Date | null;
+  qty_box: number;
+  senioritas: boolean;
+};
+
 /**
  * Ambang penalti — parameter SERVER, tidak pernah dikirim ke FE (FR-7.12c).
  *
@@ -47,8 +57,22 @@ export class AllocationService {
 
   /** Hitung alokasi TANPA menyimpan — dipakai pratinjau di layar Tandai Panen (TN-19a). */
   async preview(batchId: string, fulfilledBox: number): Promise<AllocationPreview> {
-    const rows = await this.loadOrderedItems(batchId);
+    return this.susunAlokasi(batchId, fulfilledBox, await this.loadOrderedItems(batchId));
+  }
 
+  /**
+   * Pembagian murni — tanpa I/O, atas baris yang SUDAH terurut.
+   *
+   * Dipisahkan supaya `apply()` bisa memakai baris hasil bacaan TERKUNCI-nya sendiri.
+   * Sebelumnya `apply()` memanggil `preview()`, yang membaca ulang di luar transaksi:
+   * baris yang dikunci dan baris yang dipakai menghitung bisa berbeda, sehingga locknya
+   * tidak menjamin apa pun.
+   */
+  private susunAlokasi(
+    batchId: string,
+    fulfilledBox: number,
+    rows: BarisAntrean[],
+  ): AllocationPreview {
     const fullyFulfilled: AllocationLine[] = [];
     const partial: AllocationLine[] = [];
     const unfulfilled: AllocationLine[] = [];
@@ -91,26 +115,33 @@ export class AllocationService {
    * yang dideklarasikan bersamaan tidak saling menimpa hasil alokasinya.
    */
   async apply(tx: Tx, batchId: string, fulfilledBox: number): Promise<AllocationPreview> {
-    const baris = await this.loadOrderedItems(batchId);
-    const plan = await this.preview(batchId, fulfilledBox);
+    // Bacaan dan tulisan berada dalam SATU transaksi dengan baris terkunci.
+    const baris = await this.loadOrderedItemsForUpdate(tx, batchId);
+    const plan = this.susunAlokasi(batchId, fulfilledBox, baris);
 
     for (const line of [...plan.fullyFulfilled, ...plan.partial, ...plan.unfulfilled]) {
       await tx.orderItem.update({
         where: { id: line.orderItemId },
-        data: { qtyBoxFulfilled: line.allocatedBox },
+        data: {
+          qtyBoxFulfilled: line.allocatedBox,
+          // Dibekukan di sisi pesanan (ERD v2.3 poin 4) supaya alasan urutan alokasi
+          // bisa diaudit tanpa join, bahkan setelah haknya gugur dari tabel senioritas.
+          seniorityApplied: line.senioritas,
+        },
       });
     }
 
     // Senioritas yang IKUT MENENTUKAN urutan batch ini dianggap terpakai — termasuk
     // milik pembeli yang akhirnya tetap kekurangan. Prioritasnya sudah diberikan;
     // yang gagal adalah panennya, bukan mekanismenya.
-    const dipakai = baris.filter((r) => r.senioritas).map((r) => r.buyer_id);
-    const kurangIds = new Set(
-      [...plan.partial, ...plan.unfulfilled]
-        .map((l) => baris.find((r) => r.order_item_id === l.orderItemId)?.buyer_id)
-        .filter((x): x is string => Boolean(x)),
-    );
-    await this.putarSenioritas(tx, batchId, [...new Set(dipakai)], [...kurangIds]);
+    const dipakai = baris
+      .filter((r) => r.senioritas)
+      .map((r) => ({ buyerId: r.buyer_id, orderItemId: r.order_item_id }));
+    const kekurangan = [...plan.partial, ...plan.unfulfilled].flatMap((l) => {
+      const r = baris.find((x) => x.order_item_id === l.orderItemId);
+      return r ? [{ buyerId: r.buyer_id, orderItemId: r.order_item_id }] : [];
+    });
+    await this.putarSenioritas(tx, batchId, dipakai, kekurangan);
 
     const kurang = plan.partial.length + plan.unfulfilled.length;
     if (kurang > 0) {
@@ -183,8 +214,11 @@ export class AllocationService {
     await this.prisma.tenant.update({
       where: { id: tenantId },
       data: {
-        shortfallRatioCached: Math.round(ratio * 100) / 100,
+        // `yieldPositionCached` (posisi relatif) menggantikan rasio mentah dan baru bisa
+        // dihitung setelah ZONE_YIELD_BENCHMARK ada — dibiarkan NULL sampai saat itu,
+        // bukan diisi rasio mentah yang justru mengundang disimpulkan ambangnya.
         quotaMultiplier: penalized ? QUOTA_MULTIPLIER_PENALTY : QUOTA_MULTIPLIER_NORMAL,
+        cleanCyclesStreak: penalized ? 0 : { increment: 1 },
       },
     });
 
@@ -205,17 +239,11 @@ export class AllocationService {
    * pun. Sesama penyandang senioritas tetap FIFO `paid_at`, supaya di dalam kelompok
    * prioritas pun urutannya tetap punya dasar yang tidak bisa di-gaming.
    */
-  private loadOrderedItems(batchId: string) {
-    return this.prisma.$queryRaw<
-      Array<{
-        order_item_id: string;
-        buyer_id: string;
-        buyer_name: string;
-        paid_at: Date | null;
-        qty_box: number;
-        senioritas: boolean;
-      }>
-    >`
+  private loadOrderedItems(batchId: string, tx?: Tx) {
+    // `db` sengaja parameterisasi: saat dipanggil dari apply() bacaannya HARUS terjadi di
+    // dalam transaksi yang sama dengan tulisannya, kalau tidak locknya tidak berarti apa-apa.
+    const db = tx ?? this.prisma;
+    return db.$queryRaw<BarisAntrean[]>`
       SELECT oi.id::text     AS order_item_id,
              bu.id::text     AS buyer_id,
              bu.company_name AS buyer_name,
@@ -240,6 +268,31 @@ export class AllocationService {
   }
 
   /**
+   * Versi terkunci — dipakai HANYA di dalam transaksi alokasi (ERD aturan integritas #5,
+   * sequence v2.3 poin 3).
+   *
+   * Tanpa lock, dua panen yang dideklarasikan bersamaan pada order yang beririsan sama-sama
+   * membaca `qty_box_fulfilled` yang masih kosong, lalu sama-sama mengalokasikan penuh —
+   * total teralokasi melampaui hasil panen sungguhan. Itu kerugian uang, bukan bug tampilan.
+   *
+   * Dipisah dari `loadOrderedItems` karena `FOR UPDATE` tidak sah di luar transaksi, dan
+   * pratinjau (yang tidak menulis apa pun) tidak boleh ikut mengunci antrean pembeli lain.
+   */
+  private async loadOrderedItemsForUpdate(tx: Tx, batchId: string) {
+    // Kunci dulu baris order_item-nya, baru baca lengkap. Dipisah dua langkah karena
+    // FOR UPDATE tidak bisa dipakai bersama agregat/LEFT JOIN tertentu di Postgres.
+    await tx.$executeRaw`
+      SELECT oi.id FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      JOIN payments pay ON pay.order_id = o.id AND pay.status = 'PAID'
+      WHERE oi.batch_id = ${batchId}::uuid
+      ORDER BY oi.id
+      FOR UPDATE OF oi
+    `;
+    return this.loadOrderedItems(batchId, tx);
+  }
+
+  /**
    * Pakai senioritas yang ikut menentukan urutan batch ini, lalu terbitkan senioritas
    * baru bagi yang kali ini kekurangan (FR-7.13).
    *
@@ -251,8 +304,8 @@ export class AllocationService {
   private async putarSenioritas(
     tx: Tx,
     batchId: string,
-    dipakai: string[],
-    kurang: string[],
+    dipakai: Array<{ buyerId: string; orderItemId: string }>,
+    kurang: Array<{ buyerId: string; orderItemId: string }>,
   ): Promise<void> {
     const tenant = await tx.batch.findUniqueOrThrow({
       where: { id: batchId },
@@ -260,18 +313,20 @@ export class AllocationService {
     });
     const tenantId = tenant.product.tenantId;
 
-    if (dipakai.length) {
+    // Dicatat per ITEM, bukan per batch (ERD v2.3): yang perlu bisa ditelusuri adalah
+    // pesanan mana yang menikmati prioritas, dan shortfall mana yang melahirkannya.
+    for (const d of dipakai) {
       await tx.shortfallSeniority.updateMany({
-        where: { tenantId, buyerId: { in: dipakai }, consumedAt: null },
-        data: { consumedAt: new Date(), consumedBatchId: batchId },
+        where: { tenantId, buyerId: d.buyerId, consumedAt: null },
+        data: { consumedAt: new Date(), consumedByOrderItemId: d.orderItemId },
       });
     }
 
-    for (const buyerId of kurang) {
-      // createMany + skipDuplicates: pembeli yang senioritasnya BELUM terpakai
-      // (mis. batch ini bukan batch berikutnya bagi dia) tidak boleh dobel.
+    for (const k of kurang) {
+      // skipDuplicates menghormati indeks unik parsial "satu hak aktif per pasangan":
+      // pembeli yang haknya belum terpakai tidak boleh menumpuk hak kedua.
       await tx.shortfallSeniority.createMany({
-        data: [{ buyerId, tenantId, grantedBatchId: batchId }],
+        data: [{ buyerId: k.buyerId, tenantId, sourceOrderItemId: k.orderItemId }],
         skipDuplicates: true,
       });
     }

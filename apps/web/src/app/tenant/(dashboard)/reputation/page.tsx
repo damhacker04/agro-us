@@ -21,9 +21,13 @@ import { GalatApi, ambilProfilTenant } from "@/lib/api";
  * shortfall dilaporkan Tenant sendiri, ambang yang terlihat berhenti menjadi pagar dan
  * berubah menjadi target: cukup melaporkan tepat di bawahnya setiap siklus, selamanya.
  *
- * Yang boleh ditampilkan adalah posisi RELATIF terhadap rata-rata zona (TN-34, menyusul
- * setelah benchmark FR-7.12b ada). Sampai itu tersedia, halaman ini menampilkan rasio apa
- * adanya tanpa membandingkannya dengan ambang mana pun.
+ * Yang ditampilkan adalah posisi RELATIF terhadap rata-rata zona (TN-34). Rasio mentah pun
+ * tidak lagi ditampilkan: dibandingkan berulang kali lintas siklus, ambangnya tersimpulkan
+ * meski tidak pernah tertulis di mana pun.
+ *
+ * Selama benchmark lintas-Tenant (FR-7.12b) belum tersedia, posisinya `null` dan
+ * dinyatakan apa adanya sebagai "belum ada pembanding" — bukan 0, yang akan terbaca
+ * sebagai "tepat rata-rata" (FR-7.12e).
  *
  * Nada: informatif, bukan mengancam (aturan desain v2.3 butir 4). Tenant adalah sisi
  * pasok yang harus diakuisisi, bukan tersangka yang diawasi.
@@ -57,7 +61,10 @@ export default function ReputationPage() {
     );
   }
 
-  const shortfall = persen(profil.shortfallRatioCached);
+  // Posisi relatif terhadap rata-rata zona — BUKAN rasio mentah (FR-7.12f, user flow TRP).
+  // Angka mentah mengundang dibandingkan dengan ambang, dan ambang yang bisa disimpulkan
+  // sama saja dengan ambang yang ditampilkan.
+  const posisi = profil.yieldPosition;
   const klaim = persen(profil.claimRatioCached);
   const pengali = profil.quotaMultiplier;
   const kenaPenalti = pengali <= QUOTA_MULTIPLIER_PENALTY;
@@ -88,7 +95,9 @@ export default function ReputationPage() {
                 terakhir, sehingga pengali kuota diturunkan ke{" "}
                 <strong className="font-black">{pengali}x</strong>. Pengali kembali normal
                 setelah {SHORTFALL_PENALTY_ROLLING_CYCLES} siklus realisasi Anda kembali
-                dalam batas wajar.
+                dalam batas wajar — saat ini{" "}
+                <strong className="font-black">{profil.cleanCyclesStreak}</strong> siklus
+                berturut-turut sudah tercatat wajar.
               </p>
             </div>
           </div>
@@ -96,24 +105,34 @@ export default function ReputationPage() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-sans">
-        {/* Rasio Shortfall — angka apa adanya, tanpa bar "jarak ke ambang". */}
+        {/* TN-34 — Posisi Realisasi vs Zona. Menggantikan tampilan rasio shortfall. */}
         <div className="border border-gray-200 rounded-xl p-6 shadow-sm flex flex-col justify-between min-h-[220px]">
           <div>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2 font-bold text-gray-900">
-                <TrendingDown className="w-4 h-4 text-gray-400" /> Rasio Shortfall
+                <TrendingDown className="w-4 h-4 text-gray-400" /> Realisasi vs Rata-rata Zona
               </div>
             </div>
             <div
-              className={`text-4xl font-black mb-2 ${shortfall === null ? "text-gray-300" : "text-[#0a381f]"}`}
+              className={`text-4xl font-black mb-2 ${
+                posisi === null
+                  ? "text-gray-300"
+                  : posisi < 0
+                    ? "text-amber-700"
+                    : "text-[#0a381f]"
+              }`}
             >
-              {shortfall === null ? "—" : `${shortfall}%`}
+              {posisi === null
+                ? "—"
+                : `${posisi > 0 ? "+" : ""}${Math.round(posisi * 10) / 10}%`}
             </div>
           </div>
           <p className="text-[10px] text-gray-500">
-            {shortfall === null
-              ? "Belum ada siklus panen selesai — rasio baru muncul setelah batch pertama ditutup."
-              : "Bagian kuota terjual yang tidak terpenuhi, dirata-rata pada siklus terakhir."}
+            {posisi === null
+              ? "Belum ada cukup Tenant pembanding pada komoditas dan musim yang sama, jadi posisi Anda belum bisa dihitung. Tidak ada penilaian yang dijatuhkan tanpa dasar."
+              : posisi < 0
+                ? "Realisasi panen Anda di bawah rata-rata zona untuk komoditas dan musim ini."
+                : "Realisasi panen Anda di atas atau setara rata-rata zona untuk komoditas dan musim ini."}
           </p>
         </div>
 

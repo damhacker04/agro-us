@@ -206,7 +206,10 @@ model Tenant {
   legalityDocUrl       String?        @map("legality_doc_url") // unggahan NIB / KTP pemilik — FR-1.7
   reviewedById         String?        @map("reviewed_by") @db.Uuid
   claimRatioCached     Decimal?       @map("claim_ratio_cached") @db.Decimal(5, 2) // tampil publik — FR-5.7
-  shortfallRatioCached Decimal?       @map("shortfall_ratio_cached") @db.Decimal(5, 2) // rolling 2 siklus — FR-7.12
+  // Rasio mentah DIGANTI posisi relatif terhadap rata-rata zona (ERD v2.3, FR-7.12f).
+  // Angka mentah mengundang dibandingkan dengan ambang; posisi relatif tidak.
+  yieldPositionCached  Decimal?       @map("yield_position_cached") @db.Decimal(6, 2) // FR-7.12f
+  cleanCyclesStreak    Int            @default(0) @map("clean_cycles_streak") // pulih setelah 2 siklus wajar — FR-7.12d
   quotaMultiplier      Decimal        @default(0.70) @map("quota_multiplier") @db.Decimal(3, 2) // 0.70 normal, 0.50 penalti — FR-7.12
 
   user          User                @relation("TenantProfile", fields: [userId], references: [id])
@@ -488,6 +491,10 @@ model OrderItem {
   batchId         String @map("batch_id") @db.Uuid
   qtyBox          Int    @map("qty_box")
   qtyBoxFulfilled Int?   @map("qty_box_fulfilled") // hasil alokasi FIFO — FR-7.9
+  // SENGAJA redundan terhadap SHORTFALL_SENIORITY (ERD v2.3 poin 4): alokasi adalah
+  // keputusan finansial yang harus dapat diaudit dari sisi pesanan TANPA join, dan
+  // nilainya beku setelah alokasi selesai.
+  seniorityApplied Boolean @default(false) @map("seniority_applied") // FR-7.13
   unitPriceLocked Int    @map("unit_price_locked")
   subtotal        Int
 
@@ -497,6 +504,8 @@ model OrderItem {
   boxQrTokens         BoxQrToken[]
   claims              Claim[]
   assuranceResolution AssuranceResolution?
+  senioritasDilahirkan ShortfallSeniority[] @relation("SenioritasAsal")
+  senioritasDipakai    ShortfallSeniority[] @relation("SenioritasTerpakai")
 
   @@index([orderId])
   @@index([shipmentId])
@@ -729,17 +738,23 @@ model OtpRequest {
  */
 model ShortfallSeniority {
   id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  buyerId       String    @map("buyer_id") @db.Uuid
-  tenantId      String    @map("tenant_id") @db.Uuid
-  /** Batch yang shortfall-nya melahirkan senioritas ini. */
-  grantedBatchId String   @map("granted_batch_id") @db.Uuid
-  grantedAt     DateTime  @default(now()) @map("granted_at") @db.Timestamptz(6)
-  /** Terisi saat senioritas dipakai pada batch berikutnya — sesudah itu gugur. */
-  consumedAt     DateTime? @map("consumed_at") @db.Timestamptz(6)
-  consumedBatchId String?  @map("consumed_batch_id") @db.Uuid
+  buyerId  String @map("buyer_id") @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  /**
+   * ORDER ITEM yang shortfall-nya melahirkan senioritas ini — bukan batch.
+   * Satu batch bisa melahirkan shortfall pada beberapa pembeli sekaligus, jadi menunjuk
+   * batch kehilangan informasi shortfall YANG MANA yang sedang dikompensasi.
+   */
+  sourceOrderItemId String   @map("source_order_item_id") @db.Uuid
+  grantedAt         DateTime @default(now()) @map("granted_at") @db.Timestamptz(6)
+  /** Item yang MEMAKAI senioritas ini pada siklus berikutnya — sesudah itu hak gugur. */
+  consumedByOrderItemId String?   @map("consumed_by_order_item_id") @db.Uuid
+  consumedAt            DateTime? @map("consumed_at") @db.Timestamptz(6)
 
-  buyer  Buyer  @relation(fields: [buyerId], references: [id])
-  tenant Tenant @relation(fields: [tenantId], references: [id])
+  buyer          Buyer      @relation(fields: [buyerId], references: [id])
+  tenant         Tenant     @relation(fields: [tenantId], references: [id])
+  sourceOrderItem OrderItem @relation("SenioritasAsal", fields: [sourceOrderItemId], references: [id])
+  consumedByOrderItem OrderItem? @relation("SenioritasTerpakai", fields: [consumedByOrderItemId], references: [id])
 
   @@index([tenantId, consumedAt])
   @@index([buyerId, consumedAt])

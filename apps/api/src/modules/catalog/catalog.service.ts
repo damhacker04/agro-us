@@ -76,7 +76,7 @@ export class CatalogService {
         product: {
           include: {
             commodity: true,
-            tenant: { select: { id: true, companyName: true, logoUrl: true, claimRatioCached: true, shortfallRatioCached: true } },
+            tenant: { select: { id: true, companyName: true, logoUrl: true, claimRatioCached: true, yieldPositionCached: true } },
           },
         },
         landPlot: { select: { areaHa: true, verificationTier: true } },
@@ -114,8 +114,9 @@ export class CatalogService {
         companyName: b.product.tenant.companyName,
         logoUrl: b.product.tenant.logoUrl,
         claimRatioCached: b.product.tenant.claimRatioCached ? Number(b.product.tenant.claimRatioCached) : null,
-        shortfallRatioCached: b.product.tenant.shortfallRatioCached
-          ? Number(b.product.tenant.shortfallRatioCached)
+        // Posisi relatif terhadap rata-rata zona, bukan rasio mentah (FR-7.12f).
+        yieldPosition: b.product.tenant.yieldPositionCached
+          ? Number(b.product.tenant.yieldPositionCached)
           : null,
       },
       landPlot: { areaHa: Number(b.landPlot.areaHa), verificationTier: b.landPlot.verificationTier },

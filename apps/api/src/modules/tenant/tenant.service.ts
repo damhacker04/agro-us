@@ -53,7 +53,10 @@ export class TenantService {
       logoUrl: tenant.logoUrl,
       legalityStatus: tenant.legalityStatus,
       claimRatioCached: tenant.claimRatioCached ? Number(tenant.claimRatioCached) : null,
-      shortfallRatioCached: tenant.shortfallRatioCached ? Number(tenant.shortfallRatioCached) : null,
+      // Posisi relatif terhadap rata-rata zona menggantikan rasio mentah (ERD v2.3,
+      // FR-7.12f). NULL berarti belum ada pembanding — bukan "tepat rata-rata".
+      yieldPosition: tenant.yieldPositionCached ? Number(tenant.yieldPositionCached) : null,
+      cleanCyclesStreak: tenant.cleanCyclesStreak,
       quotaMultiplier: Number(tenant.quotaMultiplier),
       zones: tenant.tenantZones.map(({ zone }) => ({
         id: zone.id,

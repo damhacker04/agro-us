@@ -284,7 +284,18 @@ export interface TenantProfileResponse {
   legalityStatus: LegalityStatus;
   /** Rasio publik (FR-5.7 / FR-7.12) — null bila belum ada riwayat. */
   claimRatioCached: number | null;
-  shortfallRatioCached: number | null;
+  /**
+   * Posisi realisasi panen terhadap rata-rata zona, dalam persen (FR-7.12f).
+   * Negatif = di bawah rata-rata. `null` = belum ada pembanding yang cukup (FR-7.12e) —
+   * BUKAN "tepat rata-rata", dan tidak boleh ditampilkan sebagai 0.
+   *
+   * Menggantikan `shortfallRatioCached` sejak v2.3: angka rasio mentah mengundang
+   * dibandingkan dengan ambang, dan begitu dibandingkan berulang kali ambangnya
+   * tersimpulkan meski tidak pernah ditampilkan.
+   */
+  yieldPosition: number | null;
+  /** Siklus berturut-turut dalam batas wajar; pulih penuh setelah 2 (FR-7.12d). */
+  cleanCyclesStreak: number;
   quotaMultiplier: number;
   zones: ZoneSummary[];
   landPlotCount: number;
