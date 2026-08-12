@@ -1,10 +1,13 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import {
   MIN_BENCHMARK_SAMPLE,
   type AssessmentBasis,
   type Season,
   type YieldAssessmentResult,
+  type PlausibilityReviewItem,
+  type YieldAssessmentHistoryItem,
   type YieldPlausibility,
+  type ZonePeer,
 } from "@agro-os/shared";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
@@ -204,6 +207,174 @@ export class YieldAssessmentService {
       if (sd > 0 && (avg - rasio) / sd >= DEVIASI_ZONA_SIGMA) menyimpang += 1;
     }
     return { posisiPct: Math.round((jumlahPosisi / rows.length) * 100) / 100, menyimpang };
+  }
+
+  /** Pagar kepemilikan — riwayat pita memuat dasar perhitungan lahan milik Tenant. */
+  async pastikanMilikTenant(tenantId: string, batchId: string) {
+    const ada = await this.prisma.batch.findFirst({
+      where: { id: batchId, product: { tenantId } },
+      select: { id: true },
+    });
+    if (!ada) throw new NotFoundException("Batch tidak ditemukan");
+  }
+
+  /**
+   * TN-35 — riwayat penilaian satu batch, termasuk percobaan yang TIDAK dikonfirmasi.
+   *
+   * Yang ditampilkan adalah rentang pita hasil hitungan dari lahan Tenant itu sendiri,
+   * bukan garis kelulusan. Bedanya penting (FR-7.12c): pita bergerak mengikuti seberapa
+   * hijau lahannya, jadi mengetahuinya tidak memberi tahu apa pun tentang ambang penalti.
+   */
+  async riwayat(batchId: string): Promise<YieldAssessmentHistoryItem[]> {
+    const rows = await this.prisma.yieldAssessment.findMany({
+      where: { batchId },
+      orderBy: { assessedAt: "desc" },
+    });
+    return rows.map((r) => ({
+      assessmentId: r.id,
+      assessedAt: r.assessedAt.toISOString(),
+      reportedBox: r.reportedBox,
+      expectedMinBox: r.expectedYieldMin === null ? null : Number(r.expectedYieldMin),
+      expectedMaxBox: r.expectedYieldMax === null ? null : Number(r.expectedYieldMax),
+      peakNdvi: r.peakNdviUsed === null ? null : Number(r.peakNdviUsed),
+      basis: r.basis as AssessmentBasis,
+      verdict: r.verdict as YieldPlausibility,
+      finalVerdict: (r.finalVerdict as YieldPlausibility | null) ?? null,
+      confirmed: r.confirmedAt !== null,
+    }));
+  }
+
+  /**
+   * OP-13 — antrean tinjauan kewajaran (FR-7.12a, FR-5.6).
+   *
+   * Empat hal dikirim bersama karena masing-masing sendirian menyesatkan: kurva NDVI,
+   * rentang pita, angka yang dilaporkan, dan realisasi Tenant lain sezona. Kurva yang
+   * bagus tanpa pembanding zona tidak memberi tahu apakah musimnya memang buruk untuk
+   * semua orang — dan itulah pertanyaan yang menentukan putusannya.
+   */
+  async antreanTinjauan(): Promise<PlausibilityReviewItem[]> {
+    const rows = await this.prisma.yieldAssessment.findMany({
+      where: { verdict: "PERLU_DITINJAU", finalVerdict: null },
+      // Paling mepet tenggat di atas; yang tanpa tenggat menyusul.
+      orderBy: [{ slaDueAt: "asc" }, { assessedAt: "asc" }],
+      include: {
+        batch: {
+          select: {
+            id: true,
+            quotaBoxSold: true,
+            landPlotId: true,
+            claimedHarvestDate: true,
+            product: {
+              select: {
+                name: true,
+                commodityId: true,
+                commodity: { select: { name: true } },
+                tenant: { select: { id: true, companyName: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return Promise.all(
+      rows.map(async (r) => {
+        const [obs, peers, percobaan] = await Promise.all([
+          this.prisma.satelliteObservation.findMany({
+            where: { landPlotId: r.batch.landPlotId },
+            orderBy: { sceneDate: "asc" },
+            select: { sceneDate: true, ndviMean: true, ndmiMean: true, cloudPct: true, usable: true },
+          }),
+          this.tetanggaZona(
+            r.batch.id,
+            r.batch.product.commodityId,
+            r.batch.product.tenant.id,
+            r.batch.claimedHarvestDate,
+          ),
+          this.prisma.yieldAssessment.count({ where: { batchId: r.batch.id } }),
+        ]);
+
+        return {
+          assessmentId: r.id,
+          batchId: r.batch.id,
+          productName: r.batch.product.name,
+          tenantName: r.batch.product.tenant.companyName,
+          commodityName: r.batch.product.commodity.name,
+          assessedAt: r.assessedAt.toISOString(),
+          slaDueAt: r.slaDueAt?.toISOString() ?? null,
+          reportedBox: r.reportedBox,
+          quotaBoxSold: r.batch.quotaBoxSold,
+          expectedMinBox: r.expectedYieldMin === null ? null : Number(r.expectedYieldMin),
+          expectedMaxBox: r.expectedYieldMax === null ? null : Number(r.expectedYieldMax),
+          peakNdvi: r.peakNdviUsed === null ? null : Number(r.peakNdviUsed),
+          basis: r.basis as AssessmentBasis,
+          verdict: r.verdict as YieldPlausibility,
+          attemptCount: percobaan,
+          ndviSeries: obs.map((o) => ({
+            date: o.sceneDate.toISOString().slice(0, 10),
+            ndvi: o.ndviMean === null ? null : Number(o.ndviMean),
+            ndmi: o.ndmiMean === null ? null : Number(o.ndmiMean),
+            cloudPct: Number(o.cloudPct),
+            usable: o.usable,
+          })),
+          zonePeers: peers,
+        };
+      }),
+    );
+  }
+
+  /** Realisasi Tenant LAIN pada komoditas & minggu panen yang sama. */
+  private async tetanggaZona(
+    batchId: string,
+    commodityId: string,
+    tenantId: string,
+    claimedHarvestDate: Date,
+  ): Promise<ZonePeer[]> {
+    return this.prisma.$queryRaw<ZonePeer[]>`
+      SELECT DISTINCT ON (b.id)
+             t.company_name                                              AS "tenantName",
+             (b.quota_box_fulfilled::numeric / b.quota_box_sold)::float8 AS "fulfillmentRatio"
+      FROM batches b
+      JOIN products p     ON p.id = b.product_id
+      JOIN tenants  t     ON t.id = p.tenant_id
+      JOIN order_items oi ON oi.batch_id = b.id
+      JOIN shipments s    ON s.id = oi.shipment_id
+      WHERE p.commodity_id = ${commodityId}::uuid
+        AND p.tenant_id   <> ${tenantId}::uuid
+        AND b.id          <> ${batchId}::uuid
+        AND b.quota_box_sold > 0
+        AND b.quota_box_fulfilled IS NOT NULL
+        AND date_trunc('week', b.claimed_harvest_date)
+            = date_trunc('week', ${claimedHarvestDate}::date)
+      ORDER BY b.id
+    `;
+  }
+
+  /**
+   * Putusan Operator (OP-13). Menggantikan verdict otomatis — mesin menandai, manusia
+   * memutuskan, dan itulah yang akhirnya menentukan cap 10% berlaku atau gugur (FR-7.11).
+   *
+   * TIDAK menyentuh `assurance_resolutions.cap_waived` yang sudah tercatat: pembeli sudah
+   * memilih berdasarkan aturan yang berlaku saat itu, dan keputusan finansial yang sudah
+   * diambil tidak boleh berubah surut.
+   */
+  async putuskanTinjauan(assessmentId: string, finalVerdict: YieldPlausibility, operatorUserId: string) {
+    const ada = await this.prisma.yieldAssessment.findUnique({
+      where: { id: assessmentId },
+      select: { id: true },
+    });
+    if (!ada) throw new NotFoundException("Penilaian tidak ditemukan");
+
+    const baris = await this.prisma.yieldAssessment.update({
+      where: { id: assessmentId },
+      data: { finalVerdict, reviewedById: operatorUserId },
+      select: { id: true, batchId: true },
+    });
+    await this.prisma.batch.update({
+      where: { id: baris.batchId },
+      data: { plausibilityCached: finalVerdict },
+    });
+    return { assessmentId: baris.id, batchId: baris.batchId, finalVerdict };
   }
 
   // ------------------------------------------------------------------ internal

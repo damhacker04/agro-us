@@ -6,6 +6,7 @@ import { Roles, RolesGuard } from "../auth/roles.guard";
 import type { JwtPayload } from "../auth/auth.service";
 import { TenantService } from "../tenant/tenant.service";
 import { AllocationService } from "./allocation.service";
+import { YieldAssessmentService } from "./yield-assessment.service";
 import { AssuranceService } from "./assurance.service";
 
 export class ResolveAssuranceDto {
@@ -72,7 +73,24 @@ export class TenantAllocationController {
   constructor(
     private readonly tenant: TenantService,
     private readonly allocation: AllocationService,
+    private readonly kewajaran: YieldAssessmentService,
   ) {}
+
+  /**
+   * TN-35 — riwayat penilaian kewajaran batch ini, termasuk percobaan yang tidak
+   * dikonfirmasi. Transparansi perhitungan, bukan skor buta (FR-4.10).
+   */
+  @Get(":id/kewajaran")
+  async riwayatKewajaran(
+    @CurrentUser() u: JwtPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    // Pagar kepemilikan: riwayat ini memuat rentang pita lahan, dan Tenant lain
+    // tidak berhak melihat dasar perhitungan tetangganya.
+    const tenant = await this.tenant.requireTenant(u.sub);
+    await this.kewajaran.pastikanMilikTenant(tenant.id, id);
+    return this.kewajaran.riwayat(id);
+  }
 
   /**
    * "6 dari 10 pesanan terpenuhi penuh, 4 akan ditawari Harvest Assurance" —

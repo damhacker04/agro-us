@@ -1371,6 +1371,79 @@ export interface SatelliteReviewItem {
   usableObservationCount: number;
 }
 
+/** Realisasi satu Tenant lain di zona & musim yang sama — pembanding manusiawi di OP-13. */
+export interface ZonePeer {
+  tenantName: string;
+  /** box terpenuhi ÷ box terjual, 0..1 */
+  fulfillmentRatio: number;
+}
+
+/**
+ * GET /operator/kewajaran — antrean tinjauan kewajaran hasil (OP-13, FR-7.12a).
+ *
+ * Operator melihat berdampingan: kurva NDVI, rentang pita, angka yang dilaporkan, dan
+ * realisasi Tenant lain sezona. Empat hal itu harus muncul bersama, karena masing-masing
+ * sendirian menyesatkan — kurva bagus tanpa pembanding zona tidak memberi tahu apakah
+ * musimnya memang buruk untuk semua orang.
+ */
+export interface PlausibilityReviewItem {
+  assessmentId: string;
+  batchId: string;
+  productName: string;
+  tenantName: string;
+  commodityName: string;
+  assessedAt: string;
+  /** Tenggat tinjauan (FR-5.6). Lewat tenggat = terlambat, bukan gugur. */
+  slaDueAt: string | null;
+  reportedBox: number;
+  quotaBoxSold: number;
+  expectedMinBox: number | null;
+  expectedMaxBox: number | null;
+  peakNdvi: number | null;
+  basis: AssessmentBasis;
+  verdict: YieldPlausibility;
+  /**
+   * Berapa kali batch ini dinilai sebelum Tenant mengonfirmasi.
+   *
+   * Pratinjau kewajaran membuka celah penyelidikan ambang — Tenant bisa mencoba beberapa
+   * angka sampai `WAJAR`. Celah itu tidak ditutup dengan menyembunyikan pratinjau; ia
+   * dicatat dan ditampilkan di sini. Angka > 1 bukan bukti kecurangan, tapi layak dilihat.
+   */
+  attemptCount: number;
+  ndviSeries: NdviPoint[];
+  zonePeers: ZonePeer[];
+}
+
+/** POST /operator/kewajaran/:assessmentId/decide */
+export interface DecidePlausibilityBody {
+  /** Putusan akhir manusia — selalu menang atas verdict otomatis. */
+  finalVerdict: YieldPlausibility;
+  note?: string;
+}
+
+/**
+ * GET /tenant/batches/:id/kewajaran — riwayat penilaian per batch (TN-35, FR-4.10).
+ *
+ * Transparansi perhitungan, bukan skor buta: Tenant melihat rentang pita yang dipakai dan
+ * atas dasar apa nilainya keluar. Yang TIDAK ditampilkan di mana pun adalah angka ambang
+ * (FR-7.12c) — rentang pita adalah hasil hitungan dari lahannya sendiri, bukan garis
+ * kelulusan yang bisa dibidik.
+ */
+export interface YieldAssessmentHistoryItem {
+  assessmentId: string;
+  assessedAt: string;
+  reportedBox: number;
+  expectedMinBox: number | null;
+  expectedMaxBox: number | null;
+  peakNdvi: number | null;
+  basis: AssessmentBasis;
+  verdict: YieldPlausibility;
+  /** Terisi bila Operator sudah meninjau — putusannya menggantikan verdict otomatis. */
+  finalVerdict: YieldPlausibility | null;
+  /** true bila penilaian ini yang akhirnya dikonfirmasi menjadi panen. */
+  confirmed: boolean;
+}
+
 /** POST /operator/satellite/:batchId/decide */
 export interface DecideSatelliteBody {
   verificationStatus: VerificationStatus;

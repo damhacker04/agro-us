@@ -10,10 +10,17 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
-import { JwtAuthGuard } from "../auth/auth.guard";
+import { CurrentUser, JwtAuthGuard } from "../auth/auth.guard";
+import type { JwtPayload } from "../auth/auth.service";
 import { Roles, RolesGuard } from "../auth/roles.guard";
 import { OperatorService } from "./operator.service";
-import { DecideSatelliteDto, UpsertCommodityDto, UpsertZoneDto } from "./operator.dto";
+import { YieldAssessmentService } from "../assurance/yield-assessment.service";
+import {
+  DecidePlausibilityDto,
+  DecideSatelliteDto,
+  UpsertCommodityDto,
+  UpsertZoneDto,
+} from "./operator.dto";
 
 /**
  * Konsol operator (OP-04, OP-07, OP-08 + tata kelola zona & komoditas).
@@ -26,7 +33,10 @@ import { DecideSatelliteDto, UpsertCommodityDto, UpsertZoneDto } from "./operato
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles("OPERATOR")
 export class OperatorController {
-  constructor(private readonly operator: OperatorService) {}
+  constructor(
+    private readonly operator: OperatorService,
+    private readonly kewajaran: YieldAssessmentService,
+  ) {}
 
   /** Posisi dana seluruh Tenant. */
   @Get("escrow")
@@ -53,6 +63,26 @@ export class OperatorController {
     @Body() dto: DecideSatelliteDto,
   ) {
     return this.operator.decideSatellite(batchId, dto.verificationStatus);
+  }
+
+  /** OP-13 — antrean tinjauan kewajaran hasil panen. */
+  @Get("kewajaran")
+  kewajaranQueue() {
+    return this.kewajaran.antreanTinjauan();
+  }
+
+  /**
+   * Putusan Operator atas satu penilaian. Menggantikan verdict otomatis dan menentukan
+   * apakah cap 10% berlaku untuk shortfall batch ini (FR-7.11).
+   */
+  @Post("kewajaran/:assessmentId/decide")
+  @HttpCode(200)
+  decideKewajaran(
+    @Param("assessmentId", ParseUUIDPipe) assessmentId: string,
+    @Body() dto: DecidePlausibilityDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.kewajaran.putuskanTinjauan(assessmentId, dto.finalVerdict, user.sub);
   }
 
   @Get("zones")

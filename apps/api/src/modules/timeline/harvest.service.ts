@@ -116,6 +116,14 @@ export class HarvestService {
           "Minta pratinjau ulang supaya Anda melihat dampak angka yang baru sebelum mengonfirmasi.",
       });
     }
+
+    // Tandai penilaian MANA yang menjadi panen (TN-35). Bukan sekadar yang terakhir:
+    // Tenant bisa meminta pratinjau beberapa kali lalu mengonfirmasi memakai yang pertama,
+    // dan justru pola itulah yang riwayat kewajaran ada untuk perlihatkan.
+    await this.prisma.yieldAssessment.update({
+      where: { id: dto.assessmentId },
+      data: { confirmedAt: new Date() },
+    });
   }
 
   private async batchMilikTenant(tenantId: string, batchId: string) {

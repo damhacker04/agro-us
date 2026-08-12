@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, AlertTriangle, Plus } from "lucide-react";
+import { ArrowLeft, CheckCircle2, AlertTriangle, Plus, Scale } from "lucide-react";
 import { ambilBatchSatu, ambilTimelineTenant, ambilVerifikasi, GalatApi } from "@/lib/api";
 import type { BatchResponse, TimelineNodeResponse, TimelineVerifyResponse } from "@agro-os/shared";
 
@@ -56,14 +56,25 @@ export default function BatchDetailPage({ params }: { params: Promise<{ id: stri
             {batch.quotaBoxTotal} box · {rp(batch.lockedPrice)}/box
           </p>
         </div>
-        {!tertutup && (
+        <div className="shrink-0 flex items-center gap-2">
+          {/* TN-35 — tautan riwayat penilaian kewajaran. Sengaja selalu ada, termasuk
+              setelah batch tertutup: justru saat itulah Tenant ingin tahu dasar
+              perhitungannya. */}
           <Link
-            href={`/tenant/batch/${id}/progress/new`}
-            className="shrink-0 flex items-center gap-2 bg-emerald-950 text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-emerald-800"
+            href={`/tenant/batch/${id}/kewajaran`}
+            className="flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
           >
-            <Plus className="w-4 h-4" /> Catat Kegiatan
+            <Scale className="w-4 h-4" /> Penilaian Hasil
           </Link>
-        )}
+          {!tertutup && (
+            <Link
+              href={`/tenant/batch/${id}/progress/new`}
+              className="flex items-center gap-2 bg-emerald-950 text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-emerald-800"
+            >
+              <Plus className="w-4 h-4" /> Catat Kegiatan
+            </Link>
+          )}
+        </div>
       </div>
 
       {tertutup && (

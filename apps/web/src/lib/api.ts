@@ -21,6 +21,10 @@ import type {
   LegalityQueueItem,
   OperatorEscrowSummary,
   PendingAssurance,
+  PlausibilityReviewItem,
+  DecidePlausibilityBody,
+  YieldAssessmentHistoryItem,
+  YieldPlausibility,
   SatelliteReviewItem,
   UpsertCommodityBody,
   UpsertZoneBody,
@@ -175,6 +179,20 @@ export const batalkanPesanan = (orderId: string) =>
 // ---------- Harvest Assurance (FR-7.4, FR-7.10) ----------
 
 export const ambilAssuransiTertunda = () => ambil<PendingAssurance[]>("/assurance/pending");
+
+/** TN-35 — riwayat penilaian kewajaran satu batch. */
+export const ambilRiwayatKewajaran = (batchId: string) =>
+  ambil<YieldAssessmentHistoryItem[]>(`/tenant/batches/${batchId}/kewajaran`);
+
+/** OP-13 — antrean tinjauan kewajaran hasil. */
+export const ambilAntreanKewajaran = () =>
+  ambil<PlausibilityReviewItem[]>("/operator/kewajaran");
+
+export const putuskanKewajaran = (assessmentId: string, body: DecidePlausibilityBody) =>
+  kirim<{ assessmentId: string; batchId: string; finalVerdict: YieldPlausibility }>(
+    `/operator/kewajaran/${assessmentId}/decide`,
+    body,
+  );
 
 export const putuskanAssuransi = (orderItemId: string, body: ResolveAssuranceBody) =>
   kirim<ResolveAssuranceResponse>(`/assurance/${orderItemId}/resolve`, body);

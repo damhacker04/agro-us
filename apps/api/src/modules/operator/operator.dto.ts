@@ -1,4 +1,5 @@
 import { Type } from "class-transformer";
+import type { YieldPlausibility } from "@agro-os/shared";
 import {
   IsIn,
   IsInt,
@@ -71,4 +72,21 @@ export class UpsertCommodityDto {
 
   @IsOptional()
   gradeStandards?: unknown;
+}
+
+/**
+ * POST /operator/kewajaran/:assessmentId/decide — putusan tinjauan kewajaran (OP-13).
+ *
+ * `TIDAK_DAPAT_DINILAI` sengaja ikut diizinkan: setelah melihat kurva NDVI dan pembanding
+ * zona, Operator bisa menyimpulkan bahwa memang tidak ada dasar menilai. Memaksanya memilih
+ * antara WAJAR dan TIDAK_WAJAR akan membuatnya menebak, dan tebakan itu menempel pada cap
+ * 10% seseorang.
+ */
+export class DecidePlausibilityDto {
+  @IsIn(["WAJAR", "PERLU_DITINJAU", "TIDAK_WAJAR", "TIDAK_DAPAT_DINILAI"])
+  finalVerdict!: YieldPlausibility;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
 }

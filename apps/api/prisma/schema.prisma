@@ -861,10 +861,15 @@ model YieldAssessment {
   slaDueAt           DateTime? @map("sla_due_at") @db.Timestamptz(6)
   /// Terisi setelah tinjauan Operator (OP-13); inilah yang menentukan cap 10% berlaku.
   finalVerdict       YieldPlausibility? @map("final_verdict")
+  /// Penilaian MANA yang akhirnya menjadi panen — bukan sekadar yang terakhir (TN-35).
+  confirmedAt        DateTime?          @map("confirmed_at") @db.Timestamptz(6)
 
   batch      Batch @relation(fields: [batchId], references: [id])
   reviewedBy User? @relation("PenilaiKewajaran", fields: [reviewedById], references: [id])
 
   @@index([batchId, assessedAt(sort: Desc)], map: "yield_assessments_batch_idx")
+  // Indeks unik PARSIAL "satu penilaian dikonfirmasi per batch" hidup di migrasi
+  // 20260812040000 — Prisma tidak bisa menyatakan WHERE pada @@unique, dan menuliskannya
+  // sebagai @@unique biasa justru akan melarang batch punya lebih dari satu penilaian.
   @@map("yield_assessments")
 }
