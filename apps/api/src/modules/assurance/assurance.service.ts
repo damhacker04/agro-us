@@ -43,6 +43,12 @@ export class AssuranceService {
             product: {
               include: { commodity: { select: { id: true } }, tenant: { select: { id: true, companyName: true } } },
             },
+            // Verdict kewajaran menentukan apakah cap 10% berlaku (FR-7.11, node DPL).
+            yieldAssessments: {
+              orderBy: { assessedAt: "desc" },
+              take: 1,
+              select: { verdict: true, finalVerdict: true },
+            },
           },
         },
       },
@@ -62,6 +68,7 @@ export class AssuranceService {
     batch: {
       id: string;
       verificationStatus: string;
+      yieldAssessments: { verdict: string; finalVerdict: string | null }[];
       product: {
         name: string;
         commodityId: string;
@@ -77,7 +84,7 @@ export class AssuranceService {
     // itu sendiri merugi. Tawarkan tolak-semua lebih dulu, jangan paksa parsial.
     const partialMeetsMinimum = allocated * item.unitPriceLocked >= item.shipment.zone.minOrderValue;
 
-    const { substitutes, blockedReason } = await this.findSubstitutes(
+    const { substitutes, blockedReason, capWaived } = await this.findSubstitutes(
       item.batch,
       item.shipment.zoneId,
       shortfallBox,
@@ -95,26 +102,42 @@ export class AssuranceService {
       unitPriceLocked: item.unitPriceLocked,
       shortfallValue,
       partialMeetsMinimum,
+      capWaived,
       substitutes,
       ...(blockedReason ? { substitutionBlockedReason: blockedReason } : {}),
     };
   }
 
   /**
-   * Cari batch pengganti di zona yang sama, komoditas sama (FR-7.4).
+   * Cari batch pengganti di zona yang sama, komoditas sama (FR-7.4, node `DPL`/`DSUB`).
    *
    * FR-7.11 — selisih harga ditanggung Tenant yang gagal, maksimal 10% nilai PO gagal.
-   * Bila gagal panen TERVERIFIKASI satelit dan selisihnya melampaui cap, opsi substitusi
-   * TIDAK ditawarkan sama sekali: lebih jujur daripada menjanjikan pengganti yang tidak
-   * ada yang sanggup membiayainya. Bila gagal panen TIDAK terverifikasi (indikasi
-   * side-selling), cap gugur dan Tenant menanggung selisih penuh.
+   * Dua percabangan, dan mana yang dipakai ditentukan PENILAIAN KEWAJARAN:
+   *
+   *   cap GUGUR   verdict `TIDAK_WAJAR`, atau satelit menyatakan klaimnya `TIDAK_SESUAI`
+   *               -> substitusi TETAP ditawarkan, Tenant menanggung selisih penuh
+   *   cap BERLAKU verdict lainnya
+   *               -> selisih di atas 10% membuat substitusi disembunyikan; lebih jujur
+   *                  daripada menjanjikan pengganti yang tidak ada yang sanggup membiayai
+   *
+   * ⚠️ Yang menentukan adalah verdict kewajaran, BUKAN `verificationStatus === TERVERIFIKASI`
+   * seperti versi sebelumnya. Bedanya bukan kosmetik: aturan lama menggugurkan cap untuk
+   * `FOTO_SAJA` dan `TIDAK_DAPAT` juga — artinya Tenant yang satu-satunya kesalahannya
+   * adalah lahannya tertutup awan menanggung selisih harga penuh. `TIDAK_SESUAI` tetap
+   * menggugurkan cap karena di situ satelit BERTENTANGAN dengan klaim, dan itu bukti,
+   * bukan ketiadaan bukti.
    */
   private async findSubstitutes(
-    failedBatch: { id: string; verificationStatus: string; product: { commodityId: string; tenant: { id: string } } },
+    failedBatch: {
+      id: string;
+      verificationStatus: string;
+      yieldAssessments: { verdict: string; finalVerdict: string | null }[];
+      product: { commodityId: string; tenant: { id: string } };
+    },
     zoneId: string,
     shortfallBox: number,
     originalPrice: number,
-  ): Promise<{ substitutes: SubstituteOption[]; blockedReason?: string }> {
+  ): Promise<{ substitutes: SubstituteOption[]; blockedReason?: string; capWaived: boolean }> {
     const candidates = await this.prisma.batch.findMany({
       where: {
         id: { not: failedBatch.id },
@@ -132,7 +155,11 @@ export class AssuranceService {
 
     const failedValue = shortfallBox * originalPrice;
     const cap = Math.round((failedValue * SUBSTITUTION_PRICE_GAP_CAP_PCT) / 100);
-    const verified = failedBatch.verificationStatus === "TERVERIFIKASI";
+
+    // Putusan Operator menang atas verdict otomatis: mesin menandai, manusia memutuskan.
+    const nilai = failedBatch.yieldAssessments[0];
+    const verdict = nilai ? (nilai.finalVerdict ?? nilai.verdict) : null;
+    const capWaived = verdict === "TIDAK_WAJAR" || failedBatch.verificationStatus === "TIDAK_SESUAI";
 
     const usable: SubstituteOption[] = [];
     let anyTooExpensive = false;
@@ -142,7 +169,7 @@ export class AssuranceService {
       if (available < shortfallBox) continue;
 
       const gap = Math.max((c.lockedPrice - originalPrice) * shortfallBox, 0);
-      if (verified && gap > cap) {
+      if (!capWaived && gap > cap) {
         anyTooExpensive = true;
         continue;
       }
@@ -158,17 +185,24 @@ export class AssuranceService {
       });
     }
 
-    if (usable.length) return { substitutes: usable };
+    if (usable.length) return { substitutes: usable, capWaived };
+
+    // BY-11e — pembeli berhak tahu MENGAPA substitusi tidak ada, bukan hanya bahwa ia
+    // tidak ada. Dua sebabnya berbeda jauh: satu soal biaya, satu soal pasokan zona.
     if (anyTooExpensive) {
       return {
         substitutes: [],
+        capWaived,
         blockedReason:
-          `Harga pengganti melampaui batas tanggungan Tenant (${SUBSTITUTION_PRICE_GAP_CAP_PCT}% = ` +
-          `Rp${cap.toLocaleString("id-ID")}). Silakan pilih penjadwalan ulang atau pengembalian dana.`,
+          `Harga pengganti melampaui batas tanggungan Tenant (${SUBSTITUTION_PRICE_GAP_CAP_PCT}% dari ` +
+          `nilai pesanan yang gagal, yaitu Rp${cap.toLocaleString("id-ID")}). Gagal panennya sendiri ` +
+          "dinilai wajar, jadi selisih di atas batas itu tidak dapat dibebankan ke Tenant. " +
+          "Silakan pilih penjadwalan ulang atau pengembalian dana.",
       };
     }
     return {
       substitutes: [],
+      capWaived,
       blockedReason: "Belum ada Tenant lain di zona Anda yang membuka kuota untuk komoditas ini.",
     };
   }
@@ -192,6 +226,11 @@ export class AssuranceService {
                 tenant: { select: { id: true, companyName: true } },
                 commodity: { select: { id: true } },
               },
+            },
+            yieldAssessments: {
+              orderBy: { assessedAt: "desc" },
+              take: 1,
+              select: { verdict: true, finalVerdict: true },
             },
           },
         },
@@ -220,6 +259,11 @@ export class AssuranceService {
     const tenantId = item.batch.product.tenant.id;
     let refunded = 0;
     let priceGap = 0;
+    // FR-7.11 — dicatat bersama resolusinya, bukan dihitung ulang saat dibaca. Cap yang
+    // berlaku adalah cap PADA SAAT pembeli memilih; verdict bisa berubah belakangan lewat
+    // tinjauan Operator, dan keputusan finansial yang sudah diambil tidak boleh ikut
+    // berubah retroaktif. Kolom ini juga yang dipakai CHECK aturan integritas #8.
+    let capGugur = false;
 
     await this.prisma.$transaction(async (tx) => {
       switch (option) {
@@ -245,12 +289,13 @@ export class AssuranceService {
           if (!replacementBatchId) {
             throw new BadRequestException({ code: "REPLACEMENT_REQUIRED", message: "Pilih batch pengganti." });
           }
-          const { substitutes, blockedReason } = await this.findSubstitutes(
+          const { substitutes, blockedReason, capWaived } = await this.findSubstitutes(
             item.batch,
             item.shipment.zoneId,
             shortfallBox,
             item.unitPriceLocked,
           );
+          capGugur = capWaived;
           const chosen = substitutes.find((s) => s.batchId === replacementBatchId);
           if (!chosen) {
             throw new BadRequestException({
@@ -353,6 +398,7 @@ export class AssuranceService {
           chosenOption: option,
           shortfallBox,
           priceGapBorneByTenant: priceGap,
+          capWaived: capGugur,
           replacementBatchId: option === "SUBSTITUSI" ? replacementBatchId! : null,
         },
       });

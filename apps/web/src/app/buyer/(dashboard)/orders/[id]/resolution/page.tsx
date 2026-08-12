@@ -6,9 +6,11 @@ import {
   ArrowLeft,
   CalendarClock,
   CheckCircle2,
+  Info,
   Loader2,
   PackageCheck,
   Repeat,
+  ShieldCheck,
   Undo2,
 } from "lucide-react";
 import type { AssuranceOption, PendingAssurance, SubstituteOption } from "@agro-os/shared";
@@ -167,8 +169,12 @@ function KartuKeputusan({
       nilai: "SUBSTITUSI",
       label: "Substitusi",
       Ikon: Repeat,
-      jelas:
-        "Diganti produk setara dari Tenant lain di zona yang sama. Selisih harga ditanggung Tenant yang gagal panen, bukan Anda.",
+      // Kalimatnya berbeda ketika cap gugur, karena yang ditanggung Tenant juga berbeda.
+      // Menyamakan keduanya membuat pembeli mengira selisih selalu tak terbatas — lalu
+      // heran saat substitusi menghilang pada kasus lain.
+      jelas: p.capWaived
+        ? "Diganti produk setara dari Tenant lain di zona yang sama. Berapa pun selisih harganya ditanggung Tenant yang gagal panen, bukan Anda."
+        : "Diganti produk setara dari Tenant lain di zona yang sama. Selisih harga ditanggung Tenant yang gagal panen sampai batas 10% nilai pesanan yang gagal.",
       ...(p.substitutes.length === 0
         ? { nonaktif: p.substitutionBlockedReason ?? "Tidak ada pengganti yang tersedia." }
         : {}),
@@ -222,6 +228,38 @@ function KartuKeputusan({
           <b>{rp(p.shortfallValue)}</b> — inilah yang Anda putuskan nasibnya.
         </p>
       </div>
+
+      {/* BY-11e — MENGAPA substitusi tidak ditawarkan.
+          Tanpa panel ini pembeli hanya melihat satu opsi berwarna kelabu dan menyimpulkan
+          aplikasinya rusak. Kalimatnya juga menjaga sisi Tenant: gagal panen yang WAJAR
+          disebut wajar secara terbuka, supaya tidak ada kesan pemasoknya lalai. */}
+      {p.substitutes.length === 0 && p.substitutionBlockedReason && (
+        <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 mb-4">
+          <div className="flex items-start gap-2.5">
+            <Info className="w-4 h-4 shrink-0 mt-0.5 text-sky-700" />
+            <div className="min-w-0">
+              <div className="text-sm font-bold text-sky-900 mb-1">
+                Mengapa substitusi tidak tersedia
+              </div>
+              <p className="text-xs leading-relaxed text-sky-800">{p.substitutionBlockedReason}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cap gugur berarti Tenant menanggung selisih penuh — pembeli perlu tahu bahwa
+          substitusi tetap terbuka berapa pun harga penggantinya. */}
+      {p.capWaived && p.substitutes.length > 0 && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 mb-4">
+          <div className="flex items-start gap-2.5">
+            <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5 text-emerald-700" />
+            <p className="text-xs leading-relaxed text-emerald-900">
+              Untuk pesanan ini, batas tanggungan 10% tidak berlaku: seluruh selisih harga
+              pengganti menjadi tanggungan Tenant. Anda tidak menambah pembayaran apa pun.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-2.5 mb-4">
         {opsi.map((o) => {

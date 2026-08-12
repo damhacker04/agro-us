@@ -983,6 +983,15 @@ export interface PendingAssurance {
   shortfallValue: Rupiah;
   /** false bila porsi terpenuhi jatuh di bawah minimum zona — tawarkan tolak-semua dulu. */
   partialMeetsMinimum: boolean;
+  /**
+   * Cap tanggungan 10% GUGUR untuk batch ini (FR-7.11, node `DPL`).
+   *
+   * true berarti hasil panen dinilai `TIDAK_WAJAR`, atau satelit menyatakan klaimnya
+   * `TIDAK_SESUAI` — Tenant menanggung selisih harga substitusi PENUH, sehingga substitusi
+   * tetap ditawarkan berapa pun selisihnya. false berarti cap berlaku, dan selisih di atas
+   * batas membuat substitusi disembunyikan (BY-11e menjelaskan alasannya).
+   */
+  capWaived: boolean;
   /** Kosong bila substitusi tidak ditawarkan (lihat `substitutionBlockedReason`). */
   substitutes: SubstituteOption[];
   substitutionBlockedReason?: string;
