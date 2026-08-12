@@ -55,6 +55,41 @@ enum Grade {
   C
 }
 
+/** Penilaian kewajaran hasil panen (FR-4.10). */
+enum YieldPlausibility {
+  WAJAR
+  PERLU_DITINJAU
+  TIDAK_WAJAR
+  /// Sistem TIDAK punya dasar menilai — berbeda dari "marginal". Tidak ada penalti (FR-7.12e).
+  TIDAK_DAPAT_DINILAI
+}
+
+/// Atas dasar apa penilaian dibuat — WAJAR dari pita saja tidak sekuat WAJAR dari pita + benchmark.
+enum AssessmentBasis {
+  PITA_SAJA
+  PITA_PLUS_BENCHMARK
+  TIDAK_ADA_DASAR
+}
+
+enum FailureReason {
+  CUACA
+  HAMA
+  PENYAKIT
+  LAINNYA
+}
+
+/// Callback disbursement bisa gagal; tanpa status ini ledger menyatakan dana cair padahal belum.
+enum SettlementStatus {
+  PENDING
+  SUCCESS
+  RETRY
+}
+
+enum Season {
+  MUSIM_HUJAN
+  MUSIM_KEMARAU
+}
+
 enum CommodityCategory {
   DAUN
   BUAH_UMBI
@@ -193,6 +228,7 @@ model User {
   buyer           Buyer?
   reviewedTenants Tenant[] @relation("TenantReviewer")
   reviewedClaims  Claim[]  @relation("ClaimReviewer")
+  reviewedYields  YieldAssessment[] @relation("PenilaiKewajaran")
 
   @@map("users")
 }
@@ -274,10 +310,12 @@ model Commodity {
   shrinkTolerancePct Decimal           @map("shrink_tolerance_pct") @db.Decimal(4, 2) // 5 daun / 3 buah-umbi — FR-5.2
   avgYieldKgPerHa    Decimal           @map("avg_yield_kg_per_ha") @db.Decimal(10, 2) // basis pembatas kuota — FR-3.3 ⚠ validasi BPS
   growingDaysMin     Int               @default(30) @map("growing_days_min") // umur tanam minimal — kewajaran panen FR-4.8 ⚠ validasi penyuluh
-  gradeStandards     Json              @map("grade_standards") // definisi A/B/C per komoditas — FR-5.1
+  gradeStandards     Json              @map("grade_standards")
+  ambientStable      Boolean           @default(false) @map("ambient_stable") // stabil suhu ruang — §11.2
 
   products      Product[]
   demandSignals DemandSignal[]
+  seasonBaselines CommoditySeasonBaseline[]
 
   @@map("commodities")
 }
@@ -288,6 +326,10 @@ model LandPlot {
   id               String                                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tenantId         String                                 @map("tenant_id") @db.Uuid
   polygon          Unsupported("geometry(Polygon, 4326)") // FR-1.5 — insert via ST_GeomFromGeoJSON
+  // Luas setelah membuang piksel tepi — dasar PITA kewajaran (kuota tetap pakai areaHa).
+  // Nullable: untuk poligon lama nilainya belum pernah dihitung, dan menebaknya berarti
+  // membuat pita yang salah lalu menghukum orang berdasarkan tebakan itu.
+  effectiveAreaHa  Decimal?         @map("effective_area_ha") @db.Decimal(10, 4)
   areaHa           Decimal                                @map("area_ha") @db.Decimal(8, 2)
   captureMethod    CaptureMethod                          @map("capture_method")
   verificationTier VerificationTier                       @default(NORMAL) @map("verification_tier") // TERBATAS jika < 0,1 ha — FR-1.6
@@ -336,11 +378,14 @@ model Batch {
   verificationStatus  VerificationStatus @default(FOTO_SAJA) @map("verification_status") // FR-4.5
   detectedPlantDate   DateTime?          @map("detected_plant_date") @db.Date // hasil NDVI
   detectedHarvestDate DateTime?          @map("detected_harvest_date") @db.Date
+  peakNdvi            Decimal?           @map("peak_ndvi") @db.Decimal(6, 4) // masukan pita — FR-4.10
+  plausibilityCached  YieldPlausibility? @map("plausibility_cached") // salinan verdict terkini
 
   product                Product               @relation(fields: [productId], references: [id])
   landPlot               LandPlot              @relation(fields: [landPlotId], references: [id])
   timelineNodes          TimelineNode[]
   hashAnchors            HashAnchor[]
+  yieldAssessments       YieldAssessment[]
   orderItems             OrderItem[]
   failedResolutions      AssuranceResolution[] @relation("FailedBatch")
   replacementResolutions AssuranceResolution[] @relation("ReplacementBatch")
@@ -364,6 +409,7 @@ model TimelineNode {
   prevHash             String?                              @map("prev_hash") // null hanya untuk node pertama batch
   nodeHash             String                               @unique @map("node_hash") // SHA-256 berantai — §5.4.1
   ralatOfId            String?                              @map("ralat_of") @db.Uuid // node "Ralat" — FR-4.2
+  failureReason        FailureReason?                       @map("failure_reason") // FR-4.9
   outsidePolygonReason String?                              @map("outside_polygon_reason") // tampil ke pembeli — FR-4.3
 
   batch   Batch          @relation(fields: [batchId], references: [id])
@@ -471,6 +517,7 @@ model Order {
   id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   buyerId     String      @map("buyer_id") @db.Uuid
   totalAmount Int         @map("total_amount")
+  traceabilityReportOpted Boolean @default(false) @map("traceability_report_opted") // FR-2.10
   orderStatus OrderStatus @default(DRAFT) @map("order_status")
   createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -573,6 +620,7 @@ model EscrowLedgerEntry {
   entryType  EscrowEntryType @map("entry_type")
   amount     Int // selalu positif; arah dana ditentukan entryType
   gatewayRef String?         @map("gateway_ref")
+  settlementStatus SettlementStatus @default(SUCCESS) @map("settlement_status") // callback bisa gagal
   createdAt  DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
   // APPEND-ONLY (trigger di SQL). Koreksi = entri baru, bukan edit.
 
@@ -672,6 +720,8 @@ model AssuranceResolution {
   orderItemId           String          @unique @map("order_item_id") @db.Uuid
   failedBatchId         String          @map("failed_batch_id") @db.Uuid
   chosenOption          AssuranceOption @map("chosen_option") // FR-7.4 / FR-7.10
+  /// true bila verdict TIDAK_WAJAR — cap 10% gugur, Tenant tanggung selisih penuh (FR-7.11).
+  capWaived Boolean @default(false) @map("cap_waived")
   shortfallBox          Int             @default(0) @map("shortfall_box") // porsi tak terpenuhi — FR-7.10
   priceGapBorneByTenant Int             @default(0) @map("price_gap_borne_by_tenant") // cap 10%; gugur bila tak terverifikasi — FR-7.11
   replacementBatchId    String?         @map("replacement_batch_id") @db.Uuid
@@ -759,4 +809,62 @@ model ShortfallSeniority {
   @@index([tenantId, consumedAt])
   @@index([buyerId, consumedAt])
   @@map("shortfall_seniority")
+}
+
+/**
+ * Kurva vegetasi & rendemen acuan per komoditas per musim (FR-4.10, §6.2 poin 8).
+ *
+ * Inilah aset kalibrasi yang PRD sebut sebagai moat teknis — yang tidak bisa ditiru
+ * dalam enam bulan. `calibrationSource` menyatakan terus terang bahwa angkanya wajib
+ * divalidasi ke penyuluh atau BPS, bukan ditebak: nilai ini langsung menentukan pita
+ * kewajaran, dan pita yang salah menghukum Tenant yang tidak bersalah.
+ */
+model CommoditySeasonBaseline {
+  id                String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  commodityId       String  @map("commodity_id") @db.Uuid
+  season            Season
+  ndviPeakReference Decimal @map("ndvi_peak_reference") @db.Decimal(6, 4)
+  /// Pemetaan puncak NDVI → faktor vigor (§6.2 poin 6).
+  vigorCurveParams  Json    @default("{}") @map("vigor_curve_params")
+  typicalCycleDays  Int     @map("typical_cycle_days")
+  calibrationSource String  @map("calibration_source")
+
+  commodity Commodity @relation(fields: [commodityId], references: [id])
+
+  @@unique([commodityId, season], map: "commodity_season_unik")
+  @@map("commodity_season_baselines")
+}
+
+/**
+ * Riwayat penilaian kewajaran hasil per batch (FR-4.10, FR-7.12a).
+ *
+ * TABEL, bukan kolom di Batch (ERD v2.3 poin 1). Tiga alasan: satu batch dapat dinilai
+ * ULANG saat scene satelit baru menembus awan; halaman TN-35 menuntut riwayatnya; dan
+ * `basis` merekam ATAS DASAR APA penilaian dibuat — tanpa itu `WAJAR` dari pita saja
+ * tidak bisa dibedakan dari `WAJAR` dari pita + benchmark, padahal kekuatan buktinya
+ * jauh berbeda.
+ */
+model YieldAssessment {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  batchId     String   @map("batch_id") @db.Uuid
+  assessedAt  DateTime @default(now()) @map("assessed_at") @db.Timestamptz(6)
+  reportedBox Int      @map("reported_box")
+  /// Rentang sengaja LEBAR — menandai yang tidak masuk akal, bukan mengaudit selisih kecil.
+  expectedYieldMin   Decimal? @map("expected_yield_min") @db.Decimal(12, 2)
+  expectedYieldMax   Decimal? @map("expected_yield_max") @db.Decimal(12, 2)
+  peakNdviUsed       Decimal? @map("peak_ndvi_used") @db.Decimal(6, 4)
+  /// null bila benchmark zona belum tersedia (< 5 batch pembanding — FR-7.12e).
+  zoneBenchmarkRatio Decimal? @map("zone_benchmark_ratio") @db.Decimal(6, 4)
+  basis              AssessmentBasis
+  verdict            YieldPlausibility
+  reviewedById       String?   @map("reviewed_by") @db.Uuid
+  slaDueAt           DateTime? @map("sla_due_at") @db.Timestamptz(6)
+  /// Terisi setelah tinjauan Operator (OP-13); inilah yang menentukan cap 10% berlaku.
+  finalVerdict       YieldPlausibility? @map("final_verdict")
+
+  batch      Batch @relation(fields: [batchId], references: [id])
+  reviewedBy User? @relation("PenilaiKewajaran", fields: [reviewedById], references: [id])
+
+  @@index([batchId, assessedAt(sort: Desc)], map: "yield_assessments_batch_idx")
+  @@map("yield_assessments")
 }

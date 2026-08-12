@@ -51,6 +51,74 @@ export const VerificationStatus = {
 } as const;
 export type VerificationStatus = (typeof VerificationStatus)[keyof typeof VerificationStatus];
 
+/**
+ * Verdict Pita Kewajaran Hasil (YIELD_ASSESSMENTS.verdict) — FR-4.10.
+ *
+ * Empat nilai, bukan tiga. `TIDAK_DAPAT_DINILAI` sengaja terpisah dari `PERLU_DITINJAU`:
+ * yang pertama berarti sistem tidak punya dasar sama sekali (awan menutup scene, zona
+ * masih sepi pembanding), yang kedua berarti dasarnya ada tetapi hasilnya marginal.
+ * Menggabungkan keduanya membuat Tenant merasa dituduh karena mendung.
+ */
+export const YieldPlausibility = {
+  WAJAR: "WAJAR",
+  PERLU_DITINJAU: "PERLU_DITINJAU",
+  TIDAK_WAJAR: "TIDAK_WAJAR",
+  TIDAK_DAPAT_DINILAI: "TIDAK_DAPAT_DINILAI",
+} as const;
+export type YieldPlausibility = (typeof YieldPlausibility)[keyof typeof YieldPlausibility];
+
+/**
+ * Atas dasar apa penilaian dibuat (YIELD_ASSESSMENTS.basis) — FR-7.12e.
+ *
+ * Tanpa kolom ini, `WAJAR` yang lahir dari pita saja tidak bisa dibedakan dari `WAJAR`
+ * yang lahir dari pita + benchmark lintas-Tenant — padahal kekuatan buktinya jauh berbeda,
+ * dan itulah yang menentukan boleh-tidaknya penalti dijatuhkan.
+ */
+export const AssessmentBasis = {
+  PITA_SAJA: "PITA_SAJA",
+  PITA_PLUS_BENCHMARK: "PITA_PLUS_BENCHMARK",
+  TIDAK_ADA_DASAR: "TIDAK_ADA_DASAR",
+} as const;
+export type AssessmentBasis = (typeof AssessmentBasis)[keyof typeof AssessmentBasis];
+
+/** Sebab gagal panen pada node timeline GAGAL (TIMELINE_NODES.failure_reason) — FR-4.9. */
+export const FailureReason = {
+  CUACA: "CUACA",
+  HAMA: "HAMA",
+  PENYAKIT: "PENYAKIT",
+  LAINNYA: "LAINNYA",
+} as const;
+export type FailureReason = (typeof FailureReason)[keyof typeof FailureReason];
+
+/**
+ * Status pencairan satu baris ledger (ESCROW_LEDGER.settlement_status).
+ *
+ * Callback disbursement bisa gagal. Tanpa status ini, satu callback yang hilang membuat
+ * ledger append-only menyatakan dana sudah cair padahal belum — dan karena append-only,
+ * tidak ada baris yang boleh dikoreksi belakangan.
+ */
+export const SettlementStatus = {
+  PENDING: "PENDING",
+  SUCCESS: "SUCCESS",
+  RETRY: "RETRY",
+} as const;
+export type SettlementStatus = (typeof SettlementStatus)[keyof typeof SettlementStatus];
+
+/** Musim tanam untuk kurva acuan komoditas (COMMODITY_SEASON_BASELINES.season). */
+export const Season = {
+  MUSIM_HUJAN: "MUSIM_HUJAN",
+  MUSIM_KEMARAU: "MUSIM_KEMARAU",
+} as const;
+export type Season = (typeof Season)[keyof typeof Season];
+
+/**
+ * Jumlah minimum batch pembanding sebelum benchmark zona boleh dipakai (FR-7.12e).
+ *
+ * Di bawah ini, `basis` wajib `PITA_SAJA` dan posisi relatif Tenant dilaporkan `null` —
+ * bukan 0, yang akan terbaca sebagai "tepat rata-rata".
+ */
+export const MIN_BENCHMARK_SAMPLE = 5;
+
 /** Badge verifikasi yang tampil ke pembeli (FR-2.6). */
 export const VerificationBadge = {
   TERVERIFIKASI_SATELIT: "TERVERIFIKASI_SATELIT",
