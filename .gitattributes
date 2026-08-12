@@ -1,0 +1,5 @@
+# Prisma menyimpan checksum SHA-256 dari BYTE file migrasi di `_prisma_migrations`.
+# Dengan core.autocrlf=true, klon di Windows mengubah LF menjadi CRLF — byte berubah,
+# checksum ikut berubah, dan `prisma migrate deploy` menolak jalan dengan galat drift
+# padahal isi SQL-nya identik. Kunci akhiran barisnya supaya checksum stabil lintas OS.
+*.sql text eol=lf
