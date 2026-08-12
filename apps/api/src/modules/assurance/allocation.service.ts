@@ -145,10 +145,29 @@ export class AllocationService {
              (b.verification_status = 'TERVERIFIKASI') AS verified
       FROM batches b
       JOIN products p ON p.id = b.product_id
+      -- Kapan panen BENAR-BENAR dicatat, diambil dari stempel SERVER node PANEN.
+      LEFT JOIN LATERAL (
+        SELECT tn.server_ts
+        FROM timeline_nodes tn
+        WHERE tn.batch_id = b.id AND tn.activity_type IN ('PANEN', 'GAGAL_PANEN')
+        ORDER BY tn.server_ts DESC
+        LIMIT 1
+      ) panen ON TRUE
       WHERE p.tenant_id = ${tenantId}::uuid
         AND b.production_status IN ('HARVESTED', 'FAILED')
         AND b.quota_box_sold > 0
-      ORDER BY b.claimed_harvest_date DESC
+      -- Diurutkan waktu PENCATATAN, bukan claimed_harvest_date.
+      --
+      -- Tanggal panen yang diklaim adalah RENCANA yang ditentukan Tenant sendiri, jadi
+      -- memakainya sebagai urutan siklus bisa dipermainkan: cukup beri batch lain tanggal
+      -- klaim yang lebih akhir, dan siklus yang shortfall terdorong keluar jendela rolling
+      -- tanpa pernah ikut dihitung. server_ts dicatat server dan tidak bisa dimundurkan.
+      --
+      -- NULLS LAST, bukan COALESCE ke tanggal klaim: keduanya besaran yang berbeda —
+      -- satu waktu kejadian nyata, satu lagi rencana. Menggabungkannya dalam satu urutan
+      -- membuat batch yang statusnya disetel tanpa catatan panen, dengan tanggal klaim
+      -- di masa depan, mengalahkan panen yang betul-betul baru dicatat.
+      ORDER BY panen.server_ts DESC NULLS LAST, b.claimed_harvest_date DESC
       LIMIT ${SHORTFALL_PENALTY_ROLLING_CYCLES}
     `;
     if (!rows.length) return { ratio: null, penalized: false };
