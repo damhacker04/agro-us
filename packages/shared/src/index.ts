@@ -784,6 +784,14 @@ export const NOTIF_KINDS = {
   ESCROW_CAIR: "ESCROW_CAIR",
   /** Operator menyetujui/menolak legalitas Tenant (FR-1.7) — menentukan boleh jualan atau tidak. */
   LEGALITAS_DIPUTUS: "LEGALITAS_DIPUTUS",
+  /**
+   * ER-21 — kuota PO diturunkan karena deviasi berulang (FR-7.12d).
+   *
+   * Isinya WAJIB berupa penjelasan perhitungan dan syarat pemulihan, TANPA angka ambang
+   * (FR-7.12c). Notifikasi termasuk permukaan yang bocor: sekali ambangnya tertulis di
+   * sana, ia tersimpan di ponsel Tenant dan bisa dibandingkan antar siklus.
+   */
+  KUOTA_DITURUNKAN: "KUOTA_DITURUNKAN",
 } as const;
 export type NotifKind = (typeof NOTIF_KINDS)[keyof typeof NOTIF_KINDS];
 

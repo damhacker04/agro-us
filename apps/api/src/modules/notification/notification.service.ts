@@ -14,6 +14,9 @@ const SEVERITY: Record<NotifKind, NotifSeverity> = {
   ESCROW_CAIR: "KRITIS",
   // Kritis: selama belum diputus, Tenant tidak bisa berjualan sama sekali.
   LEGALITAS_DIPUTUS: "KRITIS",
+  // Kritis: memengaruhi berapa banyak yang boleh dijual siklus berikutnya, dan Tenant
+  // berhak tahu sebelum ia menyusun rencana tanam — bukan saat kuotanya ditolak sistem.
+  KUOTA_DITURUNKAN: "KRITIS",
 };
 
 /**

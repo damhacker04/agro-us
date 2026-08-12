@@ -7,6 +7,9 @@ import {
   type AllocationPreview,
 } from "@agro-os/shared";
 import { PrismaService } from "../../prisma/prisma.service";
+import { MIN_SIKLUS_MENYIMPANG } from "./thresholds";
+import { YieldAssessmentService } from "./yield-assessment.service";
+import { NotificationService } from "../notification/notification.service";
 
 type Tx = Parameters<Parameters<PrismaService["$transaction"]>[0]>[0];
 
@@ -19,19 +22,6 @@ type BarisAntrean = {
   qty_box: number;
   senioritas: boolean;
 };
-
-/**
- * Ambang penalti — parameter SERVER, tidak pernah dikirim ke FE (FR-7.12c).
- *
- * Sengaja dibaca dari env, bukan diekspor lewat `@agro-os/shared`: apa pun yang ada di
- * kontrak bersama ikut ter-bundel ke peramban Tenant, dan ambang yang diketahui pihak
- * yang melaporkan angkanya sendiri berubah menjadi target, bukan pagar.
- *
- * ⚠️ Nilai ini masih ambang MUTLAK peninggalan v2.2. v2.3 menggantinya dengan deviasi
- * terhadap benchmark lintas-Tenant (FR-7.12b) — dikerjakan di P2. Sampai benchmark ada,
- * angka ini tetap dipakai tetapi tidak lagi bocor ke antarmuka.
- */
-const AMBANG_SHORTFALL_PCT = Number(process.env["SHORTFALL_PENALTY_THRESHOLD_PCT"] ?? 15);
 
 /**
  * Alokasi hasil panen ke pesanan (FR-7.8/7.9, §5.7.2).
@@ -53,7 +43,11 @@ const AMBANG_SHORTFALL_PCT = Number(process.env["SHORTFALL_PENALTY_THRESHOLD_PCT
 export class AllocationService {
   private readonly log = new Logger(AllocationService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly kewajaran: YieldAssessmentService,
+    private readonly notif: NotificationService,
+  ) {}
 
   /** Hitung alokasi TANPA menyimpan — dipakai pratinjau di layar Tandai Panen (TN-19a). */
   async preview(batchId: string, fulfilledBox: number): Promise<AllocationPreview> {
@@ -154,26 +148,41 @@ export class AllocationService {
   }
 
   /**
-   * Penalti kuota (FR-7.12).
+   * Penalti kuota berbasis benchmark — FR-7.12, node `PEN` pada activity diagram.
    *
-   * Dasar ambangnya: kuota sudah dibatasi 70% kapasitas lahan, jadi Tenant punya bantalan
-   * 30%. Kalau dengan bantalan itu ia masih gagal mengirim melebihi ambang, realisasi
-   * panennya meleset jauh dari estimasi — itu bukan cuaca lagi.
+   * v2.2 memakai ambang MUTLAK 15% shortfall. Itu dibuang total di v2.3, dan bukan karena
+   * angkanya kurang pas: ambang tetap tidak dapat membedakan Tenant yang menyembunyikan
+   * hasil dari seluruh zona yang gagal karena musim buruk. Ia menghukum keduanya sama rata.
    *
-   * Shortfall yang TIDAK terverifikasi satelit dihukum langsung tanpa ambang — itulah
-   * yang memberi mitigasi side-selling gigi finansial, bukan sekadar penalti reputasi.
+   * Percabangannya sekarang bertumpu pada KETERSEDIAAN DASAR PENILAIAN, bukan besaran:
    *
-   * ⚠️ v2.3 mengganti ambang MUTLAK ini dengan deviasi terhadap benchmark lintas-Tenant
-   * sezona (FR-7.12b), supaya musim buruk yang menimpa semua orang tidak menghukum
-   * siapa pun. Nilainya tetap tidak boleh sampai ke antarmuka Tenant (FR-7.12c).
+   *   PN0  tidak ada dasar (awan, atau zona masih sepi pembanding) -> TIDAK ada penalti
+   *   PNA  hanya pita individual (< 5 batch pembanding)            -> penalti bila TIDAK_WAJAR
+   *   PNB  pita + benchmark zona                                   -> penalti bila menyimpang
+   *                                                                  DAN berulang
+   *
+   * Cabang PN0 itulah yang membuat mekanisme ini bisa diterima sisi pasok. Versi lama
+   * menghukum siklus yang tidak terverifikasi satelit — artinya menghukum Tenant karena
+   * langitnya mendung. Aturan itu dihapus di sini; ketidakterverifikasian tetap
+   * berkonsekuensi, tetapi pada cap 10% Harvest Assurance (FR-7.11), bukan pada kuota.
    */
   async applyShortfallPenalty(tenantId: string) {
     const rows = await this.prisma.$queryRaw<
-      Array<{ sold: bigint; fulfilled: bigint; verified: boolean }>
+      Array<{
+        batch_id: string;
+        sold: bigint;
+        fulfilled: bigint;
+        verdict: string | null;
+        basis: string | null;
+      }>
     >`
-      SELECT b.quota_box_sold::bigint AS sold,
+      SELECT b.id::text               AS batch_id,
+             b.quota_box_sold::bigint AS sold,
              COALESCE(b.quota_box_fulfilled, 0)::bigint AS fulfilled,
-             (b.verification_status = 'TERVERIFIKASI') AS verified
+             -- Putusan Operator MENANG atas verdict otomatis: mesin menandai,
+             -- manusia memutuskan.
+             COALESCE(nilai.final_verdict, nilai.verdict)::text AS verdict,
+             nilai.basis::text        AS basis
       FROM batches b
       JOIN products p ON p.id = b.product_id
       -- Kapan panen BENAR-BENAR dicatat, diambil dari stempel SERVER node PANEN.
@@ -184,6 +193,13 @@ export class AllocationService {
         ORDER BY tn.server_ts DESC
         LIMIT 1
       ) panen ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT y.verdict, y.final_verdict, y.basis
+        FROM yield_assessments y
+        WHERE y.batch_id = b.id
+        ORDER BY y.assessed_at DESC
+        LIMIT 1
+      ) nilai ON TRUE
       WHERE p.tenant_id = ${tenantId}::uuid
         AND b.production_status IN ('HARVESTED', 'FAILED')
         AND b.quota_box_sold > 0
@@ -201,34 +217,91 @@ export class AllocationService {
       ORDER BY panen.server_ts DESC NULLS LAST, b.claimed_harvest_date DESC
       LIMIT ${SHORTFALL_PENALTY_ROLLING_CYCLES}
     `;
-    if (!rows.length) return { ratio: null, penalized: false };
+    if (!rows.length) return { penalized: false, cabang: "PN0" as const, posisiPct: null };
 
-    const sold = rows.reduce((s, r) => s + Number(r.sold), 0);
-    const fulfilled = rows.reduce((s, r) => s + Number(r.fulfilled), 0);
-    const ratio = sold === 0 ? 0 : ((sold - fulfilled) / sold) * 100;
+    const { posisiPct, menyimpang } = await this.kewajaran.posisiZona(rows.map((r) => r.batch_id));
 
-    // Cukup SATU siklus tak terverifikasi untuk menggugurkan perlindungan ambang.
-    const anyUnverified = rows.some((r) => !r.verified && Number(r.fulfilled) < Number(r.sold));
-    const penalized = anyUnverified || ratio > AMBANG_SHORTFALL_PCT;
+    // PNB dipakai HANYA bila benchmark benar-benar menjadi dasar salah satu penilaian.
+    // Kalau seluruh siklus hanya berdasar pita, zona ini masih cold start (FR-7.12e) dan
+    // deviasi lintas-Tenant tidak punya arti apa pun.
+    const adaBenchmark = rows.some((r) => r.basis === "PITA_PLUS_BENCHMARK");
+    const adaTidakWajar = rows.some((r) => r.verdict === "TIDAK_WAJAR");
+    const adaDasar = rows.some((r) => r.verdict !== null && r.verdict !== "TIDAK_DAPAT_DINILAI");
+
+    let cabang: "PN0" | "PNA" | "PNB";
+    let penalized: boolean;
+    if (!adaDasar) {
+      cabang = "PN0";
+      penalized = false;
+    } else if (!adaBenchmark) {
+      cabang = "PNA";
+      penalized = adaTidakWajar;
+    } else {
+      cabang = "PNB";
+      // "Signifikan DAN berulang". Satu siklus buruk adalah pertanian; dua siklus
+      // menyimpang sendirian di tengah zona yang baik-baik saja adalah pola — dan yang
+      // dihukum FR-7.12 memang pola, bukan kejadian tunggal (Risiko 1b).
+      penalized = menyimpang >= MIN_SIKLUS_MENYIMPANG || adaTidakWajar;
+    }
 
     await this.prisma.tenant.update({
       where: { id: tenantId },
       data: {
-        // `yieldPositionCached` (posisi relatif) menggantikan rasio mentah dan baru bisa
-        // dihitung setelah ZONE_YIELD_BENCHMARK ada — dibiarkan NULL sampai saat itu,
-        // bukan diisi rasio mentah yang justru mengundang disimpulkan ambangnya.
         quotaMultiplier: penalized ? QUOTA_MULTIPLIER_PENALTY : QUOTA_MULTIPLIER_NORMAL,
         cleanCyclesStreak: penalized ? 0 : { increment: 1 },
+        // NULL bila pembandingnya belum cukup — dinyatakan apa adanya di TN-34, bukan
+        // diisi 0 yang akan terbaca sebagai "tepat rata-rata".
+        yieldPositionCached: posisiPct,
       },
     });
 
     if (penalized) {
       this.log.warn(
-        `Tenant ${tenantId.slice(0, 8)}: shortfall ${ratio.toFixed(1)}%` +
-          `${anyUnverified ? " (ada siklus TIDAK terverifikasi)" : ""} → kuota turun ke ${QUOTA_MULTIPLIER_PENALTY}`,
+        `Tenant ${tenantId.slice(0, 8)}: cabang ${cabang}` +
+          `${adaTidakWajar ? ", ada siklus TIDAK_WAJAR" : ""}` +
+          `${menyimpang ? `, ${menyimpang} siklus menyimpang dari zona` : ""}` +
+          ` -> kuota turun ke ${QUOTA_MULTIPLIER_PENALTY}`,
       );
+      void this.beritahuPenalti(tenantId, cabang, posisiPct);
     }
-    return { ratio: Math.round(ratio * 100) / 100, penalized, unverified: anyUnverified };
+    return { penalized, cabang, posisiPct };
+  }
+
+  /**
+   * ER-21 — beri tahu Tenant, dengan PENJELASAN, bukan sekadar vonis (FR-7.12d).
+   *
+   * ⚠️ Tidak boleh memuat angka ambang dalam bentuk apa pun (FR-7.12c). Notifikasi adalah
+   * permukaan yang bocor: sekali ambangnya tertulis di sana, ia mengendap di ponsel Tenant
+   * dan bisa dibandingkan antar siklus sampai batasnya tersimpulkan.
+   *
+   * Yang boleh disebut: apa yang terjadi, atas dasar apa, dan bagaimana memulihkannya.
+   */
+  private async beritahuPenalti(
+    tenantId: string,
+    cabang: "PN0" | "PNA" | "PNB",
+    posisiPct: number | null,
+  ) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { userId: true },
+    });
+    if (!tenant) return;
+
+    const dasar =
+      cabang === "PNB"
+        ? posisiPct !== null
+          ? `Realisasi panen Anda berada ${Math.abs(posisiPct).toFixed(0)}% di bawah rata-rata Tenant lain pada komoditas dan musim yang sama.`
+          : "Realisasi panen Anda menyimpang dari rata-rata Tenant lain pada komoditas dan musim yang sama."
+        : "Hasil panen yang dilaporkan berada di luar perkiraan dari kondisi lahan Anda sendiri.";
+
+    await this.notif.kirim(
+      tenant.userId,
+      "KUOTA_DITURUNKAN",
+      "Kuota PO diturunkan",
+      `${dasar} Karena itu pengali kuota Anda turun ke ${QUOTA_MULTIPLIER_PENALTY}x untuk sementara. ` +
+        `Pengali kembali ke ${QUOTA_MULTIPLIER_NORMAL}x setelah ${SHORTFALL_PENALTY_ROLLING_CYCLES} siklus ` +
+        "panen Anda kembali sejalan dengan kondisi lahan. Bila Anda menilai ini keliru, ajukan tinjauan lewat dukungan.",
+    );
   }
 
   /**

@@ -124,8 +124,7 @@ export class JobsService {
           where: { id: t.id },
           select: { quotaMultiplier: true },
         });
-        const hasil = await this.allocation.applyShortfallPenalty(t.id);
-        if (hasil.ratio === null) continue;
+        await this.allocation.applyShortfallPenalty(t.id);
         const sesudah = await this.prisma.tenant.findUniqueOrThrow({
           where: { id: t.id },
           select: { quotaMultiplier: true },

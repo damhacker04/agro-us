@@ -7,40 +7,14 @@ import {
   type YieldPlausibility,
 } from "@agro-os/shared";
 import { PrismaService } from "../../prisma/prisma.service";
+import {
+  BATAS_TIDAK_WAJAR,
+  DEVIASI_ZONA_SIGMA,
+  LEBAR_PITA,
+  SLA_TINJAUAN_JAM,
+} from "./thresholds";
 
 type Tx = Parameters<Parameters<PrismaService["$transaction"]>[0]>[0];
-
-/**
- * ================== PARAMETER SERVER — TIDAK PERNAH SAMPAI KE PERAMBAN ==================
- *
- * Semua angka di blok ini adalah ambang, dan FR-7.12c melarangnya tampil di antarmuka
- * mana pun. Karena itu ia hidup di sini, bukan di `@agro-os/shared`: apa pun yang ada di
- * kontrak bersama ikut ter-bundel ke peramban Tenant, dan ambang yang diketahui pihak
- * yang melaporkan angkanya sendiri berubah dari pagar menjadi target.
- */
-
-/**
- * Setengah lebar pita, relatif terhadap titik tengah. 0,40 berarti pita membentang
- * 60%–140% dari dugaan.
- *
- * Sengaja LEBAR (§6.2 poin 6). Tujuannya menandai laporan yang tidak masuk akal, bukan
- * mengaudit selisih kecil. Rendemen acuan sendiri masih estimasi (lihat
- * `calibration_source`), dan pita sempit di atas angka yang belum terkalibrasi hanya
- * memindahkan ketidakpastian kita menjadi tuduhan kepada Tenant.
- */
-const LEBAR_PITA = Number(process.env["YIELD_BAND_SPREAD"] ?? 0.4);
-
-/**
- * Seberapa jauh DI BAWAH batas bawah pita sebelum laporan disebut tidak masuk akal.
- * Di antara keduanya: `PERLU_DITINJAU` — manusia yang memutuskan, bukan mesin.
- */
-const BATAS_TIDAK_WAJAR = Number(process.env["YIELD_IMPLAUSIBLE_RATIO"] ?? 0.65);
-
-/** Deviasi terhadap rata-rata zona (dalam simpangan baku) yang dianggap menyimpang. */
-const DEVIASI_ZONA_SIGMA = Number(process.env["ZONE_DEVIATION_SIGMA"] ?? 1.5);
-
-/** Tenggat tinjauan Operator untuk verdict marginal (FR-5.6, OP-13). */
-const SLA_TINJAUAN_JAM = 24;
 
 type BarisBatch = {
   quota_box_sold: number;
@@ -136,6 +110,100 @@ export class YieldAssessmentService {
       select: { verdict: true, finalVerdict: true },
     });
     return baris ? ((baris.finalVerdict ?? baris.verdict) as YieldPlausibility) : null;
+  }
+
+  /**
+   * Segarkan benchmark zona setelah satu batch menutup siklusnya (FR-7.12b).
+   *
+   * Dipicu KEJADIAN, bukan jadwal — isinya fakta historis batch yang sudah selesai, jadi
+   * ia hanya bisa basi kalau ada batch baru yang selesai. Inilah bedanya dengan
+   * DEMAND_AGGREGATES yang dibuang pada migrasi 20260729000000: yang itu proyeksi ke
+   * depan yang membusuk sendiri tanpa ada yang berubah.
+   *
+   * CONCURRENTLY supaya penyegaran tidak mengunci view dan menghentikan penilaian batch
+   * lain yang kebetulan berjalan bersamaan. Kegagalannya sengaja ditelan: benchmark yang
+   * tertinggal satu siklus jauh lebih ringan akibatnya daripada pencatatan panen yang
+   * gagal karena penyegaran statistik.
+   */
+  async refreshBenchmark(): Promise<boolean> {
+    try {
+      await this.prisma.$executeRawUnsafe(
+        'REFRESH MATERIALIZED VIEW CONCURRENTLY "zone_yield_benchmark"',
+      );
+      return true;
+    } catch (e) {
+      this.log.warn(`Gagal menyegarkan zone_yield_benchmark: ${(e as Error).message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Posisi realisasi Tenant terhadap rata-rata zona, dalam persen (FR-7.12f, TN-34).
+   *
+   * Positif = di atas rata-rata zona. `null` bila belum ada pembanding yang cukup — dan
+   * itu HARUS dilaporkan apa adanya, bukan diisi 0 yang akan terbaca "tepat rata-rata".
+   *
+   * Yang dikembalikan posisi RELATIF, bukan rasio mentah. Rasio mentah, dibandingkan
+   * berulang kali lintas siklus, membuat ambangnya tersimpulkan meski tidak pernah
+   * tertulis di mana pun (FR-7.12c).
+   */
+  async posisiZona(batchIds: string[]): Promise<{ posisiPct: number | null; menyimpang: number }> {
+    if (!batchIds.length) return { posisiPct: null, menyimpang: 0 };
+
+    // DISTINCT ON batch: satu batch bisa terhubung ke banyak order item dalam zona yang
+    // sama, dan tanpa ini satu batch akan ikut menghitung berkali-kali ke rata-rata.
+    const rows = await this.prisma.$queryRaw<
+      Array<{ rasio: string; avg: string; stddev: string | null; n: number }>
+    >`
+      SELECT DISTINCT ON (b.id)
+             (b.quota_box_fulfilled::numeric / b.quota_box_sold)::text AS rasio,
+             zb.avg_fulfillment_ratio::text                            AS avg,
+             zb.stddev_fulfillment_ratio::text                         AS stddev,
+             zb.batch_sample_count                                     AS n
+      FROM batches b
+      JOIN products p     ON p.id = b.product_id
+      JOIN order_items oi ON oi.batch_id = b.id
+      JOIN shipments s    ON s.id = oi.shipment_id
+      JOIN zone_yield_benchmark zb
+             ON zb.zone_id      = s.zone_id
+            AND zb.commodity_id = p.commodity_id
+            AND zb.harvest_week = date_trunc('week', b.claimed_harvest_date)::date
+      WHERE b.id = ANY(${batchIds}::uuid[])
+        AND b.quota_box_sold > 0
+        AND b.quota_box_fulfilled IS NOT NULL
+        AND zb.batch_sample_count >= ${MIN_BENCHMARK_SAMPLE}
+      ORDER BY b.id
+    `;
+    if (!rows.length) return { posisiPct: null, menyimpang: 0 };
+
+    let jumlahPosisi = 0;
+    let menyimpang = 0;
+    for (const r of rows) {
+      const rasio = Number(r.rasio);
+      const n = Number(r.n);
+      const avgSemua = Number(r.avg);
+      const sd = Number(r.stddev ?? 0);
+
+      // Rata-rata TANPA batch Tenant sendiri.
+      //
+      // Benchmark disegarkan tepat setelah panen ini dicatat, jadi batch yang sedang
+      // dinilai ikut masuk ke rata-rata zona. Pada zona kecil (n = 5) ia menyumbang
+      // seperlima, menarik rata-rata ke arah dirinya sendiri dan menutupi penyimpangannya.
+      // Membandingkan seseorang dengan kelompok yang memuat dirinya bukan perbandingan.
+      const avg = n > 1 ? (avgSemua * n - rasio) / (n - 1) : avgSemua;
+
+      jumlahPosisi += avg === 0 ? 0 : ((rasio - avg) / avg) * 100;
+
+      // Simpangan baku tetap memakai nilai gabungan — mengeluarkan satu titik darinya
+      // menuntut jumlah kuadrat yang tidak disimpan matview. Efeknya membuat sebaran
+      // tampak sedikit lebih lebar, sehingga penyimpangan lebih SULIT terpicu. Arah galat
+      // itu disengaja: lebih baik melewatkan satu pelanggar daripada menghukum yang benar.
+      //
+      // Hanya penyimpangan KE BAWAH yang dihitung. Panen di atas rata-rata zona tidak
+      // perlu ditandai — Tenant tetap harus benar-benar mengirimkannya.
+      if (sd > 0 && (avg - rasio) / sd >= DEVIASI_ZONA_SIGMA) menyimpang += 1;
+    }
+    return { posisiPct: Math.round((jumlahPosisi / rows.length) * 100) / 100, menyimpang };
   }
 
   // ------------------------------------------------------------------ internal

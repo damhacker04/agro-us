@@ -4,6 +4,7 @@ import { NotificationService } from "../notification/notification.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { AllocationService } from "../assurance/allocation.service";
+import { YieldAssessmentService } from "../assurance/yield-assessment.service";
 import { computeNodeHash, computeRootHash, sha256, type NodeHashInput } from "./hash.util";
 import type { CreateNodeDto } from "./timeline.dto";
 
@@ -30,6 +31,7 @@ export class TimelineService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly allocation: AllocationService,
+    private readonly kewajaran: YieldAssessmentService,
     private readonly notif: NotificationService,
   ) {}
 
@@ -191,6 +193,10 @@ export class TimelineService {
     // FR-7.12 — penalti kuota dihitung ulang setelah siklus ditutup. Sengaja di luar
     // transaksi: kegagalan menghitung penalti tidak boleh membatalkan pencatatan panen.
     if (dto.activityType === "PANEN" || dto.activityType === "GAGAL_PANEN") {
+      // Benchmark disegarkan LEBIH DULU, karena batch yang baru saja ditutup ini termasuk
+      // yang dibandingkan. Tanpa itu penalti dihitung terhadap rata-rata zona yang belum
+      // memuat siklus ini — dan pada zona kecil, satu batch menggeser rata-ratanya banyak.
+      await this.kewajaran.refreshBenchmark();
       await this.allocation.applyShortfallPenalty(batch.product.tenantId);
     }
 
