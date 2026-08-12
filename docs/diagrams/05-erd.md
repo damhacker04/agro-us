@@ -29,7 +29,14 @@
 >   `quota_box_fulfilled < quota_box_sold` — satu sumber kebenaran.
 > - **Tidak ada kolom `threshold` atau `ambang` di mana pun.** Ambang deviasi adalah parameter
 >   konfigurasi sisi server, bukan data (FR-7.12c). Menyimpannya di basis data mengundangnya bocor ke UI.
-> - `ESCROW_LEDGER` tetap tanpa `entry_type` baru: `RELEASE` untuk porsi terpenuhi, `REFUND` untuk shortfall.
+> - **Penyelesaian shortfall** tidak menambah `entry_type` baru: `RELEASE` untuk porsi terpenuhi,
+>   `REFUND` untuk shortfall. Batasan ini berlaku pada jalur shortfall saja — bukan larangan
+>   umum atas nilai `entry_type`.
+>   `ALIH_SUBSTITUSI` (jalur substitusi, sejak v2.2) tetap ada dan tidak tercakup aturan ini.
+>   Menuliskannya sebagai `REFUND` + `HOLD` akan menyatakan dua peristiwa yang tidak pernah
+>   terjadi — pembeli tidak menerima pengembalian dan tidak melakukan pembayaran baru; dana
+>   tidak pernah keluar dari escrow. Ledger append-only dibaca manusia saat sengketa, jadi
+>   baris palsu adalah harga yang salah untuk menghemat satu nilai enum.
 
 ```mermaid
 ---
@@ -276,7 +283,7 @@ erDiagram
         uuid order_id FK
         uuid shipment_id FK "nullable"
         uuid tenant_id FK "pencairan PER TENANT pada order lintas-tenant - FR-7.2"
-        text entry_type "HOLD / RELEASE30 / POTONG_KLAIM / RELEASE / REFUND / BIAYA_BATAL10"
+        text entry_type "HOLD / RELEASE30 / POTONG_KLAIM / RELEASE / REFUND / BIAYA_BATAL10 / ALIH_SUBSTITUSI"
         int amount
         text gateway_ref
         text settlement_status "PENDING / SUCCESS / RETRY - callback gateway bisa gagal"

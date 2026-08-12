@@ -6,6 +6,40 @@
 
 ---
 
+## v2.3.1 — Dua keputusan implementasi
+**12 Agustus 2026**
+
+Bukan perubahan cakupan. Dua pertanyaan yang muncul saat v2.3 diturunkan ke kode, beserta
+putusannya, dicatat di sini supaya tidak dibongkar ulang tiap kali seseorang membaca ERD.
+
+**Keputusan 1 — `ALIH_SUBSTITUSI` tetap ada; daftar `entry_type` di ERD yang diperbaiki.**
+Catatan ERD *"tetap tanpa `entry_type` baru"* berlaku pada **jalur penyelesaian shortfall**
+(`RELEASE` untuk porsi terpenuhi, `REFUND` untuk shortfall), bukan sebagai larangan umum.
+`ALIH_SUBSTITUSI` melayani jalur substitusi dan sudah ada sejak v2.2. Alternatifnya —
+menuliskan substitusi sebagai `REFUND` + `HOLD` — akan menyatakan dua peristiwa yang tidak
+pernah terjadi: pembeli tidak menerima pengembalian dan tidak membayar lagi, dan dana tidak
+pernah keluar dari escrow. Ledger append-only dibaca manusia saat sengketa. → §ERD baris 32
+
+**Keputusan 2 — alur panen dipecah dua langkah, ditambahkan secara aditif.**
+Konsekuensi `TIDAK_WAJAR` adalah gugurnya cap 10% (FR-7.11), yaitu konsekuensi **finansial**.
+Pada alur satu langkah, peringatan `THW` baru muncul setelah panen tercatat dan alokasi
+berjalan — Tenant diberi tahu bahwa ia baru saja kehilangan perlindungan cap, atas keputusan
+yang sudah tidak bisa ditarik. Alur dua langkah bukan preferensi bentuk API, melainkan syarat
+agar aturan desain v2.3 butir 3 bisa ditegakkan sama sekali.
+
+Endpoint lama **tidak diubah**; pasangan `POST /batches/{id}/harvest` → `…/harvest/confirm`
+ditambahkan berdampingan, UI dipindah setelah terverifikasi, jalur lama baru kemudian dicabut.
+
+*Konsekuensi yang disadari:* pratinjau membuka celah penyelidikan ambang — Tenant dapat
+mencoba beberapa angka sampai `WAJAR`. Celah ini **tidak ditutup dengan menyembunyikan
+pratinjau**, karena menyembunyikannya justru mengembalikan masalah yang dipecahkan Keputusan 2.
+Sebagai gantinya: setiap percobaan penilaian tersimpan sebagai baris `YIELD_ASSESSMENTS`,
+konfirmasi wajib merujuk `assessment_id` yang dikonfirmasi, dan jumlah percobaan tampil pada
+antrean Operator (OP-13). Penyelidikan tidak dilarang — ia tercatat. Sama seperti seluruh
+sistem ini: bukan mencegah klaim, melainkan membuatnya dapat diperiksa. → FR-7.12c, OP-13
+
+---
+
 ## v2.3 — Deteksi Berbasis Benchmark, Fase 0 Validasi, Go-to-Market
 **27 Juli 2026**
 
