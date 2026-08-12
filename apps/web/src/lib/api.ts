@@ -269,6 +269,7 @@ export const ambilEscrow = () =>
     tertahan: Rupiah;
     totalDitahan: Rupiah;
     totalDicairkan: Rupiah;
+    menungguPenyaluran: Rupiah;
     totalPotonganKlaim: Rupiah;
     totalRefund: Rupiah;
     rincian: Record<string, number>;

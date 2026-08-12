@@ -45,6 +45,15 @@ export class OperatorService {
     const jumlah = (jenis: string) =>
       rows.filter((r) => r.entry_type === jenis).reduce((s, r) => s + Number(r.total), 0);
 
+    // Berapa banyak yang sudah dibukukan cair tetapi instruksinya BELUM sukses.
+    // Selama mitra pembayaran belum tersambung (§5.7.1), angka ini seharusnya sama dengan
+    // seluruh pencairan — dan itulah yang ingin terlihat, bukan disembunyikan.
+    const tertunda = await this.prisma.$queryRaw<Array<{ total: number }>>`
+      SELECT COALESCE(SUM(amount), 0)::float8 AS total
+      FROM escrow_ledger
+      WHERE entry_type IN ('RELEASE', 'RELEASE30') AND settlement_status <> 'SUCCESS'
+    `;
+
     const totalDitahan = jumlah("HOLD");
     const keluar = rows
       .filter((r) => r.entry_type !== "HOLD")
@@ -78,6 +87,7 @@ export class OperatorService {
       tertahan: Math.round(totalDitahan - keluar),
       totalDitahan: Math.round(totalDitahan),
       totalDicairkan: Math.round(jumlah("RELEASE") + jumlah("RELEASE30")),
+      menungguPenyaluran: Math.round(Number(tertunda[0]?.total ?? 0)),
       totalPotonganKlaim: Math.round(jumlah("POTONG_KLAIM")),
       totalRefund: Math.round(jumlah("REFUND")),
       totalBiayaBatal: Math.round(jumlah("BIAYA_BATAL10")),

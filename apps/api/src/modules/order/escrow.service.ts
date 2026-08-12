@@ -37,6 +37,10 @@ export class EscrowService {
           shipmentId: r.shipment_id,
           tenantId: r.tenant_id,
           entryType: "HOLD",
+          // HOLD adalah satu-satunya arus MASUK, dan ia lahir dari callback
+          // pembayaran yang sudah benar-benar sukses — jadi statusnya memang
+          // SUCCESS sejak awal, tidak menunggu instruksi ke mana pun.
+          settlementStatus: "SUCCESS",
           amount: Number(r.amount),
           gatewayRef,
         },

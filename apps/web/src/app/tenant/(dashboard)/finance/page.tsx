@@ -34,6 +34,24 @@ export default function FinancePage() {
         <div className="text-3xl font-bold">{rp(data.tertahan)}</div>
       </div>
 
+      {/* Dana yang sudah lepas dari escrow tetapi belum sampai ke rekening. Ditampilkan
+          terpisah, bukan digabung ke "sudah dicairkan": instruksi ke mitra pembayaran
+          berizin belum tersambung (§5.7.1), dan menyembunyikannya berarti Tenant menunggu
+          uang yang ia kira sudah dikirim. */}
+      {data.menungguPenyaluran > 0 && (
+        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <div className="mb-1 text-xs font-bold text-amber-900">
+            Menunggu penyaluran ke rekening
+          </div>
+          <div className="text-xl font-bold text-amber-900">{rp(data.menungguPenyaluran)}</div>
+          <p className="mt-1 text-[11px] leading-relaxed text-amber-800">
+            Dana ini sudah lepas dari escrow dan menjadi hak Anda, tetapi instruksi transfer ke
+            rekening belum berhasil dikirim. Kami menampilkannya apa adanya alih-alih
+            menyatakannya sudah cair.
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         {[
           ["Total pernah ditahan", data.totalDitahan],

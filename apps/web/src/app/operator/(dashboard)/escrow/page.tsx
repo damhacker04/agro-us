@@ -37,6 +37,10 @@ export default function OperatorEscrowPage() {
   const RINCIAN = [
     ["Total pernah ditahan", data.totalDitahan],
     ["Sudah dicairkan ke Tenant", data.totalDicairkan],
+    // Bagian dari angka di atas yang instruksinya ke mitra pembayaran belum sukses.
+    // Selama mitra belum tersambung, keduanya seharusnya sama — dan bila suatu hari
+    // tidak sama, selisihnya persis yang perlu dikejar.
+    ["  ↳ menunggu penyaluran", data.menungguPenyaluran],
     ["Potongan klaim mutu", data.totalPotonganKlaim],
     ["Dikembalikan ke pembeli", data.totalRefund],
     ["Biaya pembatalan", data.totalBiayaBatal],

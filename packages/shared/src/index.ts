@@ -1328,6 +1328,15 @@ export interface OperatorEscrowSummary {
   tertahan: Rupiah;
   totalDitahan: Rupiah;
   totalDicairkan: Rupiah;
+  /**
+   * Bagian dari `totalDicairkan` yang instruksinya ke mitra pembayaran BELUM sukses
+   * (ESCROW_LEDGER.settlement_status ≠ SUCCESS).
+   *
+   * Dipisahkan karena keduanya sempat terhitung satu: begitu entri RELEASE ditulis,
+   * dashboard menyatakan dana cair — padahal instruksi ke mitra belum tersambung sama
+   * sekali. Tenant yang sedang menunggu uangnya berhak melihat bedanya.
+   */
+  menungguPenyaluran: Rupiah;
   totalPotonganKlaim: Rupiah;
   totalRefund: Rupiah;
   totalBiayaBatal: Rupiah;

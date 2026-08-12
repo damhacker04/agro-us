@@ -620,7 +620,11 @@ model EscrowLedgerEntry {
   entryType  EscrowEntryType @map("entry_type")
   amount     Int // selalu positif; arah dana ditentukan entryType
   gatewayRef String?         @map("gateway_ref")
-  settlementStatus SettlementStatus @default(SUCCESS) @map("settlement_status") // callback bisa gagal
+  /// Default PENDING, BUKAN SUCCESS. Enam dari tujuh jenis entri adalah arus keluar yang
+  /// masih menunggu instruksi ke mitra pembayaran; hanya HOLD yang benar-benar sukses saat
+  /// barisnya dibuat. Default yang salah untuk mayoritas baris adalah jebakan — lupa
+  /// menyetelnya harus berarti MENGAKU BELUM, bukan mengaku sudah.
+  settlementStatus SettlementStatus @default(PENDING) @map("settlement_status")
   createdAt  DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
   // APPEND-ONLY (trigger di SQL). Koreksi = entri baru, bukan edit.
 

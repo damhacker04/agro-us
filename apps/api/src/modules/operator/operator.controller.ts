@@ -15,6 +15,7 @@ import type { JwtPayload } from "../auth/auth.service";
 import { Roles, RolesGuard } from "../auth/roles.guard";
 import { OperatorService } from "./operator.service";
 import { YieldAssessmentService } from "../assurance/yield-assessment.service";
+import { SettlementService } from "../quality/settlement.service";
 import {
   DecidePlausibilityDto,
   DecideSatelliteDto,
@@ -36,6 +37,7 @@ export class OperatorController {
   constructor(
     private readonly operator: OperatorService,
     private readonly kewajaran: YieldAssessmentService,
+    private readonly settlement: SettlementService,
   ) {}
 
   /** Posisi dana seluruh Tenant. */
@@ -63,6 +65,16 @@ export class OperatorController {
     @Body() dto: DecideSatelliteDto,
   ) {
     return this.operator.decideSatellite(batchId, dto.verificationStatus);
+  }
+
+  /**
+   * Instruksi penyaluran yang belum sukses. Bukan antrean kerja Operator, melainkan
+   * jendela kejujuran: selama mitra pembayaran belum tersambung, angka ini seharusnya
+   * memuat SETIAP pencairan yang pernah dibukukan.
+   */
+  @Get("penyaluran-tertunda")
+  penyaluranTertunda() {
+    return this.settlement.pendingSettlements();
   }
 
   /** OP-13 — antrean tinjauan kewajaran hasil panen. */

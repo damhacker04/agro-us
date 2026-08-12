@@ -131,12 +131,73 @@ export class SettlementService {
     return total;
   }
 
+  /**
+   * Instruksi penyaluran yang belum sukses (ERD v2.3 poin 6, sequence 04b baris 142-145).
+   *
+   * ⚠️ Mitra pembayaran berizin BELUM tersambung (§5.7.1), jadi tidak ada panggilan yang
+   * bisa dicoba ulang di sini. Yang dikerjakan metode ini adalah menyajikan keadaan
+   * sesungguhnya: berapa entri menunggu, milik siapa, sejak kapan.
+   *
+   * Sengaja TIDAK dibuat sebagai perulangan retry palsu yang menandai SUCCESS sendiri.
+   * Ledger yang menyatakan dana sampai padahal tidak ada instruksi yang pernah dikirim
+   * adalah kebohongan yang tepat berada di tempat paling berbahaya untuk berbohong.
+   */
+  async pendingSettlements() {
+    const rows = await this.prisma.$queryRaw<
+      Array<{ id: string; tenant: string; entry_type: string; amount: bigint; status: string; created_at: Date }>
+    >`
+      SELECT el.id::text, t.company_name AS tenant, el.entry_type::text,
+             el.amount::bigint, el.settlement_status::text AS status, el.created_at
+      FROM escrow_ledger el
+      JOIN tenants t ON t.id = el.tenant_id
+      WHERE el.settlement_status <> 'SUCCESS'
+      ORDER BY el.created_at ASC
+    `;
+    return rows.map((r) => ({
+      entryId: r.id,
+      tenantName: r.tenant,
+      entryType: r.entry_type,
+      amount: Number(r.amount),
+      settlementStatus: r.status,
+      createdAt: r.created_at.toISOString(),
+    }));
+  }
+
+  /**
+   * Tandai hasil instruksi penyaluran. Dipanggil callback mitra pembayaran kelak.
+   *
+   * Basis data hanya mengizinkan PENDING/RETRY -> SUCCESS|RETRY, dan menolak apa pun yang
+   * mengubah jumlah, jenis, atau pemilik entri. SUCCESS bersifat terminal: begitu dana
+   * dinyatakan sampai, koreksinya adalah baris ledger BARU, bukan perubahan baris lama.
+   */
+  async tandaiPenyaluran(entryId: string, berhasil: boolean) {
+    await this.prisma.escrowLedgerEntry.update({
+      where: { id: entryId },
+      data: { settlementStatus: berhasil ? "SUCCESS" : "RETRY" },
+    });
+    return { entryId, settlementStatus: berhasil ? "SUCCESS" : "RETRY" };
+  }
+
   /** Ringkasan escrow untuk dashboard Tenant (FR-3.5). */
   async tenantBalance(tenantId: string) {
     const rows = await this.prisma.$queryRaw<Array<{ entry_type: string; total: bigint }>>`
       SELECT entry_type::text, SUM(amount)::bigint AS total
       FROM escrow_ledger WHERE tenant_id = ${tenantId}::uuid
       GROUP BY entry_type
+    `;
+
+    // Dana yang SUDAH lepas dari escrow tetapi BELUM sampai ke rekening Tenant.
+    //
+    // Sebelum kolom settlement_status hidup, dua hal ini terhitung satu: begitu entri
+    // RELEASE ditulis, dashboard menyatakan dana cair — padahal instruksi ke mitra
+    // pembayaran belum tersambung sama sekali (§5.7.1). Tenant yang menunggu uangnya
+    // pantas melihat bedanya, dan itu satu-satunya alasan angka ini ada.
+    const tertunda = await this.prisma.$queryRaw<Array<{ total: bigint }>>`
+      SELECT COALESCE(SUM(amount), 0)::bigint AS total
+      FROM escrow_ledger
+      WHERE tenant_id = ${tenantId}::uuid
+        AND entry_type IN ('RELEASE', 'RELEASE30')
+        AND settlement_status <> 'SUCCESS'
     `;
     const by = Object.fromEntries(rows.map((r) => [r.entry_type, Number(r.total)]));
     const hold = by.HOLD ?? 0;
@@ -149,6 +210,8 @@ export class SettlementService {
       tertahan: hold - keluar,
       totalDitahan: hold,
       totalDicairkan: (by.RELEASE ?? 0) + (by.RELEASE30 ?? 0),
+      /** Bagian dari `totalDicairkan` yang instruksinya ke mitra pembayaran belum sukses. */
+      menungguPenyaluran: Number(tertunda[0]?.total ?? 0),
       totalPotonganKlaim: by.POTONG_KLAIM ?? 0,
       totalRefund: by.REFUND ?? 0,
       totalBiayaBatal: by.BIAYA_BATAL10 ?? 0,
