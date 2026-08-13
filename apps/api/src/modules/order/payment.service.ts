@@ -6,10 +6,14 @@ import { EscrowService } from "./escrow.service";
 /**
  * Pembayaran (FR-2.8) + pelepasan reservasi kuota saat tagihan kedaluwarsa (activity D3→A5).
  *
- * ⚠️ GATEWAY MASIH SIMULASI. Payload QRIS/VA/E-Wallet dibuat lokal dan `POST /payments/webhook`
- * belum memverifikasi tanda tangan. Sebelum produksi WAJIB diganti Midtrans/Xendit sungguhan
- * DENGAN verifikasi signature — tanpa itu siapa pun bisa menandai tagihan LUNAS.
- * Escrow juga wajib memakai fitur penahanan dana mitra berizin (FR-7.1, §5.7.1).
+ * ⚠️ GATEWAY MASIH SIMULASI. Payload QRIS/VA/E-Wallet dibuat lokal, jadi belum ada mitra
+ * yang benar-benar menerima uang. Escrow pun wajib memakai fitur penahanan dana mitra
+ * berizin sebelum produksi (FR-7.1, §5.7.1).
+ *
+ * Yang SUDAH ditutup: `POST /payments/webhook` kini menuntut tanda tangan HMAC dan gagal
+ * tertutup tanpa `PAYMENT_WEBHOOK_SECRET` (lihat webhook-signature.ts). Tombol peragaan
+ * pindah ke `tandaiLunasDemo`, yang menuntut login dan hanya melayani tagihan milik
+ * pemanggilnya sendiri.
  */
 @Injectable()
 export class PaymentService {
@@ -56,6 +60,28 @@ export class PaymentService {
       expiresAt: p.expiresAt.toISOString(),
       payload: this.buildPayload(method, invoiceRef, amount),
     };
+  }
+
+  /**
+   * Peragaan: tandai LUNAS tagihan milik pesanan pembeli yang sedang login.
+   *
+   * Kepemilikan diperiksa di dalam KUERI, bukan sesudahnya. Membaca tagihan lebih dulu
+   * lalu membandingkan pemiliknya di TypeScript menyisakan celah yang gampang hilang saat
+   * kode dirapikan; syarat di `where` tidak bisa ikut terhapus tanpa kuerinya berubah arti.
+   *
+   * Pesan galatnya sengaja sama untuk "tagihan tidak ada" dan "tagihan bukan milik Anda":
+   * membedakan keduanya mengubah endpoint ini menjadi alat menebak nomor tagihan orang lain.
+   */
+  async tandaiLunasDemo(userId: string, invoiceRef: string) {
+    const payment = await this.prisma.payment.findFirst({
+      where: { invoiceRef, order: { buyer: { userId } } },
+      select: { invoiceRef: true },
+    });
+    if (!payment) {
+      throw new NotFoundException({ code: "INVOICE_NOT_FOUND", message: "Tagihan tidak ditemukan." });
+    }
+    this.logger.warn(`Pembayaran SIMULASI untuk ${invoiceRef} oleh pengguna ${userId.slice(0, 8)}`);
+    return this.handleWebhook(invoiceRef, "PAID");
   }
 
   /**

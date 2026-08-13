@@ -161,13 +161,13 @@ Kami mencantumkannya supaya penilaian berdasarkan keadaan sebenarnya:
 
 | Hal | Keadaan |
 | --- | --- |
-| **Payment gateway** | Belum tersambung. Tombol "Saya Sudah Bayar" meniru panggilan balik gateway; webhook belum memverifikasi signature |
+| **Payment gateway** | Belum tersambung ke mitra sungguhan. Callback `POST /payments/webhook` **sudah** menuntut tanda tangan HMAC dan gagal-tertutup tanpa `PAYMENT_WEBHOOK_SECRET`. Tombol "Saya Sudah Bayar" tidak lagi memanggil webhook itu: ia memakai jalur ber-otentikasi yang hanya bisa melunasi tagihan milik pembeli yang sedang login, dan ikut mati begitu `DEMO_EXPOSE_OTP` dimatikan |
 | **Escrow** | Ledger dan aturan dananya berjalan penuh, tapi belum ada mitra escrow berlisensi |
 | **Login mode peragaan** | `DEMO_EXPOSE_OTP` aktif — siapa pun yang tahu nomor bisa masuk. Aman karena seluruh data karangan, **wajib dimatikan** sebelum ada data sungguhan |
 | **Penyimpanan foto** | Masih disk kontainer yang ephemeral. Foto bukti hilang tiap redeploy dan perlu diunggah ulang; harus pindah ke S3/R2 sebelum produksi |
 | **Citra satelit** | Pipeline Sentinel-2 lengkap dan kini **terjadwal harian** ([`satellite-verify.yml`](.github/workflows/satellite-verify.yml)), tetapi belum menyala: secret `DATABASE_URL` sengaja belum disetel, jadi data NDVI pada demo ini masih data contoh, bukan hasil tarikan langsung |
 | **Peta** | Pemetaan lahan memakai GPS perangkat tanpa peta latar. Peta hiasan dengan koordinat karangan justru menyesatkan, jadi sengaja tidak dipakai |
-| **Uji otomatis** | Hanya aturan keputusan fenologi satelit yang punya uji (`apps/satellite-worker/tests`). API dan web belum |
+| **Uji otomatis** | Aturan keputusan fenologi satelit (`apps/satellite-worker/tests`, 16 uji) dan verifikasi tanda tangan callback pembayaran (`apps/api`, 8 uji — `pnpm --filter @agro-os/api test`). Selebihnya belum: alur yang menyentuh PostGIS masih diuji ujung ke ujung secara manual |
 
 ### Dua pekerjaan terjadwal
 

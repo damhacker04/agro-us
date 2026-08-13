@@ -164,8 +164,16 @@ export const pratinjauPesanan = (body: PreviewOrderBody) =>
 
 export const checkout = (body: CheckoutBody) => kirim<CheckoutResponse>("/orders/checkout", body);
 
+/**
+ * Tombol "sudah bayar" pada mode peragaan.
+ *
+ * Dulu memanggil `/payments/webhook` langsung dari peramban — endpoint yang seharusnya
+ * hanya dipanggil mitra pembayaran server-ke-server, dan yang saat itu tidak memeriksa
+ * apa pun. Sekarang lewat jalur ber-otentikasi yang hanya melayani tagihan milik pembeli
+ * yang sedang login.
+ */
 export const bayarSimulasi = (invoiceRef: string) =>
-  kirim<unknown>("/payments/webhook", { invoiceRef, status: "PAID" });
+  kirim<unknown>(`/payments/${encodeURIComponent(invoiceRef)}/tandai-lunas`, {});
 
 export const ambilPesanan = () => ambil<OrderSummary[]>("/orders");
 

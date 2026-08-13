@@ -62,12 +62,13 @@ function PaymentContent() {
         </div>
 
         {/**
-         * Tombol ini MENGGANTIKAN pembayaran sungguhan — memanggil webhook gateway
-         * secara langsung. Ada karena payment gateway belum tersambung; begitu tersambung,
-         * tombolnya hilang dan status berubah sendiri saat gateway memanggil balik.
+         * Tombol ini MENGGANTIKAN pembayaran sungguhan. Ada karena payment gateway belum
+         * tersambung; begitu tersambung, tombolnya hilang dan status berubah sendiri saat
+         * mitra memanggil balik.
          *
-         * ⚠️ Webhook-nya juga belum memverifikasi signature, jadi siapa pun yang tahu
-         * nomor tagihan bisa menandainya lunas. Aman selama datanya karangan.
+         * Tidak lagi memanggil `/payments/webhook`. Endpoint itu untuk mitra pembayaran,
+         * server ke server, dan kini menuntut tanda tangan HMAC. Tombol ini memakai jalur
+         * ber-otentikasi yang hanya bisa menandai lunas tagihan milik pembeli ini sendiri.
          */}
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 mb-4">
           <p className="text-xs text-amber-900">

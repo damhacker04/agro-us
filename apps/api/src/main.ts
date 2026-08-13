@@ -6,7 +6,11 @@ import type { NestExpressApplication } from "@nestjs/platform-express";
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // `rawBody` WAJIB untuk verifikasi tanda tangan callback pembayaran. Tanda tangan
+  // dihitung atas byte yang benar-benar dikirim mitra; menghitungnya ulang dari objek
+  // hasil parse berarti melewati JSON.stringify, dan urutan kunci maupun spasi tidak
+  // dijamin bertahan — tanda tangan yang sah pun akan tampak salah.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
 
   // Foto bukti (timeline, PoD, klaim) disimpan LocalDiskStorageService ke `uploads/`
   // dan URL-nya dibagikan lewat API — tetapi tanpa baris ini tidak ada yang MELAYANI
