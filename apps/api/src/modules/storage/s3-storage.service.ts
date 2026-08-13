@@ -30,10 +30,30 @@ export class S3StorageService extends StorageService {
     // bucket. Menyamakan keduanya membuat setiap foto memerlukan kredensial untuk
     // dibaca — padahal timeline memang publik by design.
     // Kosong = foto disajikan lewat API sendiri (`GET /uploads/...`), dan itulah default
-    // yang benar untuk sekarang: domain publik R2 (`*.r2.dev`) diblokir di Indonesia.
-    // Diisi = peramban membaca LANGSUNG dari CDN, dipakai kelak setelah bucket punya
-    // custom domain. Satu variabel ini yang membedakan keduanya; sisanya tidak berubah.
-    this.publicBaseUrl = (process.env["S3_PUBLIC_URL"] ?? "").replace(/\/+$/, "");
+    // yang benar untuk sekarang. Diisi = peramban membaca LANGSUNG dari CDN, dipakai kelak
+    // setelah bucket punya custom domain. Satu variabel ini yang membedakan keduanya.
+    const publik = (process.env["S3_PUBLIC_URL"] ?? "").replace(/\/+$/, "");
+
+    // `*.r2.dev` DIABAIKAN dengan sengaja, bukan dipakai apa adanya.
+    //
+    // Domain itu diblokir di Indonesia: DNS-nya diarahkan ke `aduankonten.id` dan yang
+    // menjawab adalah sertifikat `internetpositif.id`. Menghormati nilainya berarti setiap
+    // foto gagal tampil untuk SELURUH pengguna di pasar yang kita tuju — Tenant, pembeli,
+    // maupun juri — sementara log tetap bersih dan bucket tetap tampak sehat.
+    //
+    // Tidak dibuat menggagalkan boot: alternatifnya (menyajikan lewat API) bekerja penuh,
+    // jadi menjatuhkan layanan demi sebuah nilai konfigurasi yang bisa diabaikan dengan
+    // aman adalah kerugian yang lebih besar. Peringatannya dibuat sekeras mungkin.
+    if (/\.r2\.dev$/i.test(publik)) {
+      this.logger.warn(
+        `S3_PUBLIC_URL menunjuk ${publik} — domain r2.dev diblokir di Indonesia, jadi nilai ini ` +
+          "DIABAIKAN dan foto disajikan lewat API sendiri. Kosongkan variabelnya, atau isi " +
+          "dengan custom domain bucket bila sudah ada.",
+      );
+      this.publicBaseUrl = "";
+    } else {
+      this.publicBaseUrl = publik;
+    }
 
     this.client = new S3Client({
       region: process.env["S3_REGION"] ?? "auto",
