@@ -16,6 +16,7 @@ import { Roles, RolesGuard } from "../auth/roles.guard";
 import { OperatorService } from "./operator.service";
 import { YieldAssessmentService } from "../assurance/yield-assessment.service";
 import { SettlementService } from "../quality/settlement.service";
+import { StorageService } from "../storage/storage.service";
 import {
   DecidePlausibilityDto,
   DecideSatelliteDto,
@@ -38,6 +39,7 @@ export class OperatorController {
     private readonly operator: OperatorService,
     private readonly kewajaran: YieldAssessmentService,
     private readonly settlement: SettlementService,
+    private readonly storage: StorageService,
   ) {}
 
   /** Posisi dana seluruh Tenant. */
@@ -65,6 +67,19 @@ export class OperatorController {
     @Body() dto: DecideSatelliteDto,
   ) {
     return this.operator.decideSatellite(batchId, dto.verificationStatus);
+  }
+
+  /**
+   * Penyimpanan foto bukti mana yang sedang aktif.
+   *
+   * Perbedaan antara S3 dan disk ephemeral hanya tercetak sekali saat boot, lalu lewat.
+   * Selama tidak terlihat dari luar, satu redeploy bisa diam-diam mengembalikannya ke disk
+   * lokal tanpa ada yang tahu — dan yang hilang bukan cache, melainkan foto bukti yang
+   * hash-nya sudah terikat ke Verified Timeline.
+   */
+  @Get("penyimpanan")
+  penyimpanan() {
+    return this.storage.info();
   }
 
   /**

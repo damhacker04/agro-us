@@ -1,6 +1,6 @@
 import { Type } from "class-transformer";
 import { ArrayMaxSize, ArrayMinSize, ArrayNotEmpty, IsArray, IsBoolean, IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength, ValidateNested } from "class-validator";
-import { UPLOADED_FILE_URL } from "../storage/storage.service";
+import { IsUrlUnggahan } from "../storage/uploaded-url.validator";
 
 export class CreateTenantProfileDto {
   @IsString()
@@ -9,7 +9,7 @@ export class CreateTenantProfileDto {
   companyName!: string;
 
   @IsOptional()
-  @Matches(UPLOADED_FILE_URL, { message: "logoUrl harus URL http(s) atau path unggahan /uploads/..." })
+  @IsUrlUnggahan({ message: "logoUrl harus berkas hasil unggahan ke AgroUs — kirim lewat POST /uploads lebih dulu" })
   logoUrl?: string;
 
   @IsArray()
@@ -26,7 +26,7 @@ export class UpdateTenantProfileDto {
   companyName?: string;
 
   @IsOptional()
-  @Matches(UPLOADED_FILE_URL, { message: "logoUrl harus URL http(s) atau path unggahan /uploads/..." })
+  @IsUrlUnggahan({ message: "logoUrl harus berkas hasil unggahan ke AgroUs — kirim lewat POST /uploads lebih dulu" })
   logoUrl?: string;
 
   @IsOptional()
@@ -37,7 +37,7 @@ export class UpdateTenantProfileDto {
 }
 
 export class SubmitLegalityDto {
-  @Matches(UPLOADED_FILE_URL, { message: "documentUrl harus URL http(s) atau path unggahan /uploads/..." })
+  @IsUrlUnggahan({ message: "documentUrl harus berkas hasil unggahan ke AgroUs — kirim lewat POST /uploads lebih dulu" })
   documentUrl!: string;
 }
 

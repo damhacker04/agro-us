@@ -3,8 +3,17 @@ import { LocalDiskStorageService, StorageService } from "./storage.service";
 import { S3StorageService } from "./s3-storage.service";
 import { UploadController } from "./upload.controller";
 
-/** Variabel yang WAJIB lengkap sebelum jalur S3 boleh dipakai. */
-const WAJIB_S3 = ["S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"] as const;
+/**
+ * Variabel yang WAJIB lengkap sebelum jalur S3 boleh dipakai.
+ *
+ * `S3_PUBLIC_URL` ikut wajib, dan itu bukan formalitas. Tanpa nilainya, `S3StorageService`
+ * mengembalikan URL RELATIF `/uploads/...` — unggahan tetap sukses, foto tetap tersimpan di
+ * bucket, tetapi setiap tautan menunjuk balik ke disk kontainer yang tidak memuat berkasnya.
+ * Kegagalan seperti itu tidak muncul di log mana pun; ia hanya terlihat sebagai gambar rusak
+ * berminggu-minggu kemudian. Ia juga yang menentukan URL mana yang diterima
+ * `IsUrlUnggahan` — tanpa itu, tidak ada satu pun URL absolut yang dianggap sah.
+ */
+const WAJIB_S3 = ["S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_PUBLIC_URL"] as const;
 
 /**
  * Memilih implementasi penyimpanan berdasarkan kelengkapan env.

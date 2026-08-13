@@ -20,6 +20,13 @@ export interface StoredObject {
  * Dipakai bersama oleh DTO PoD, klaim mutu, legalitas, dan logo Tenant supaya semuanya
  * tidak pernah lagi berbeda pendapat tentang apa itu "URL berkas yang sah".
  */
+/**
+ * @deprecated Dipakai `IsUrlUnggahan` di `uploaded-url.validator.ts`.
+ *
+ * Cabang `https?://\S+` menerima URL absolut APA PUN, artinya foto bukti boleh menunjuk
+ * server milik pengirimnya sendiri — isinya bisa berubah setelah diperiksa, atau lenyap
+ * tepat saat sengketa muncul. Dibiarkan berdiri hanya sebagai penanda; jangan dipakai lagi.
+ */
 export const UPLOADED_FILE_URL = /^(https?:\/\/\S+|\/uploads\/\S+\.(jpe?g|png|webp))$/i;
 
 /**
@@ -28,6 +35,16 @@ export const UPLOADED_FILE_URL = /^(https?:\/\/\S+|\/uploads\/\S+\.(jpe?g|png|we
  */
 export abstract class StorageService {
   abstract put(buffer: Buffer, filename: string, mime: string): Promise<StoredObject>;
+
+  /**
+   * Penyimpanan mana yang sedang aktif — dibaca Operator lewat `GET /operator/penyimpanan`.
+   *
+   * Ada karena perbedaan antara "sudah pindah ke S3" dan "masih disk ephemeral" hanya
+   * terlihat di log boot, yang lewat begitu saja. Selama tidak terlihat dari luar, tidak
+   * ada yang tahu bahwa satu redeploy diam-diam mengembalikannya ke disk lokal — dan yang
+   * hilang bukan cache, melainkan foto bukti.
+   */
+  abstract info(): { jenis: "S3" | "DISK_LOKAL"; ephemeral: boolean; keterangan: string };
 }
 
 /**
@@ -101,5 +118,14 @@ export class LocalDiskStorageService extends StorageService {
     await writeFile(path, buffer);
     this.logger.log(`simpan ${digest.slice(0, 12)}… (${buffer.length} B)`);
     return { url: `/uploads/${digest.slice(0, 2)}/${digest}${ext}`, sha256: digest, bytes: buffer.length };
+  }
+
+  info() {
+    return {
+      jenis: "DISK_LOKAL" as const,
+      ephemeral: true,
+      keterangan:
+        "Foto disimpan di disk kontainer dan HILANG setiap redeploy. Hanya untuk pengembangan.",
+    };
   }
 }

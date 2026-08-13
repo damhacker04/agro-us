@@ -29,7 +29,16 @@ export class S3StorageService extends StorageService {
     // <account>.r2.cloudflarestorage.com sedangkan pembacaan lewat domain publik
     // bucket. Menyamakan keduanya membuat setiap foto memerlukan kredensial untuk
     // dibaca — padahal timeline memang publik by design.
-    this.publicBaseUrl = (process.env["S3_PUBLIC_URL"] ?? "").replace(/\/+$/, "");
+    // Dijamin ada oleh StorageModule; diperiksa lagi di sini supaya kelasnya tetap benar
+    // meski suatu saat dipakai dari tempat lain.
+    const publik = (process.env["S3_PUBLIC_URL"] ?? "").replace(/\/+$/, "");
+    if (!publik) {
+      throw new Error(
+        "S3_PUBLIC_URL wajib diisi — tanpanya URL foto menunjuk balik ke disk kontainer " +
+          "yang tidak memuat berkasnya, dan tidak ada galat yang muncul sampai gambarnya rusak.",
+      );
+    }
+    this.publicBaseUrl = publik;
 
     this.client = new S3Client({
       region: process.env["S3_REGION"] ?? "auto",
@@ -76,10 +85,14 @@ export class S3StorageService extends StorageService {
     );
 
     this.logger.log(`simpan ${digest.slice(0, 12)}… (${buffer.length} B)`);
+    return { url: `${this.publicBaseUrl}/${key}`, sha256: digest, bytes: buffer.length };
+  }
+
+  info() {
     return {
-      url: this.publicBaseUrl ? `${this.publicBaseUrl}/${key}` : `/${key}`,
-      sha256: digest,
-      bytes: buffer.length,
+      jenis: "S3" as const,
+      ephemeral: false,
+      keterangan: `Bucket ${this.bucket}, dibaca publik lewat ${this.publicBaseUrl}`,
     };
   }
 }
