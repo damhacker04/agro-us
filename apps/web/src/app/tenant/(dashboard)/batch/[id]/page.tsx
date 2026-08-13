@@ -3,10 +3,9 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle2, AlertTriangle, Plus, Scale } from "lucide-react";
-import { ambilBatchSatu, ambilTimelineTenant, ambilVerifikasi, GalatApi } from "@/lib/api";
+import { ambilBatchSatu, ambilTimelineTenant, ambilVerifikasi, GalatApi, urlBerkas } from "@/lib/api";
 import type { BatchResponse, TimelineNodeResponse, TimelineVerifyResponse } from "@agro-os/shared";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
 const tgl = (iso: string) =>
   new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
@@ -147,7 +146,7 @@ export default function BatchDetailPage({ params }: { params: Promise<{ id: stri
                     <div
                       key={f.sha256}
                       className="h-24 w-32 rounded-lg bg-gray-100 bg-cover bg-center border border-gray-200"
-                      style={{ backgroundImage: `url(${API_BASE}${f.url})` }}
+                      style={{ backgroundImage: `url(${urlBerkas(f.url)})` }}
                     />
                   ))}
                 </div>

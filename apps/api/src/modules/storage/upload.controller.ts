@@ -1,13 +1,19 @@
 import {
   BadRequestException,
   Controller,
+  Get,
+  NotFoundException,
+  Param,
   Post,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import type { Response } from "express";
 import { JwtAuthGuard } from "../auth/auth.guard";
+import { kunciObjekDariPath } from "./object-key";
 import { StorageService, kenaliGambar, type StoredObject } from "./storage.service";
 
 /** Sama dengan batas unggahan timeline — foto ponsel tanpa kompresi ulang. */
@@ -29,11 +35,51 @@ const MAX_BYTES = 12 * 1024 * 1024;
  * di origin API.
  */
 @Controller("uploads")
-@UseGuards(JwtAuthGuard)
 export class UploadController {
   constructor(private readonly storage: StorageService) {}
 
+  /**
+   * Sajikan foto bukti lewat domain API sendiri.
+   *
+   * Ada karena domain publik R2 (`*.r2.dev`) diblokir di Indonesia: DNS-nya diarahkan ke
+   * `aduankonten.id` dan yang menjawab adalah sertifikat `internetpositif.id`. Foto aman
+   * tersimpan di bucket, tetapi tak seorang pun di pasar yang kita tuju bisa membukanya.
+   *
+   * TANPA otentikasi, dan itu disengaja: Verified Timeline harus bisa diperiksa siapa pun
+   * tanpa mempercayai AgroUs (§6.1). Nama berkasnya digest SHA-256 isinya, jadi tidak bisa
+   * ditebak. ⚠️ Foto PoD dan klaim mutu ikut tersaji dengan aturan yang sama — sekarang
+   * keduanya melewati jalur ini, sehingga membedakannya kelak cukup di satu tempat.
+   */
+  @Get(":prefix/:berkas")
+  async sajikan(
+    @Param("prefix") prefix: string,
+    @Param("berkas") berkas: string,
+    @Res() res: Response,
+  ) {
+    const kunci = kunciObjekDariPath(prefix, berkas);
+    if (!kunci) throw new NotFoundException("Berkas tidak ditemukan");
+
+    const objek = await this.storage.baca(kunci);
+    if (!objek) throw new NotFoundException("Berkas tidak ditemukan");
+
+    // Header yang sama persis dengan yang dipasang penyajian statis di main.ts. Isi folder
+    // ini berasal dari unggahan pengguna: `nosniff` menahan peramban menebak tipe isinya,
+    // dan CSP sandbox memastikan berkas yang entah bagaimana lolos sebagai HTML tetap tidak
+    // bisa menjalankan skrip atau membaca origin API.
+    res.setHeader("Content-Type", objek.contentType);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
+    res.setHeader("Content-Disposition", "inline");
+    // Isi objek = digest namanya, jadi berkas ini tidak akan pernah berubah.
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    if (objek.bytes) res.setHeader("Content-Length", String(objek.bytes));
+
+    objek.stream.on("error", () => res.destroy());
+    objek.stream.pipe(res);
+  }
+
   @Post()
+  @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_BYTES } }))
   async unggah(@UploadedFile() file?: Express.Multer.File): Promise<StoredObject> {
     if (!file) {

@@ -12,11 +12,10 @@ import {
   MessageSquare,
   Truck
 } from "lucide-react";
-import { ambilNdvi, ambilProduk, ambilTimeline, ambilVerifikasi } from "@/lib/api";
+import { ambilNdvi, ambilProduk, ambilTimeline, ambilVerifikasi, urlBerkas } from "@/lib/api";
 import type { CatalogItem, NdviSeries, TimelineNodeResponse, TimelineVerifyResponse } from "@agro-os/shared";
 
 /** Foto bukti disajikan API sebagai jalur relatif (/uploads/...), jadi perlu diawali host. */
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 import { 
   LineChart, 
   Line, 
@@ -352,7 +351,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                               <div key={f.sha256} className="relative">
                                 <div
                                   className="h-32 w-40 rounded-lg bg-gray-100 bg-cover bg-center border border-gray-200"
-                                  style={{ backgroundImage: `url(${API_BASE}${f.url})` }}
+                                  style={{ backgroundImage: `url(${urlBerkas(f.url)})` }}
                                 />
                                 {f.captureSource === "GALLERY" && (
                                   <span className="absolute bottom-1 left-1 bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">

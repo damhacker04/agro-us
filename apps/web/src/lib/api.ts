@@ -81,6 +81,20 @@ import type {
  */
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://agro-us.onrender.com";
 
+/**
+ * Alamat penuh sebuah berkas unggahan.
+ *
+ * Server mengembalikan DUA bentuk, tergantung dari mana foto dibaca:
+ *   `/uploads/ab/<digest>.jpg`          → disajikan API sendiri (default saat ini)
+ *   `https://cdn.../uploads/ab/....jpg` → dibaca langsung dari CDN bucket
+ *
+ * Sebelumnya beberapa halaman merangkainya sebagai `${API_BASE}${url}` begitu saja,
+ * sehingga bentuk kedua menghasilkan `https://api…https://cdn…` yang rusak. Dirapikan
+ * jadi satu fungsi supaya perpindahan ke custom domain kelak tidak menuntut menyisir
+ * ulang setiap tempat yang menampilkan foto.
+ */
+export const urlBerkas = (url: string) => (/^https?:\/\//i.test(url) ? url : `${BASE}${url}`);
+
 /** Galat API yang membawa kode mesin, supaya UI bisa membedakan penyebabnya. */
 export class GalatApi extends Error {
   constructor(

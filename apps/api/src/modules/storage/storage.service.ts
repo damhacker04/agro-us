@@ -1,5 +1,7 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { Readable } from "node:stream";
 import { Injectable, Logger } from "@nestjs/common";
 import { sha256 } from "../timeline/hash.util";
 
@@ -33,8 +35,31 @@ export const UPLOADED_FILE_URL = /^(https?:\/\/\S+|\/uploads\/\S+\.(jpe?g|png|we
  * Port penyimpanan objek untuk foto bukti (PRD §6.4).
  * Implementasi produksi (S3/R2/GCS) tinggal menggantikan binding di modulnya.
  */
+/** Isi objek yang dibaca kembali, siap dialirkan ke respons. */
+export interface BacaObjek {
+  stream: Readable;
+  contentType: string;
+  bytes?: number;
+}
+
 export abstract class StorageService {
   abstract put(buffer: Buffer, filename: string, mime: string): Promise<StoredObject>;
+
+  /**
+   * Baca kembali satu objek untuk disajikan lewat API sendiri.
+   *
+   * Ada karena domain publik R2 (`*.r2.dev`) DIBLOKIR di Indonesia — DNS-nya diarahkan ke
+   * `aduankonten.id` dan yang menjawab adalah sertifikat `internetpositif.id`, bukan
+   * Cloudflare. Foto tersimpan aman di bucket, tetapi tidak ada pengguna Indonesia yang
+   * bisa membukanya: bukan Tenant, bukan pembeli, bukan juri. Justru pasar yang dituju.
+   *
+   * Jadi objeknya disajikan lewat domain API yang jelas terjangkau. Penyimpanannya tetap
+   * tahan-redeploy; yang berpindah hanya jalur bacanya.
+   *
+   * `null` berarti objeknya memang tidak ada — dibedakan dari galat, supaya pemanggil
+   * bisa menjawab 404 alih-alih 500.
+   */
+  abstract baca(key: string): Promise<BacaObjek | null>;
 
   /**
    * Penyimpanan mana yang sedang aktif — dibaca Operator lewat `GET /operator/penyimpanan`.
@@ -120,6 +145,21 @@ export class LocalDiskStorageService extends StorageService {
     return { url: `/uploads/${digest.slice(0, 2)}/${digest}${ext}`, sha256: digest, bytes: buffer.length };
   }
 
+  async baca(key: string): Promise<BacaObjek | null> {
+    const path = join(this.root, key.replace(/^uploads\//, ""));
+    try {
+      const info = await stat(path);
+      if (!info.isFile()) return null;
+      return {
+        stream: createReadStream(path),
+        contentType: mimeDariEkstensi(path),
+        bytes: info.size,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   info() {
     return {
       jenis: "DISK_LOKAL" as const,
@@ -128,4 +168,15 @@ export class LocalDiskStorageService extends StorageService {
         "Foto disimpan di disk kontainer dan HILANG setiap redeploy. Hanya untuk pengembangan.",
     };
   }
+}
+
+/**
+ * Content-Type dari ekstensi yang KITA sendiri tentukan saat menyimpan.
+ *
+ * Aman justru karena ekstensinya bukan berasal dari nama berkas kiriman klien — ia
+ * diturunkan dari byte awal berkas oleh `kenaliGambar` (lihat FORMAT di atas).
+ */
+function mimeDariEkstensi(path: string): string {
+  const cocok = FORMAT.find((f) => path.toLowerCase().endsWith(f.ext));
+  return cocok?.mime ?? "application/octet-stream";
 }

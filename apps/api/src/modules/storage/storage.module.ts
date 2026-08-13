@@ -6,14 +6,19 @@ import { UploadController } from "./upload.controller";
 /**
  * Variabel yang WAJIB lengkap sebelum jalur S3 boleh dipakai.
  *
- * `S3_PUBLIC_URL` ikut wajib, dan itu bukan formalitas. Tanpa nilainya, `S3StorageService`
- * mengembalikan URL RELATIF `/uploads/...` — unggahan tetap sukses, foto tetap tersimpan di
- * bucket, tetapi setiap tautan menunjuk balik ke disk kontainer yang tidak memuat berkasnya.
- * Kegagalan seperti itu tidak muncul di log mana pun; ia hanya terlihat sebagai gambar rusak
- * berminggu-minggu kemudian. Ia juga yang menentukan URL mana yang diterima
- * `IsUrlUnggahan` — tanpa itu, tidak ada satu pun URL absolut yang dianggap sah.
+ * `S3_PUBLIC_URL` sengaja TIDAK termasuk. Ia opsional dan menentukan dari mana peramban
+ * membaca foto:
+ *
+ *   kosong  foto disajikan lewat API sendiri (`GET /uploads/...`). Inilah default yang
+ *           benar sekarang — domain publik R2 (`*.r2.dev`) diblokir di Indonesia, DNS-nya
+ *           diarahkan ke `aduankonten.id`, sehingga tidak seorang pun di pasar yang kita
+ *           tuju bisa membuka fotonya.
+ *   diisi   peramban membaca LANGSUNG dari CDN. Dipakai setelah bucket punya custom domain
+ *           yang tidak kena filter.
+ *
+ * Berpindah antara keduanya hanya soal mengisi atau mengosongkan variabel ini.
  */
-const WAJIB_S3 = ["S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_PUBLIC_URL"] as const;
+const WAJIB_S3 = ["S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"] as const;
 
 /**
  * Memilih implementasi penyimpanan berdasarkan kelengkapan env.

@@ -1,7 +1,7 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, NoSuchKey, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { Injectable, Logger } from "@nestjs/common";
 import { sha256 } from "../timeline/hash.util";
-import { StorageService, kenaliGambar, type StoredObject } from "./storage.service";
+import { StorageService, kenaliGambar, type BacaObjek, type StoredObject } from "./storage.service";
 
 /**
  * Penyimpanan objek S3-kompatibel — Cloudflare R2, AWS S3, MinIO, atau Backblaze B2.
@@ -29,16 +29,11 @@ export class S3StorageService extends StorageService {
     // <account>.r2.cloudflarestorage.com sedangkan pembacaan lewat domain publik
     // bucket. Menyamakan keduanya membuat setiap foto memerlukan kredensial untuk
     // dibaca — padahal timeline memang publik by design.
-    // Dijamin ada oleh StorageModule; diperiksa lagi di sini supaya kelasnya tetap benar
-    // meski suatu saat dipakai dari tempat lain.
-    const publik = (process.env["S3_PUBLIC_URL"] ?? "").replace(/\/+$/, "");
-    if (!publik) {
-      throw new Error(
-        "S3_PUBLIC_URL wajib diisi — tanpanya URL foto menunjuk balik ke disk kontainer " +
-          "yang tidak memuat berkasnya, dan tidak ada galat yang muncul sampai gambarnya rusak.",
-      );
-    }
-    this.publicBaseUrl = publik;
+    // Kosong = foto disajikan lewat API sendiri (`GET /uploads/...`), dan itulah default
+    // yang benar untuk sekarang: domain publik R2 (`*.r2.dev`) diblokir di Indonesia.
+    // Diisi = peramban membaca LANGSUNG dari CDN, dipakai kelak setelah bucket punya
+    // custom domain. Satu variabel ini yang membedakan keduanya; sisanya tidak berubah.
+    this.publicBaseUrl = (process.env["S3_PUBLIC_URL"] ?? "").replace(/\/+$/, "");
 
     this.client = new S3Client({
       region: process.env["S3_REGION"] ?? "auto",
@@ -85,14 +80,42 @@ export class S3StorageService extends StorageService {
     );
 
     this.logger.log(`simpan ${digest.slice(0, 12)}… (${buffer.length} B)`);
-    return { url: `${this.publicBaseUrl}/${key}`, sha256: digest, bytes: buffer.length };
+    // Tanpa domain publik, URL-nya RELATIF dan bentuknya identik dengan jalur disk lokal.
+    // Bukan sekadar kerapian: FE merakit alamat foto sebagai `${API_BASE}${url}`, sehingga
+    // URL absolut justru menghasilkan `https://api…https://pub…` yang rusak. Bentuk relatif
+    // membuat baris basis data lama, baru, lokal, dan S3 semuanya berperilaku sama.
+    return {
+      url: this.publicBaseUrl ? `${this.publicBaseUrl}/${key}` : `/${key}`,
+      sha256: digest,
+      bytes: buffer.length,
+    };
+  }
+
+  async baca(key: string): Promise<BacaObjek | null> {
+    try {
+      const out = await this.client.send(
+        new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      );
+      if (!out.Body) return null;
+      return {
+        stream: out.Body as unknown as BacaObjek["stream"],
+        contentType: out.ContentType ?? "application/octet-stream",
+        ...(out.ContentLength ? { bytes: out.ContentLength } : {}),
+      };
+    } catch (e) {
+      // Objek tidak ada BUKAN galat: pemanggil harus bisa menjawab 404, bukan 500.
+      if (e instanceof NoSuchKey || (e as { name?: string }).name === "NoSuchKey") return null;
+      throw e;
+    }
   }
 
   info() {
     return {
       jenis: "S3" as const,
       ephemeral: false,
-      keterangan: `Bucket ${this.bucket}, dibaca publik lewat ${this.publicBaseUrl}`,
+      keterangan: this.publicBaseUrl
+        ? `Bucket ${this.bucket}, dibaca langsung dari ${this.publicBaseUrl}`
+        : `Bucket ${this.bucket}, disajikan lewat API sendiri (/uploads/...)`,
     };
   }
 }

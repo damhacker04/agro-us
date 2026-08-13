@@ -5,9 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, Clock, Loader2, Scale } from "lucide-react";
 import type { ClaimResponse } from "@agro-os/shared";
-import { GalatApi, ambilAntreanKlaim, putuskanKlaim } from "@/lib/api";
+import { GalatApi, ambilAntreanKlaim, putuskanKlaim, urlBerkas } from "@/lib/api";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
 const jam = (iso: string) => new Date(iso).toLocaleString("id-ID");
 
@@ -112,7 +111,7 @@ export default function OperatorClaimDetailPage({
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
             src={
-              klaim.photoUrl.startsWith("http") ? klaim.photoUrl : `${API_BASE}${klaim.photoUrl}`
+              urlBerkas(klaim.photoUrl)
             }
             alt="Foto kondisi barang"
             className="rounded-lg border border-gray-200 max-h-72"

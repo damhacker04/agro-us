@@ -5,9 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, FileText, Loader2, MapPin } from "lucide-react";
 import type { LegalityQueueItem } from "@agro-os/shared";
-import { GalatApi, ambilAntreanLegalitas, putuskanLegalitas } from "@/lib/api";
+import { GalatApi, ambilAntreanLegalitas, putuskanLegalitas, urlBerkas } from "@/lib/api";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 const tgl = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "—";
 
@@ -78,11 +77,7 @@ export default function OperatorLegalityDetailPage({
   }
 
   const sudahDiputus = tenant.legalityStatus !== "PENDING";
-  const dokUrl = tenant.legalityDocUrl
-    ? tenant.legalityDocUrl.startsWith("http")
-      ? tenant.legalityDocUrl
-      : `${API_BASE}${tenant.legalityDocUrl}`
-    : null;
+  const dokUrl = tenant.legalityDocUrl ? urlBerkas(tenant.legalityDocUrl) : null;
 
   return (
     <div className="p-8 max-w-3xl">
