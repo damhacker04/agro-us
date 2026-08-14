@@ -9,11 +9,12 @@ import {
 } from "./quality.controller";
 import { ClaimService } from "./claim.service";
 import { SettlementService } from "./settlement.service";
+import { UmurSimpanService } from "./umur-simpan.service";
 
 @Module({
   imports: [TenantModule, NotificationModule],
   controllers: [BuyerClaimController, OperatorClaimController, TenantEscrowController, QualityJobsController],
-  providers: [ClaimService, SettlementService],
-  exports: [SettlementService],
+  providers: [ClaimService, SettlementService, UmurSimpanService],
+  exports: [SettlementService, UmurSimpanService],
 })
 export class QualityModule {}

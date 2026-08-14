@@ -55,6 +55,14 @@ type SeedCommodity = {
   ambientStable: boolean;
   /** Puncak NDVI acuan kanopi sehat — [kemarau, hujan]. INDIKATIF, lihat CALIBRATION_SOURCE. */
   ndviPeak: [number, number];
+  /**
+   * Umur simpan pada suhu ambien, hari (FR-5.8).
+   *
+   * ⚠️ INDIKATIF, dan taruhannya lebih tinggi daripada rendemen: angka ini dipakai memberi
+   * tahu PEMBELI seberapa segar barangnya. Salah di sini bukan salah hitung kapasitas,
+   * melainkan salah menyampaikan kesegaran. Wajib divalidasi ke penyuluh/BPS.
+   */
+  umurSimpanHari: number;
   catatan: string;
 };
 
@@ -92,19 +100,19 @@ function kurvaVigor(puncak: number) {
 
 const COMMODITIES: SeedCommodity[] = [
   // ---- DAUN (susut 5%) ----
-  { name: "Sawi Hijau (Caisim)", category: "DAUN", avgYieldKgPerHa: 15_000, growingDaysMin: 25, ambientStable: false, ndviPeak: [0.72, 0.78], catatan: "Grade by kesegaran daun & bebas lubang hama" },
-  { name: "Bayam", category: "DAUN", avgYieldKgPerHa: 8_000, growingDaysMin: 20, ambientStable: false, ndviPeak: [0.70, 0.76], catatan: "Umur simpan pendek — prioritas pengiriman pagi" },
-  { name: "Kangkung", category: "DAUN", avgYieldKgPerHa: 10_000, growingDaysMin: 21, ambientStable: false, ndviPeak: [0.74, 0.80], catatan: "Grade by panjang batang & kesegaran" },
-  { name: "Kubis", category: "DAUN", avgYieldKgPerHa: 25_000, growingDaysMin: 70, ambientStable: false, ndviPeak: [0.78, 0.82], catatan: "Grade by kepadatan krop & berat per krop" },
-  { name: "Selada", category: "DAUN", avgYieldKgPerHa: 12_000, growingDaysMin: 40, ambientStable: false, ndviPeak: [0.70, 0.75], catatan: "Sensitif suhu — utamakan rantai dingin" },
+  { name: "Sawi Hijau (Caisim)", category: "DAUN", avgYieldKgPerHa: 15_000, growingDaysMin: 25, ambientStable: false, ndviPeak: [0.72, 0.78], umurSimpanHari: 3, catatan: "Grade by kesegaran daun & bebas lubang hama" },
+  { name: "Bayam", category: "DAUN", avgYieldKgPerHa: 8_000, growingDaysMin: 20, ambientStable: false, ndviPeak: [0.70, 0.76], umurSimpanHari: 2, catatan: "Umur simpan pendek — prioritas pengiriman pagi" },
+  { name: "Kangkung", category: "DAUN", avgYieldKgPerHa: 10_000, growingDaysMin: 21, ambientStable: false, ndviPeak: [0.74, 0.80], umurSimpanHari: 2, catatan: "Grade by panjang batang & kesegaran" },
+  { name: "Kubis", category: "DAUN", avgYieldKgPerHa: 25_000, growingDaysMin: 70, ambientStable: false, ndviPeak: [0.78, 0.82], umurSimpanHari: 14, catatan: "Grade by kepadatan krop & berat per krop" },
+  { name: "Selada", category: "DAUN", avgYieldKgPerHa: 12_000, growingDaysMin: 40, ambientStable: false, ndviPeak: [0.70, 0.75], umurSimpanHari: 4, catatan: "Sensitif suhu — utamakan rantai dingin" },
   // ---- BUAH & UMBI (susut 3%) ----
-  { name: "Cabai Rawit", category: "BUAH_UMBI", avgYieldKgPerHa: 7_000, growingDaysMin: 80, ambientStable: true, ndviPeak: [0.68, 0.74], catatan: "Grade by tingkat kematangan merah & keseragaman" },
-  { name: "Cabai Merah Besar", category: "BUAH_UMBI", avgYieldKgPerHa: 10_000, growingDaysMin: 85, ambientStable: true, ndviPeak: [0.68, 0.74], catatan: "Grade by panjang buah & kilap kulit" },
-  { name: "Tomat", category: "BUAH_UMBI", avgYieldKgPerHa: 25_000, growingDaysMin: 65, ambientStable: false, ndviPeak: [0.72, 0.78], catatan: "Grade by diameter & kematangan seragam" },
-  { name: "Kentang", category: "BUAH_UMBI", avgYieldKgPerHa: 17_000, growingDaysMin: 90, ambientStable: true, ndviPeak: [0.78, 0.84], catatan: "Grade by ukuran umbi (knol) & bebas hijau" },
-  { name: "Wortel", category: "BUAH_UMBI", avgYieldKgPerHa: 15_000, growingDaysMin: 90, ambientStable: true, ndviPeak: [0.70, 0.76], catatan: "Grade by panjang-diameter & bebas cabang" },
-  { name: "Bawang Merah", category: "BUAH_UMBI", avgYieldKgPerHa: 10_000, growingDaysMin: 60, ambientStable: true, ndviPeak: [0.58, 0.64], catatan: "Grade by diameter umbi & tingkat kering askip" },
-  { name: "Apel Batu", category: "BUAH_UMBI", avgYieldKgPerHa: 15_000, growingDaysMin: 150, ambientStable: false, ndviPeak: [0.75, 0.80], catatan: "Khas Kota Batu — rendemen per tahun, siklus beda dgn sayur" },
+  { name: "Cabai Rawit", category: "BUAH_UMBI", avgYieldKgPerHa: 7_000, growingDaysMin: 80, ambientStable: true, ndviPeak: [0.68, 0.74], umurSimpanHari: 10, catatan: "Grade by tingkat kematangan merah & keseragaman" },
+  { name: "Cabai Merah Besar", category: "BUAH_UMBI", avgYieldKgPerHa: 10_000, growingDaysMin: 85, ambientStable: true, ndviPeak: [0.68, 0.74], umurSimpanHari: 8, catatan: "Grade by panjang buah & kilap kulit" },
+  { name: "Tomat", category: "BUAH_UMBI", avgYieldKgPerHa: 25_000, growingDaysMin: 65, ambientStable: false, ndviPeak: [0.72, 0.78], umurSimpanHari: 7, catatan: "Grade by diameter & kematangan seragam" },
+  { name: "Kentang", category: "BUAH_UMBI", avgYieldKgPerHa: 17_000, growingDaysMin: 90, ambientStable: true, ndviPeak: [0.78, 0.84], umurSimpanHari: 60, catatan: "Grade by ukuran umbi (knol) & bebas hijau" },
+  { name: "Wortel", category: "BUAH_UMBI", avgYieldKgPerHa: 15_000, growingDaysMin: 90, ambientStable: true, ndviPeak: [0.70, 0.76], umurSimpanHari: 14, catatan: "Grade by panjang-diameter & bebas cabang" },
+  { name: "Bawang Merah", category: "BUAH_UMBI", avgYieldKgPerHa: 10_000, growingDaysMin: 60, ambientStable: true, ndviPeak: [0.58, 0.64], umurSimpanHari: 90, catatan: "Grade by diameter umbi & tingkat kering askip" },
+  { name: "Apel Batu", category: "BUAH_UMBI", avgYieldKgPerHa: 15_000, growingDaysMin: 150, ambientStable: false, ndviPeak: [0.75, 0.80], umurSimpanHari: 21, catatan: "Khas Kota Batu — rendemen per tahun, siklus beda dgn sayur" },
 ];
 
 async function main() {
@@ -124,6 +132,7 @@ async function main() {
       avgYieldKgPerHa: c.avgYieldKgPerHa,
       growingDaysMin: c.growingDaysMin,
       ambientStable: c.ambientStable,
+      shelfLifeDays: c.umurSimpanHari,
       gradeStandards: gradeStandards(c.catatan),
     };
     const komoditas = await prisma.commodity.upsert({
@@ -147,7 +156,7 @@ async function main() {
       });
     }
   }
-  console.log(`✔ ${COMMODITIES.length} komoditas (rendemen = INDIKATIF, wajib validasi BPS/penyuluh)`);
+  console.log(`✔ ${COMMODITIES.length} komoditas (rendemen & umur simpan = INDIKATIF, wajib validasi BPS/penyuluh)`);
   console.log(`✔ ${COMMODITIES.length * MUSIM.length} baseline musim (kurva vigor = INDIKATIF)`);
 }
 

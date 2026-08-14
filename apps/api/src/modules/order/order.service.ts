@@ -13,6 +13,7 @@ import {
 } from "@agro-os/shared";
 import { DemandSignalService } from "../intelligence/demand-signal.service";
 import { PrismaService } from "../../prisma/prisma.service";
+import { UmurSimpanService } from "../quality/umur-simpan.service";
 import { BuyerService } from "../buyer/buyer.service";
 import { PaymentService } from "./payment.service";
 import type { CartLineDto, CheckoutDto } from "./order.dto";
@@ -34,6 +35,7 @@ export class OrderService {
     private readonly buyers: BuyerService,
     private readonly payments: PaymentService,
     private readonly signals: DemandSignalService,
+    private readonly umurSimpan: UmurSimpanService,
   ) {}
 
   /** Senin dari minggu panen — kunci pengelompokan Rencana Pengiriman (FR-2.4). */
@@ -353,6 +355,10 @@ export class OrderService {
     });
     if (!order) throw new NotFoundException("Pesanan tidak ditemukan");
 
+    // FR-5.9 — satu kueri untuk seluruh pesanan, bukan per baris. Umur simpan hanya
+    // berarti kalau angkanya konsisten di semua baris pada satu waktu baca yang sama.
+    const umur = await this.umurSimpan.untukOrder(order.id);
+
     const shipments = await Promise.all(
       order.shipments.map(async (s) => {
         const geo = await this.prisma.$queryRaw<
@@ -406,6 +412,13 @@ export class OrderService {
             unitPriceLocked: i.unitPriceLocked,
             subtotal: i.subtotal,
             badge: toVerificationBadge(i.batch.verificationStatus),
+            umurSimpan: umur.get(i.id) ?? {
+              shelfLifeDays: null,
+              harvestedAt: null,
+              ageDays: null,
+              remainingDays: null,
+              settled: false,
+            },
           })),
         };
       }),

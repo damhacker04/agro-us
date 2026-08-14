@@ -1202,6 +1202,31 @@ export interface TenantOrderDetail extends TenantOrderSummary {
 
 // ============================== DETAIL PESANAN PEMBELI (BY-10) ==============================
 
+/**
+ * Umur simpan satu baris pesanan — FR-5.9.
+ *
+ * Jam mulai dari `server_ts` node Panen, BUKAN dari tanggal panen yang diketik Tenant.
+ * Perbedaan itu bukan detail: ini satu-satunya angka kesegaran di seluruh sistem yang
+ * tidak berasal dari klaim penjual. Kalau memakai tanggal ketikan, ia cuma jadi klaim
+ * lain dengan tampilan lebih rapi.
+ */
+export interface UmurSimpan {
+  /**
+   * Umur simpan komoditas pada suhu ambien, hari. ⚠️ INDIKATIF dan belum divalidasi
+   * lapangan; `null` berarti komoditas ini belum punya angkanya sama sekali, dan
+   * antarmuka wajib menyatakannya begitu alih-alih menampilkan tebakan.
+   */
+  shelfLifeDays: number | null;
+  /** Waktu panen menurut stempel server. `null` bila batch belum dipanen. */
+  harvestedAt: string | null;
+  /** Umur produk dalam hari: sampai tiba bila sudah tiba, sampai sekarang bila belum. */
+  ageDays: number | null;
+  /** Sisa umur simpan dalam hari. Negatif berarti sudah lewat. */
+  remainingDays: number | null;
+  /** true bila umurnya sudah final (barang sudah tiba); false bila jamnya masih berjalan. */
+  settled: boolean;
+}
+
 export interface BuyerOrderShipment {
   shipmentId: string;
   status: ShipmentStatus;
@@ -1222,6 +1247,8 @@ export interface BuyerOrderShipment {
     subtotal: Rupiah;
     /** Badge batch — pembeli berhak melihatnya kembali di riwayat (FR-2.6). */
     badge: VerificationBadge;
+    /** FR-5.9 — kesegaran yang diturunkan dari stempel server, bukan dari klaim penjual. */
+    umurSimpan: UmurSimpan;
   }>;
 }
 
@@ -1232,6 +1259,18 @@ export interface BuyerOrderDetail {
   createdAt: string;
   payment: { status: PaymentStatus; method: PaymentMethod; expiresAt: string } | null;
   shipments: BuyerOrderShipment[];
+}
+
+/** GET /operator/umur-simpan — antrean pantau OP-14 (FR-5.10). Informatif, bukan penghalang. */
+export interface AntreanUmurSimpan {
+  batchId: string;
+  productName: string;
+  commodityName: string;
+  tenantName: string;
+  shipmentId: string;
+  shipmentStatus: ShipmentStatus;
+  qtyBox: number;
+  umurSimpan: UmurSimpan;
 }
 
 // ============================== BUKTI SATELIT (BY-03b, TN-15) ==============================

@@ -312,6 +312,13 @@ model Commodity {
   growingDaysMin     Int               @default(30) @map("growing_days_min") // umur tanam minimal — kewajaran panen FR-4.8 ⚠ validasi penyuluh
   gradeStandards     Json              @map("grade_standards")
   ambientStable      Boolean           @default(false) @map("ambient_stable") // stabil suhu ruang — §11.2
+  /// Umur simpan pada suhu ambien, hari — FR-5.8.
+  ///
+  /// NULLABLE dengan sengaja: angka ini dipakai memberi tahu pembeli seberapa segar
+  /// barangnya, dan menebaknya untuk komoditas yang belum dikalibrasi berarti
+  /// menyampaikan tebakan sebagai fakta kesegaran. NULL berarti belum diketahui, dan
+  /// antarmuka wajib menyatakannya begitu. ⚠️ Nilai yang ada pun masih INDIKATIF.
+  shelfLifeDays      Int?              @map("shelf_life_days")
 
   products      Product[]
   demandSignals DemandSignal[]

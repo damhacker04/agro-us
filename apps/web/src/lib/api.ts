@@ -8,6 +8,7 @@
  */
 import { ambilToken } from "./auth";
 import type {
+  AntreanUmurSimpan,
   AuthUser,
   BuyerOrderDetail,
   BuyerProfileResponse,
@@ -502,3 +503,7 @@ export const konfirmasiPanen = (batchId: string, form: FormData) =>
     form,
     "Gagal mengonfirmasi panen",
   );
+
+/** OP-14 — antrean pantau umur simpan (FR-5.10). Informatif; tidak memblokir apa pun. */
+export const ambilAntreanUmurSimpan = () =>
+  ambil<AntreanUmurSimpan[]>("/operator/umur-simpan");

@@ -16,8 +16,7 @@ import {
   Compass,
   LayoutGrid,
   Banknote,
-  ShieldCheck
-} from "lucide-react";
+  ShieldCheck, Timer } from "lucide-react";
 
 export default function OperatorDashboardLayout({
   children,
@@ -37,6 +36,7 @@ export default function OperatorDashboardLayout({
     { name: "Antrean Klaim", href: "/operator/claims", icon: Receipt },
     { name: "Verifikasi Satelit", href: "/operator/satellite", icon: Satellite },
     { name: "Tinjauan Kewajaran", href: "/operator/kewajaran", icon: Scale },
+    { name: "Umur Simpan", href: "/operator/umur-simpan", icon: Timer },
     { name: "Manajemen Zona", href: "/operator/zone", icon: Compass },
     { name: "Manajemen Komoditas", href: "/operator/commodity", icon: LayoutGrid },
     { name: "Escrow", href: "/operator/escrow", icon: Banknote },

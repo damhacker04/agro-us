@@ -22,6 +22,7 @@ import type {
   ClaimResponse,
   ShipmentStatus,
   TrackingSnapshot,
+  UmurSimpan,
 } from "@agro-os/shared";
 import {
   GalatApi,
@@ -361,6 +362,7 @@ function KartuPengiriman({
                     </Link>
                   </div>
                 )}
+                <UmurSimpanBaris umur={l.umurSimpan} />
               </div>
               <div className="text-right shrink-0">
                 <div className="font-bold text-sm text-gray-900">{rp(l.subtotal)}</div>
@@ -371,6 +373,52 @@ function KartuPengiriman({
         })}
       </div>
     </div>
+  );
+}
+
+/**
+ * BY-12b — kesegaran barang (FR-5.9).
+ *
+ * Angka ini diturunkan dari stempel SERVER node Panen, bukan dari tanggal yang diketik
+ * penjual, dan kalimatnya menyatakan itu. Bedanya bukan detail teknis: inilah satu-satunya
+ * angka kesegaran di seluruh sistem yang tidak berasal dari klaim pihak yang menjual.
+ *
+ * Komoditas yang belum punya angka umur simpan menampilkan usianya saja — "dipanen 4 hari
+ * lalu" tetap benar tanpa perlu tahu batas simpannya. Mengarang batasnya berarti
+ * menyampaikan tebakan sebagai fakta kesegaran kepada orang yang akan memakan barangnya.
+ */
+function UmurSimpanBaris({ umur }: { umur: UmurSimpan }) {
+  if (umur.ageDays === null) return null;
+
+  const usia = umur.settled ? `Umur saat tiba ${umur.ageDays} hari` : `Dipanen ${umur.ageDays} hari lalu`;
+
+  if (umur.remainingDays === null) {
+    return (
+      <p className="mt-2 text-xs text-gray-500">
+        {usia}. Umur simpan komoditas ini belum ditetapkan, jadi sisa kesegarannya belum bisa
+        dinyatakan.
+      </p>
+    );
+  }
+
+  const lewat = umur.remainingDays < 0;
+  const menipis = !lewat && umur.remainingDays <= 2;
+
+  return (
+    <p
+      className={`mt-2 text-xs ${
+        lewat ? "font-semibold text-red-800" : menipis ? "font-semibold text-amber-800" : "text-gray-500"
+      }`}
+    >
+      {usia} ·{" "}
+      {lewat
+        ? `melewati umur simpan ${Math.abs(umur.remainingDays)} hari`
+        : `sisa umur simpan ${umur.remainingDays} hari`}
+      <span className="mt-0.5 block font-normal text-gray-400">
+        Dihitung dari waktu panen yang dicatat sistem, bukan dari tanggal yang diisi penjual.
+        Angka umur simpan masih indikatif.
+      </span>
+    </p>
   );
 }
 
