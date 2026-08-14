@@ -48,6 +48,28 @@
   }
 }
 
+/*
+ * Gerak tunggal halaman ini: pola pengaman menggores dirinya sendiri, sekali.
+ *
+ * DITULIS DI SINI, bukan di `tailwind.config.ts`. Tailwind hanya memancarkan `@keyframes`
+ * kalau ada utility `animate-*` yang benar-benar muncul di berkas yang dipindainya —
+ * sementara animasinya diterapkan lewat `style` inline karena tiap cincin punya `delay`
+ * sendiri. Akibatnya keyframe-nya tidak pernah ikut ke CSS hasil build, dan setiap cincin
+ * berhenti pada `stroke-dashoffset: 1`: seluruh path duduk di dalam celah dash, dan
+ * guilloche di viewport pertama menggambar TIDAK ADA APA-APA.
+ *
+ * Kegagalan itu tidak memunculkan galat, tidak menggeser tata letak, dan lolos dari setiap
+ * pemeriksaan terukur — elemennya ada, ukurannya benar, kontrasnya lulus. Ia hanya kosong.
+ */
+@keyframes gores {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
 /* Satu gerak berwibawa, dan hanya untuk yang memintanya. */
 @media (prefers-reduced-motion: reduce) {
   *,

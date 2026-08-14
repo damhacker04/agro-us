@@ -255,9 +255,30 @@ export const EFISIENSI = [
   },
 ] as const;
 
-/** Mutu — angka aturannya diimpor dari kontrak bersama, tidak disalin. */
+/**
+ * Definisi grade A/B/C.
+ *
+ * ⚠️ Komentar sebelumnya menyatakan angka-angka ini "diimpor dari kontrak bersama, tidak
+ * disalin" — padahal ketiganya ditulis tangan di sini dan tidak ada satu pun di
+ * `@agro-os/shared`. Komentar yang mengaku patuh di atas kode yang melanggarnya lebih
+ * buruk daripada tidak berkomentar sama sekali, apalagi di berkas yang aturan kerasnya
+ * adalah tidak boleh ada angka karangan.
+ *
+ * Sumber sebenarnya: `apps/api/prisma/seed.ts` → `gradeStandards()`, yang menulisnya ke
+ * `commodities.grade_standards` (jsonb) di produksi. Kalau nilai di sana berubah, baris
+ * ini harus ikut diperbarui — belum ada yang menegakkannya secara otomatis.
+ */
 export const MUTU_GRADE = [
   { grade: "A", seragam: 90, cacat: 2, isi: "Ukuran seragam premium, bebas cacat berarti" },
   { grade: "B", seragam: 75, cacat: 5, isi: "Ukuran cukup seragam, cacat ringan diperbolehkan" },
   { grade: "C", seragam: 60, cacat: 10, isi: "Layak olah, tampilan tidak diutamakan" },
 ] as const;
+
+/**
+ * Toleransi susut yang berlaku untuk komoditas sertifikat acuan.
+ *
+ * BUKAN konstanta bersama: nilainya per kategori komoditas di kolom
+ * `commodities.shrink_tolerance_pct`, dan halaman ini menampilkan yang berlaku untuk
+ * komoditas yang sedang dicontohkan. Sumber: `apps/api/prisma/seed.ts` → `SHRINK`.
+ */
+export const SUSUT = { kategori: "buah & umbi", persen: 3 } as const;

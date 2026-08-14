@@ -46,8 +46,12 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           halus, Archivo untuk struktur dan Chivo Mono hanya untuk angka terukur.
           STORY: Pengunjung paham bahwa klaim panen diuji terhadap kurva satelit dan rantai
           hash, bahwa sistem menyatakan kapan ia tidak bisa menilai, lalu masuk mencoba.
-          FIRST VIEWPORT: Satu sertifikat batch nyata seukuran dokumen; guilloche digambar
-          dari 17 amatan NDVI lahan itu; cap verifikasi dan aksi utama di blok tanda tangan.
+          FIRST VIEWPORT: Baris penawaran memimpin ("Harga terkunci sebelum benihnya
+          ditanam"), sertifikat batch nyata berdiri persis di bawahnya sebagai buktinya —
+          DIUBAH dari urutan sertifikat-dulu setelah audiens dipastikan pembeli institusional,
+          bukan penilai teknis. Guilloche digambar dari 17 amatan NDVI layak lahan itu (2
+          tanggal tertutup awan sengaja meninggalkan celah); cap verifikasi dan aksi utama di
+          blok tanda tangan.
           FORM: Label Sertifikasi, kandidat 5 dari daftar grounded, seed key 5fd9ab63.
           FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
         */}

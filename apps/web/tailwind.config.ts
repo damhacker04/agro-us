@@ -38,7 +38,7 @@ const config: Config = {
         ungu: { DEFAULT: "#5B3E96", tua: "#3B2668", muda: "#9A80CE" },
         biru: { DEFAULT: "#1B63A8", tua: "#0E3F70", muda: "#5B9AD6" },
         /* Digelapkan dari #C24E6C: teks putih 15px di atasnya hanya 4,24:1. Sekarang 5,3:1. */
-        jambu: { DEFAULT: "#A63A55", tua: "#7A2439", muda: "#D97F97" },
+        jambu: { DEFAULT: "#A63A55", tua: "#7A2439" },
         /** Cap verifikasi. Satu-satunya merah di sistem, dan hanya untuk stempel. */
         stempel: "#C8321E",
         /**
@@ -66,19 +66,14 @@ const config: Config = {
         /** Hanya untuk data terukur: nomor seri, hash, koordinat, tanggal akuisisi, NDVI. */
         mono: ["var(--font-chivo-mono)", "ui-monospace", "monospace"],
       },
-      letterSpacing: { sertifikat: "0.18em", cap: "0.26em" },
-      keyframes: {
-        gores: { from: { strokeDashoffset: "var(--panjang)" }, to: { strokeDashoffset: "0" } },
-        naik: {
-          from: { opacity: "0", transform: "translateY(0.75rem)" },
-          to: { opacity: "1", transform: "translateY(0)" },
-        },
-      },
-      animation: {
-        /** Satu gerak berwibawa: pola pengaman menggores dirinya sendiri, sekali. */
-        gores: "gores 2.8s cubic-bezier(0.16, 1, 0.3, 1) forwards",
-        naik: "naik 0.7s cubic-bezier(0.16, 1, 0.3, 1) both",
-      },
+      letterSpacing: { cap: "0.26em" },
+      // `keyframes` DIHAPUS dari sini. Tailwind hanya memancarkannya bila ada utility
+      // `animate-*` yang terpakai, dan animasi guilloche diterapkan lewat `style` inline
+      // (tiap cincin punya delay sendiri) — jadi keyframe-nya tidak pernah sampai ke CSS
+      // hasil build dan polanya menggambar kosong. Sumber kebenarannya kini `global.css`.
+      //
+      // `naik` dan `tracking-sertifikat` juga dibuang: dideklarasikan, tidak pernah dipakai.
+      // Token tanpa pemakai adalah cara sistem desain membusuk.
     },
   },
   plugins: [],

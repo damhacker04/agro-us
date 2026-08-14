@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   CLAIM_AUTO_SETTLE_MAX_PCT,
+  CLAIM_WINDOW_MS,
   COURIER_PIN_MAX_ATTEMPTS,
   GEOFENCE_RADIUS_M,
   MAX_PLAUSIBLE_JUMP_M,
@@ -13,7 +14,7 @@ import {
 import { BarisAturan, KepalaBagian } from "@/components/bagian";
 import { Guilloche } from "@/components/guilloche";
 import { KurvaNdvi } from "@/components/kurva-ndvi";
-import { angka, rupiah, tanggalPanjang } from "@/lib/format-id";
+import { angka, desimal, rupiah, tanggalPanjang } from "@/lib/format-id";
 import {
   CAKUPAN,
   DERET_NDVI,
@@ -25,6 +26,7 @@ import {
   RANTAI,
   SCENE,
   SERTIFIKAT,
+  SUSUT,
 } from "@/lib/sertifikat";
 
 /**
@@ -49,6 +51,38 @@ import {
 const layak = DERET_NDVI.filter((d) => d.ndvi !== null).length;
 const tertutup = DERET_NDVI.length - layak;
 const kurang = SERTIFIKAT.kuota.terjual - SERTIFIKAT.kuota.terpenuhi;
+
+/**
+ * Tanda cakupan — DIGAMBAR, bukan glif unicode.
+ *
+ * Sebelumnya `✓ / ± / —` diketik sebagai karakter. Bentuk, bobot, dan perataannya lalu
+ * ditentukan font mana pun yang kebetulan memuatnya, bukan oleh sistem ini — dan `±`
+ * adalah karakter paling penting di blok itu, satu-satunya yang menyatakan cakupan
+ * separuh. Ketiganya kini satu keluarga: kotak yang sama, tebal goresan yang sama.
+ */
+function TandaCakupan({ status, className }: { status: string; className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={`h-3.5 w-3.5 shrink-0 ${className ?? ""}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.9}
+      strokeLinecap="square"
+      aria-hidden
+    >
+      {status === "penuh" && <path d="M3 8.4 L6.4 12 L13 4" />}
+      {status === "sebagian" && (
+        <>
+          <path d="M3 6.2 H13" />
+          <path d="M3 11 H13" />
+          <path d="M8 2.4 V9" />
+        </>
+      )}
+      {status === "tidak" && <path d="M3 8 H13" />}
+    </svg>
+  );
+}
 
 /** Catatan kaki yang menempel pada fakta yang dikualifikasinya, bukan berdiri sendiri. */
 function Dagger({ n, judul }: { n: 1 | 2; judul: string }) {
@@ -84,9 +118,13 @@ export default function LandingPage() {
     <main className="kertas-sekuriti min-h-screen bg-kertas font-sertifikat text-tinta">
       {/* ======================= SERTIFIKAT ======================= */}
       <section className="relative overflow-hidden border-b-2 border-tinta">
+        {/* Ornamen dunia ini TIDAK boleh hilang di ponsel. Sebelumnya `hidden md:block`
+            membuat 14.500 piksel halaman mobile berjalan tanpa satu pun perangkat kertas
+            sekuriti. Di layar sempit ia jadi pita atas yang berdarah keluar tepi; di lebar
+            besar kembali jadi rosette samping. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute -right-[22%] top-1/2 hidden w-[85vh] -translate-y-1/2 text-ungu opacity-[0.42] md:block"
+          className="pointer-events-none absolute -right-[38%] -top-24 w-[128vw] text-ungu opacity-[0.3] md:-right-[22%] md:top-1/2 md:w-[85vh] md:-translate-y-1/2 md:opacity-[0.42]"
         >
           <Guilloche />
         </div>
@@ -97,7 +135,7 @@ export default function LandingPage() {
               <Image src="/logo.png" alt="" width={40} height={40} className="h-10 w-10 object-contain" />
               <span className="text-[19px] font-bold tracking-[0.02em]">AgroUs</span>
             </div>
-            <p className="font-mono text-[11px] uppercase tracking-cap text-tinta-samar">
+            <p className="text-[11px] font-semibold uppercase tracking-cap text-tinta-samar">
               Malang Raya · cabai, bawang, umbi
             </p>
           </header>
@@ -193,14 +231,16 @@ export default function LandingPage() {
               <p className="mt-1.5 font-mono text-[12px] leading-relaxed">
                 {SCENE.puncak.id}
                 <br />
-                {tanggalPanjang(SCENE.puncak.tanggal)} · tutupan awan {SCENE.puncak.awanPct}%
+                {tanggalPanjang(SCENE.puncak.tanggal)} · tutupan awan {desimal(SCENE.puncak.awanPct, 1)}%
               </p>
             </div>
           </div>
 
           {/* Catatan kaki menempel pada kolom yang dikualifikasinya, bukan menjadi daftar
               kekurangan terpisah tepat sebelum ajakan bertindak. */}
-          <div className="grid gap-3 border-t border-kertas-garis pt-6 font-mono text-[12px] leading-relaxed text-tinta-samar md:grid-cols-2">
+          {/* Prosa diset Archivo. `font-mono` khusus nilai terukur — nomor scene di dalam
+              kalimat ini tetap mono, kalimatnya tidak. */}
+          <div className="grid gap-3 border-t border-kertas-garis pt-6 text-[13px] leading-relaxed text-tinta-samar md:grid-cols-2">
             <p>
               <span className="text-stempel">†</span> Buku besar escrow berjalan penuh dan mencatat
               setiap mutasi, tetapi mitra pembayaran berizin belum tersambung: instruksi pencairan
@@ -262,7 +302,7 @@ export default function LandingPage() {
                 <figcaption className="mt-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                   <span className="text-[14px] font-semibold">{s.keterangan}</span>
                   <span className="font-mono text-[11px] text-tinta-samar">
-                    {s.id} · awan {s.awanPct}%
+                    {s.id} · awan {desimal(s.awanPct, 1)}%
                   </span>
                 </figcaption>
               </figure>
@@ -306,7 +346,7 @@ export default function LandingPage() {
         <div className="mx-auto max-w-[1180px] px-6 py-20 md:px-10 md:py-28">
           <KepalaBagian
             nada="warna"
-            judul="Anda tahu di mana barang Anda, dan tidak bisa dibohongi soal itu."
+            judul="Posisi barang Anda diukur, bukan dilaporkan."
             lebarJudul="max-w-[22ch]"
           >
             Pengantar barang tidak akan mengunduh aplikasi untuk satu pengiriman, jadi seluruh
@@ -452,7 +492,12 @@ export default function LandingPage() {
           </div>
 
           <div className="mt-12">
-            <BarisAturan nilai="2" satuan="jam" label="jendela klaim mutu" warnaNilai="text-jambu">
+            <BarisAturan
+              nilai={String(CLAIM_WINDOW_MS / 3_600_000)}
+              satuan="jam"
+              label="jendela klaim mutu"
+              warnaNilai="text-jambu"
+            >
               Dihitung sejak status Diterima. Lewat itu pesanan dianggap diterima penuh dan
               escrow dicairkan. Tenggat yang pendek justru melindungi kedua pihak: mutu hasil
               pertanian berubah cepat, dan buktinya ikut kabur bersama waktu.
@@ -466,7 +511,12 @@ export default function LandingPage() {
               Klaim di bawah nilai ini diselesaikan lewat potongan escrow tanpa peninjauan
               manual. Di atasnya masuk antrean Operator — mesin menandai, manusia memutuskan.
             </BarisAturan>
-            <BarisAturan nilai="3" satuan="%" label="toleransi susut" warnaNilai="text-jambu">
+            <BarisAturan
+              nilai={String(SUSUT.persen)}
+              satuan="%"
+              label={`toleransi susut ${SUSUT.kategori}`}
+              warnaNilai="text-jambu"
+            >
               Disepakati per komoditas sebelum transaksi. Selisih di dalam toleransi tidak dapat
               diklaim, sehingga tidak ada tawar-menawar atas penyusutan yang memang wajar.
             </BarisAturan>
@@ -592,7 +642,6 @@ export default function LandingPage() {
                 bantah, di halaman yang seluruh nilainya adalah tidak melakukan itu. */}
             <dl className="mt-10 grid gap-x-10 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
               {CAKUPAN.map((c) => {
-                const tanda = c.status === "penuh" ? "✓" : c.status === "sebagian" ? "±" : "—";
                 const warna =
                   c.status === "penuh"
                     ? "text-ungu"
@@ -604,8 +653,8 @@ export default function LandingPage() {
                     key={c.tahap}
                     className={`border-t pt-4 ${c.status === "tidak" ? "border-kertas-garis" : "border-tinta"}`}
                   >
-                    <dt className="flex items-baseline gap-2 text-[15px] font-bold">
-                      <span className={`font-mono text-[12px] ${warna}`}>{tanda}</span>
+                    <dt className="flex items-center gap-2 text-[15px] font-bold">
+                      <TandaCakupan status={c.status} className={warna} />
                       {c.tahap}
                     </dt>
                     <dd className="mt-2 text-[14px] leading-relaxed text-tinta-lembut">{c.isi}</dd>
@@ -659,7 +708,7 @@ export default function LandingPage() {
             </Link>
           </div>
 
-          <p className="mt-8 max-w-[68ch] font-mono text-[13px] leading-relaxed text-tinta-samar">
+          <p className="mt-8 max-w-[68ch] text-[14px] leading-relaxed text-tinta-samar">
             Nomor telepon akun peragaan tercantum di README repositori. Mode peragaan aktif,
             jadi kode OTP dikembalikan langsung oleh API — dan itu wajib dimatikan sebelum ada
             data sungguhan. Tidak ada pelanggan, testimoni, logo mitra, atau angka penggunaan di
