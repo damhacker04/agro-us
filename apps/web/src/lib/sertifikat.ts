@@ -202,11 +202,39 @@ export const BATASAN = [
  * tercepat kehilangan kepercayaan yang dibangun seluruh halaman ini.
  */
 export const CAKUPAN = [
-  { tahap: "Produksi", ada: true, isi: "Pemetaan lahan, kuota pra-tanam, catatan kegiatan berantai." },
-  { tahap: "Pengolahan", ada: false, isi: "Standar grade tersimpan per komoditas, tetapi tidak ada alur maupun aktor pengolahan." },
-  { tahap: "Penyimpanan", ada: false, isi: "Di luar lingkup MVP. Tanpa rantai dingin, komoditas dibatasi yang tahan suhu ambien." },
-  { tahap: "Distribusi", ada: true, isi: "Kurir tanpa instalasi, pelacakan, dan serah terima dua sinyal." },
+  { tahap: "Produksi", status: "penuh", isi: "Pemetaan lahan poligon, kuota pra-tanam yang dibatasi kapasitas, catatan kegiatan berantai." },
+  { tahap: "Pengolahan", status: "tidak", isi: "Standar grade tersimpan per komoditas, tetapi tidak ada alur maupun aktor pengolahan." },
+  {
+    tahap: "Penyimpanan",
+    status: "sebagian",
+    isi: "Umur simpan dihitung dan ditampilkan. Yang TIDAK ada: gudang, lokasi simpan, pengelolaan stok, dan rantai dingin — model kami asset-light.",
+  },
+  { tahap: "Distribusi", status: "penuh", isi: "Kurir tanpa instalasi, pelacakan yang menolak posisi mustahil, serah terima dua sinyal." },
 ] as const;
+
+/**
+ * Perjalanan kurir SUNGGUHAN, tersimpan di basis data produksi.
+ *
+ * Bukan ilustrasi. Empat baris ini adalah isi tabel `tracking_positions` untuk pengiriman
+ * 463949d8 — 30 box Kubis dari Tani Makmur Pujon ke Resto Padi Emas di Kota Malang.
+ *
+ * Baris ketiga yang paling berharga: satu detik setelah posisi sebelumnya, melompat 6,7 km.
+ * Sistem menyimpannya sebagai bukti tetapi menolaknya menggerakkan status. Pelacakan yang
+ * menerima koordinat apa pun bukan pelacakan.
+ */
+export const PERJALANAN = [
+  { jam: "03:27:12", jarakM: 2245, masukAkal: true, catatan: "menuju kota" },
+  { jam: "03:31:12", jarakM: 786, masukAkal: true, catatan: "masuk radius pemberitahuan" },
+  { jam: "03:31:13", jarakM: 6761, masukAkal: false, catatan: "melompat 6,7 km dalam 1 detik" },
+  { jam: "03:35:12", jarakM: 7, masukAkal: true, catatan: "geofence terpicu, status jadi Tiba" },
+] as const;
+
+/** Kesegaran — FR-5.8/5.9. Angka umur simpan INDIKATIF, belum divalidasi lapangan. */
+export const KESEGARAN = {
+  komoditas: "Kubis",
+  umurSimpanHari: 14,
+  contohUsiaHari: 3,
+} as const;
 
 /** Bukti efisiensi — seluruhnya dari batch acuan yang sama. */
 export const EFISIENSI = [

@@ -18,8 +18,10 @@ import {
   CAKUPAN,
   DERET_NDVI,
   EFISIENSI,
+  KESEGARAN,
   MUTU_GRADE,
   PERAN,
+  PERJALANAN,
   RANTAI,
   SCENE,
   SERTIFIKAT,
@@ -101,17 +103,18 @@ export default function LandingPage() {
           </header>
 
           <div className="grid gap-10 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-            <div className="max-w-[26ch]">
+            <div className="max-w-[24ch]">
               <h1
                 className="text-balance text-[clamp(2.4rem,5.6vw,4.25rem)] font-extrabold leading-[0.94] tracking-[-0.035em]"
                 style={{ fontStretch: "112%" }}
               >
-                Sertifikat untuk panen yang belum ada.
+                Kunci pasokan sekarang. Harganya tidak bergerak sampai barang datang.
               </h1>
             </div>
-            <p className="max-w-[46ch] text-[17px] leading-relaxed text-tinta-lembut md:text-right">
-              Pembeli mengunci pasokan berbulan-bulan sebelum barangnya tumbuh. Halaman ini
-              satu contoh nyata dari produksi — lengkap dengan bagian yang gagal.
+            <p className="max-w-[44ch] text-[17px] leading-relaxed text-tinta-lembut md:text-right">
+              Anda membeli berbulan-bulan sebelum benihnya ditanam, jadi Anda berhak tahu apa
+              yang menjamin janji itu. Di bawah ini satu sertifikat sungguhan dari produksi —
+              lengkap dengan bagian yang gagal.
             </p>
           </div>
 
@@ -214,17 +217,17 @@ export default function LandingPage() {
       <section id="verifikasi" className="scroll-mt-4 bg-ungu text-kertas-terang">
         <div className="mx-auto max-w-[1180px] px-6 py-20 md:px-10 md:py-28">
           <h2
-            className="max-w-[16ch] text-balance text-[clamp(2rem,4.6vw,3.4rem)] font-extrabold leading-[0.98] tracking-[-0.03em]"
+            className="max-w-[18ch] text-balance text-[clamp(2rem,4.6vw,3.4rem)] font-extrabold leading-[0.98] tracking-[-0.03em]"
             style={{ fontStretch: "108%" }}
           >
-            Petani melaporkan panennya sendiri. Itu masalahnya.
+            Angka panen tidak pernah berdiri sendiri di sini.
           </h2>
           <p className="mt-7 max-w-[68ch] text-[17px] leading-relaxed text-kabut-ungu">
-            Siapa pun bisa mengetik angka panen yang menguntungkan dirinya. Karena itu angka
-            yang dilaporkan tidak pernah berdiri sendiri di sini: ia diuji terhadap sesuatu
-            yang tidak bisa disetel Tenant — kehijauan lahannya sendiri, dilihat dari orbit,
-            setiap lima hari, sepanjang musim. Dari sinilah keempat hal berikutnya bisa
-            dijanjikan.
+            Setiap jumlah yang dilaporkan diuji terhadap kurva vegetasi lahannya sendiri —
+            kehijauan yang terekam dari orbit setiap lima hari, sepanjang musim, tanpa ada
+            pihak mana pun yang bisa menyetelnya. Produsen yang bekerja baik akhirnya punya
+            bukti yang bisa ditunjukkan; Anda punya dasar untuk membayar di muka. Dari sinilah
+            keempat hal berikutnya bisa dijanjikan.
           </p>
 
           <div className="mt-16 bg-kertas-terang p-6 text-tinta md:p-10">
@@ -265,10 +268,11 @@ export default function LandingPage() {
       {/* ======================= 1. EFISIENSI RANTAI PASOK ======================= */}
       <section className="kertas-sekuriti border-b-2 border-tinta bg-kertas">
         <div className="mx-auto max-w-[1180px] px-6 py-20 md:px-10 md:py-28">
-          <KepalaBagian judul="Permintaan dikunci sebelum modal keluar." lebarJudul="max-w-[20ch]">
-            Urutan lazimnya terbalik: petani menanam dulu, memanen, baru mencari pembeli, dan
-            menanggung sendiri kalau harga jatuh. Di sini kuota dibuka sebelum benih masuk
-            tanah, sehingga jumlah dan harga sudah pasti sejak awal — untuk kedua pihak.
+          <KepalaBagian judul="Anda tahu harganya sekarang, bukan saat panen raya." lebarJudul="max-w-[22ch]">
+            Dapur yang menyusun menu tiga bulan ke depan tidak bisa bekerja dengan harga yang
+            baru diketahui pada hari pengiriman. Kuota dibuka sebelum benih masuk tanah, jadi
+            jumlah dan harga sudah terkunci sejak awal — dan produsennya menanam karena sudah
+            ada yang membeli, bukan berharap ada yang membeli.
           </KepalaBagian>
 
           <div className="mt-14">
@@ -296,13 +300,46 @@ export default function LandingPage() {
         <div className="mx-auto max-w-[1180px] px-6 py-20 md:px-10 md:py-28">
           <KepalaBagian
             nada="warna"
-            judul="Kurir tidak memasang apa pun, dan tetap terlacak."
-            lebarJudul="max-w-[20ch]"
+            judul="Anda tahu di mana barang Anda, dan tidak bisa dibohongi soal itu."
+            lebarJudul="max-w-[22ch]"
           >
-            Pengantar barang di lapangan tidak akan mengunduh aplikasi untuk satu pengiriman.
-            Jadi seluruh alurnya berjalan di peramban, dimulai dari memindai QR dengan kamera
-            bawaan ponsel — dan justru di situ pengawasannya diperketat, bukan dilonggarkan.
+            Pengantar barang tidak akan mengunduh aplikasi untuk satu pengiriman, jadi seluruh
+            alurnya berjalan di peramban dari hasil pindai QR. Justru di situ pengawasannya
+            diperketat. Di bawah ini satu pengiriman sungguhan dari produksi, apa adanya.
           </KepalaBagian>
+
+          {/* Perjalanan nyata memimpin; aturannya menyusul sebagai penjelasan. Angka yang
+              benar-benar terjadi membuktikan apa yang daftar konstanta hanya menjanjikan. */}
+          <ol className="mt-14 border-t border-biru-muda/40">
+            {PERJALANAN.map((p) => (
+              <li
+                key={p.jam}
+                className="grid items-baseline gap-x-8 gap-y-1 border-b border-biru-muda/40 py-5 md:grid-cols-[7rem_9rem_minmax(0,1fr)_auto]"
+              >
+                <span className="font-mono text-[13px] text-kabut-biru">{p.jam}</span>
+                <span
+                  className={`font-mono text-[22px] leading-none ${
+                    p.masukAkal ? "text-kertas-terang" : "text-kabut-jambu line-through"
+                  }`}
+                >
+                  {angka(p.jarakM)} m
+                </span>
+                <span className="text-[15px] leading-relaxed text-kabut-biru">{p.catatan}</span>
+                <span
+                  className={`text-[12px] font-semibold uppercase tracking-cap md:text-right ${
+                    p.masukAkal ? "text-kabut-biru" : "text-kabut-jambu"
+                  }`}
+                >
+                  {p.masukAkal ? "diterima" : "ditolak"}
+                </span>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-6 max-w-[68ch] text-[15px] leading-relaxed text-kabut-biru">
+            Baris ketiga terjadi satu detik setelah baris kedua. Sistem menyimpannya sebagai
+            bukti, tetapi menolaknya menggerakkan status apa pun — pelacakan yang menerima
+            koordinat apa pun bukan pelacakan. Aturan di bawah inilah yang membuatnya begitu.
+          </p>
 
           <div className="mt-14">
             <BarisAturan
@@ -371,12 +408,12 @@ export default function LandingPage() {
       <section className="kertas-sekuriti border-b-2 border-tinta bg-kertas">
         <div className="mx-auto max-w-[1180px] px-6 py-20 md:px-10 md:py-28">
           <KepalaBagian
-            judul="Mutu disepakati di muka, bukan diperdebatkan setelah barang datang."
+            judul="Mutu disepakati sebelum uang berpindah, bukan setelah barang datang."
             lebarJudul="max-w-[24ch]"
           >
             Sengketa mutu hampir selalu berawal dari dua pihak yang tidak pernah menyepakati
-            artinya bagus. Grade, toleransi susut, dan tenggat pengajuan klaim ditetapkan
-            sebelum transaksi, per komoditas.
+            artinya bagus. Grade, toleransi susut, tenggat klaim, dan umur simpan ditetapkan
+            per komoditas sebelum transaksi — jadi tidak ada yang perlu ditawar setelahnya.
           </KepalaBagian>
 
           <div className="mt-14 overflow-x-auto">
@@ -427,6 +464,21 @@ export default function LandingPage() {
               Disepakati per komoditas sebelum transaksi. Selisih di dalam toleransi tidak dapat
               diklaim, sehingga tidak ada tawar-menawar atas penyusutan yang memang wajar.
             </BarisAturan>
+            <BarisAturan
+              nilai={String(KESEGARAN.umurSimpanHari)}
+              satuan="hari"
+              label={`umur simpan ${KESEGARAN.komoditas.toLowerCase()}`}
+              warnaNilai="text-jambu"
+            >
+              Pesanan Anda menampilkan usia barangnya:{" "}
+              <span className="text-tinta">
+                dipanen {KESEGARAN.contohUsiaHari} hari lalu, sisa{" "}
+                {KESEGARAN.umurSimpanHari - KESEGARAN.contohUsiaHari} hari
+              </span>
+              . Jamnya mulai dari waktu panen yang <b>dicatat sistem</b>, bukan dari tanggal
+              yang diisi penjual — dan itulah yang membedakannya dari klaim. Angka umur
+              simpannya sendiri masih indikatif dan belum divalidasi lapangan.
+            </BarisAturan>
           </div>
         </div>
       </section>
@@ -436,13 +488,14 @@ export default function LandingPage() {
         <div className="mx-auto max-w-[1180px] px-6 py-20 md:px-10 md:py-28">
           <KepalaBagian
             nada="warna"
-            judul="Catatan yang tidak bisa disunting belakangan."
-            lebarJudul="max-w-[20ch]"
+            judul="Kalau ada sengketa, buktinya tidak bisa dirapikan siapa pun."
+            lebarJudul="max-w-[22ch]"
           >
-            Ketertelusuran hanya berarti kalau catatannya tidak bisa dirapikan setelah ada
-            masalah. Setiap kegiatan disimpan sebagai baris baru yang memuat sidik jari baris
+            Ketertelusuran hanya berarti kalau catatannya tidak bisa disunting setelah masalah
+            muncul. Setiap kegiatan disimpan sebagai baris baru yang memuat sidik jari baris
             sebelumnya; mengubah satu catatan lama memutus seluruh rantai sesudahnya. Basis
-            datanya menolak operasi ubah dan hapus, termasuk dari koneksi administratif.
+            datanya menolak operasi ubah dan hapus — termasuk dari koneksi administratif kami
+            sendiri.
           </KepalaBagian>
 
           <ol className="mt-14 border-t border-tinta-lembut">
@@ -527,18 +580,32 @@ export default function LandingPage() {
               bisa dilihat mata. Dan seperti label sungguhan, ia menyatakan juga apa yang tidak
               dijaminnya.
             </p>
+            {/* Tiga status, bukan dua. Penyimpanan ditandai "sebagian" karena yang kami
+                tambahkan adalah perhitungan umur simpan, BUKAN pengelolaan penyimpanan —
+                dan menandainya penuh berarti mengklaim sesuatu yang dokumen kami sendiri
+                bantah, di halaman yang seluruh nilainya adalah tidak melakukan itu. */}
             <dl className="mt-10 grid gap-x-10 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
-              {CAKUPAN.map((c) => (
-                <div key={c.tahap} className={`border-t pt-4 ${c.ada ? "border-tinta" : "border-kertas-garis"}`}>
-                  <dt className="flex items-baseline gap-2 text-[15px] font-bold">
-                    <span className={`font-mono text-[12px] ${c.ada ? "text-ungu" : "text-tinta-samar"}`}>
-                      {c.ada ? "✓" : "—"}
-                    </span>
-                    {c.tahap}
-                  </dt>
-                  <dd className="mt-2 text-[14px] leading-relaxed text-tinta-lembut">{c.isi}</dd>
-                </div>
-              ))}
+              {CAKUPAN.map((c) => {
+                const tanda = c.status === "penuh" ? "✓" : c.status === "sebagian" ? "±" : "—";
+                const warna =
+                  c.status === "penuh"
+                    ? "text-ungu"
+                    : c.status === "sebagian"
+                      ? "text-jambu"
+                      : "text-tinta-samar";
+                return (
+                  <div
+                    key={c.tahap}
+                    className={`border-t pt-4 ${c.status === "tidak" ? "border-kertas-garis" : "border-tinta"}`}
+                  >
+                    <dt className="flex items-baseline gap-2 text-[15px] font-bold">
+                      <span className={`font-mono text-[12px] ${warna}`}>{tanda}</span>
+                      {c.tahap}
+                    </dt>
+                    <dd className="mt-2 text-[14px] leading-relaxed text-tinta-lembut">{c.isi}</dd>
+                  </div>
+                );
+              })}
             </dl>
           </div>
         </div>
