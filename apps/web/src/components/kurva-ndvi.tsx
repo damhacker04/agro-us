@@ -24,7 +24,13 @@ const H = 300;
 
 const hari = (t: string) => Math.round(new Date(t).getTime() / 86_400_000);
 const AWAL = hari(DERET_NDVI[0]!.tanggal);
-const AKHIR = hari(DERET_NDVI[DERET_NDVI.length - 1]!.tanggal);
+// Domain mencakup tanggal panen yang DIKLAIM, bukan berhenti di amatan terakhir: kalau
+// klaimnya jatuh setelah amatan terakhir, penandanya terdorong keluar area gambar — padahal
+// membandingkan keduanya persis alasan grafik ini ada.
+const AKHIR = Math.max(
+  hari(DERET_NDVI[DERET_NDVI.length - 1]!.tanggal),
+  hari(SERTIFIKAT.panenKlaim),
+);
 
 const x = (t: string) => L + ((hari(t) - AWAL) / (AKHIR - AWAL)) * (W - L - R);
 const y = (v: number) => A + (1 - v / 0.9) * (H - A - B);
@@ -52,9 +58,15 @@ export function KurvaNdvi({ className }: { className?: string }) {
     <figure className={className}>
       {/* `aria-label`, bukan elemen `<title>`: React 19 mengangkat `<title>` ke `<head>`
           sebagai metadata dokumen, dan markup server pun berbeda dari markup klien. */}
+      {/* Digulir mendatar di layar sempit, bukan diperkecil.
+          SVG yang menyusut ikut mengecilkan tulisannya: pada 375px, label 13px tampil
+          sebagai 4px dan grafik utama halaman ini berhenti terbaca. Menaikkan ukuran
+          fontnya akan merusak tampilan desktop, jadi yang digeser lebarnya. Pola yang sama
+          sudah dipakai tabel grade di halaman ini. */}
+      <div className="-mx-6 overflow-x-auto px-6 md:mx-0 md:px-0">
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        className="w-full"
+        className="w-full min-w-[52rem] md:min-w-0"
         role="img"
         aria-label="Kurva NDVI lahan Pujon, 5 Mei sampai 3 Agustus 2026: naik dari 0,14 ke puncak 0,81 pada 24 Juni, lalu turun ke 0,31. Dua tanggal tidak terukur karena tertutup awan."
       >
@@ -108,6 +120,9 @@ export function KurvaNdvi({ className }: { className?: string }) {
           <polyline
             key={i}
             points={r.map((d) => `${x(d.tanggal)},${y(d.ndvi)}`).join(" ")}
+            // `polyline` mengisi dirinya sendiri secara bawaan; tanpa baris ini ruas yang
+            // melengkung tampil sebagai baji hitam pekat di bawah kurva.
+            fill="none"
             className="stroke-ungu"
             strokeWidth={2.5}
             strokeLinecap="round"
@@ -176,6 +191,7 @@ export function KurvaNdvi({ className }: { className?: string }) {
           </text>
         ))}
       </svg>
+      </div>
 
       <figcaption className="mt-4 max-w-[68ch] text-[15px] leading-relaxed text-tinta-lembut">
         Sembilan belas lintasan Sentinel-2 di atas lahan yang sama.{" "}

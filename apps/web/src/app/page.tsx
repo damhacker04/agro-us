@@ -103,25 +103,31 @@ export default function LandingPage() {
           </header>
 
           <div className="grid gap-10 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-            <div className="max-w-[24ch]">
+            <div>
+              {/* `max-w` dalam `ch` HARUS menempel pada elemen teksnya. Di pembungkus, satuan
+                  itu dihitung dari font-size yang diwarisi (16px), bukan dari 68px judulnya —
+                  hasilnya lebar 220px dan judul pecah sembilan baris. */}
               <h1
-                className="text-balance text-[clamp(2.4rem,5.6vw,4.25rem)] font-extrabold leading-[0.94] tracking-[-0.035em]"
+                className="max-w-[17ch] text-balance text-[clamp(2.4rem,5.6vw,4.25rem)] font-extrabold leading-[0.94] tracking-[-0.035em]"
                 style={{ fontStretch: "112%" }}
               >
-                Kunci pasokan sekarang. Harganya tidak bergerak sampai barang datang.
+                Harga terkunci sebelum benihnya ditanam.
               </h1>
             </div>
             <p className="max-w-[44ch] text-[17px] leading-relaxed text-tinta-lembut md:text-right">
-              Anda membeli berbulan-bulan sebelum benihnya ditanam, jadi Anda berhak tahu apa
-              yang menjamin janji itu. Di bawah ini satu sertifikat sungguhan dari produksi —
-              lengkap dengan bagian yang gagal.
+              Jumlah dan harganya dikunci sebelum benih masuk tanah, dan tidak bergerak sampai
+              barang sampai. Karena Anda membayar sejauh itu di muka, Anda berhak tahu apa yang
+              menjamin janjinya — di bawah ini satu sertifikat sungguhan dari produksi, lengkap
+              dengan bagian yang gagal.
             </p>
           </div>
 
           <div className="grid gap-x-10 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
             <Kolom nomor="01" label="Komoditas">
               {SERTIFIKAT.produk}
-              <span className="ml-2 text-tinta-samar">Grade {SERTIFIKAT.grade}</span>
+              <span className="mt-0.5 block text-[13px] text-tinta-samar">
+                {SERTIFIKAT.komoditas} · umur simpan {KESEGARAN.umurSimpanHari} hari
+              </span>
             </Kolom>
             <Kolom nomor="02" label="Produsen">
               {SERTIFIKAT.tenant}
