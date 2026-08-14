@@ -3,8 +3,8 @@
 | | |
 |---|---|
 | **Nama Produk** | AgroUs |
-| **Versi Dokumen** | v2.3 (Deteksi Shortfall Berbasis Benchmark, Fase 0 Validasi, Go-to-Market) |
-| **Tanggal** | 27 Juli 2026 |
+| **Versi Dokumen** | v2.4 (Umur Simpan sebagai Atribut Mutu) |
+| **Tanggal** | 13 Agustus 2026 |
 | **Platform** | Progressive Web App (Responsive/Mobile-First) |
 | **Fase Rilis** | MVP (Fase 0 validasi 3 minggu + 9 minggu pengembangan) |
 | **Model Bisnis** | B2B SaaS + Marketplace + Demand Intelligence *(intelijen: pasca-MVP)* |
@@ -205,6 +205,9 @@ Berbeda dengan marketplace agrikultur konvensional yang hanya memindahkan transa
 | FR-5.5 | S | Klaim < 10% nilai order → selesai otomatis via potongan escrow tanpa peninjauan manual. |
 | FR-5.6 | S | Klaim > 10% → antrean peninjauan operator, target 1 hari kerja. |
 | FR-5.7 | S | Rasio klaim tiap Tenant ditampilkan publik di profil sebagai mekanisme reputasi. |
+| FR-5.8 | M | **Umur simpan per komoditas** (`shelf_life_days`, pada suhu ambien) disimpan sebagai konstanta komoditas. ⚠️ Angka INDIKATIF — wajib divalidasi ke penyuluh/BPS sebelum dipakai menolak atau menahan apa pun, sama seperti rendemen (FR-3.3). |
+| FR-5.9 | M | **Umur produk saat tiba** dihitung dari stempel SERVER node Panen sampai status Diterima, bukan dari tanggal yang diketik Tenant. Sisa umur simpan = umur simpan komoditas − umur produk saat tiba, ditampilkan ke pembeli pada pesanan dan laporan ketertelusuran. |
+| FR-5.10 | S | Batch yang sisa umur simpannya menipis sebelum terkirim masuk **antrean pantau Operator**. Bersifat informatif: sistem TIDAK memblokir pengiriman. Gerbang otomatis menuntut ambang, dan ambang di produk ini punya aturannya sendiri (FR-7.12c) yang tidak boleh dilanggar tanpa alasan terpisah. |
 
 ### 5.6. Modul Logistik & Order Status
 
@@ -480,6 +483,7 @@ Entitas timeline = tabel append-only dengan rantai hash. Tiap baris menyimpan ha
 ### 11.2. Di Luar Ruang Lingkup MVP
 
 - **Sayuran daun dan komoditas yang butuh rantai dingin** *(baru v2.3)* — MVP terbatas komoditas tahan suhu ambien (cabai, bawang, umbi). Tanpa rantai dingin, susut pascapanen sayuran daun di iklim tropis jauh melampaui toleransi 5%, sehingga **setiap pengiriman akan memicu klaim** dan modul klaim runtuh sendiri. Membatasi komoditas menghapus risiko operasional terbesar tanpa membangun apa pun.
+- **Manajemen gudang dan stok** *(dipertegas v2.4)* — tidak ada entitas gudang, lokasi simpan, kondisi penyimpanan, maupun pengelolaan stok. Model bisnisnya asset-light (§3): gudang milik mitra, armada pihak ketiga. Yang MASUK lingkup sejak v2.4 hanyalah **umur simpan sebagai atribut mutu** (FR-5.8–5.10) — sebuah perhitungan, bukan sebuah fasilitas. Membedakan keduanya penting: yang pertama satu kolom komoditas, yang kedua membalik keputusan asset-light.
 - **Demand Intelligence (Rekomendasi Tanam)** *(baru v2.3)* — ditunda ke pasca-MVP; hanya agregasi data (FR-8.1) yang dibangun. Lihat §5.8.
 - **Aplikasi Native** — seluruh persona via PWA.
 - **Pembiayaan Input Pertanian** — pasca-MVP, hanya via kemitraan lembaga keuangan berizin.

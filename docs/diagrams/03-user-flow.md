@@ -65,7 +65,9 @@ flowchart TB
         P10 --> P11["Pilih QRIS / VA / E-Wallet"]
         P11 --> P12{"Bayar sebelum<br/>kedaluwarsa?"}
         P12 -- "Tidak" --> P13["Layar tagihan kedaluwarsa"] --> P11
-        P12 -- "Ya" --> P14["Pesanan Saya<br/>status + timeline + peta live"]
+        P12 -- "Ya" --> P14["Pesanan Saya<br/>status + timeline + peta live<br/>+ sisa umur simpan"]
+        P14 --> PUS[["Umur produk saat tiba:<br/>dihitung dari stempel server node Panen,<br/>bukan dari tanggal yang diketik penjual"]]
+        PUS --> P14
         P14 --> PSN[["Banner Senioritas:<br/>Anda diprioritaskan siklus ini"]]
         PSN --> P14
         P14 --> PD1{"Notifikasi gagal panen<br/>atau shortfall?"}
@@ -121,7 +123,7 @@ flowchart TB
     class P8,P13,K3,K6,KPE,T7,TH3,THW error;
     class P15,K8,PSN push;
     class P22,PRF,T12,PSC done;
-    class THK,THN,TRP,TH4 baru;
+    class THK,THN,TRP,TH4,PUS baru;
 ```
 
 ## Poin Penting

@@ -93,6 +93,7 @@ sequenceDiagram
     UIT->>GW: POST /batches/{id}/harvest/confirm
     GW->>HRV: commitHarvest()
     HRV->>DB: Simpan node timeline append-only + rantai hash
+    Note over HRV,DB: server_ts node Panen MEMULAI jam umur simpan (FR-5.9).<br/>Bukan tanggal panen yang diketik Tenant: satu-satunya angka<br/>kesegaran yang tidak berasal dari klaim penjual.
 
     opt Ada pesanan tidak terpenuhi
         HRV->>DB: Simpan node GAGAL_PANEN (alasan + foto + GPS)

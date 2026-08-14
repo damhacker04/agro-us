@@ -30,12 +30,14 @@
 | ID | Halaman / State | Rute | Isi kunci | Ref | Prio |
 |---|---|---|---|---|---|
 | **BY-11d** | ↳ Banner Senioritas Shortfall | — | Muncul di **Pesanan Saya** bagi pembeli yang siklus lalu terkena shortfall. Isi: *"Pesanan Anda diprioritaskan pada panen berikutnya dari [Tenant]."* **Penting:** senioritas yang tidak diberitahukan tidak menghasilkan retensi — pembeli tetap merasa dirugikan dan tetap pergi. Banner ini adalah setengah nilai dari FR-7.13. | FR-7.13, `PSN` | M |
+| **BY-12b** | ↳ Sisa Umur Simpan pada Pesanan *(baru v2.4)* | `/buyer/orders/[id]` | Umur produk saat tiba dan sisa umur simpannya, diturunkan dari **stempel server node Panen** — bukan dari tanggal yang diketik penjual. Nyatakan asal angkanya, karena justru itu yang membedakannya dari klaim. | FR-5.9, `PUS` | M |
 | **BY-11e** | ↳ Penjelasan Opsi Substitusi Tidak Tersedia | — | Saat substitusi disembunyikan (shortfall wajar + selisih harga > 10%), jelaskan **mengapa** — bukan sekadar menampilkan dua opsi tanpa konteks. Diksi: *"Tidak ada Tenant pengganti dengan selisih harga yang dapat ditanggung. Tersedia penjadwalan ulang atau pengembalian dana penuh."* | FR-7.11, `PHB` | M |
 
 ### 1c. Operator (1)
 
 | ID | Halaman / State | Rute | Isi kunci | Ref | Prio |
 |---|---|---|---|---|---|
+| **OP-14** | Antrean Pantau Umur Simpan *(baru v2.4)* | `/operator/umur-simpan` | Batch yang sudah dipanen tetapi belum terkirim, diurutkan dari sisa umur simpan paling tipis. **Informatif, bukan penghalang** — tidak ada tombol yang memblokir pengiriman. Wajib menampilkan bahwa angka umur simpan masih indikatif dan belum divalidasi lapangan. | FR-5.10, FR-5.8 | S |
 | **OP-13** | Antrean Tinjauan Kewajaran Hasil | `/operator/kewajaran` | Batch bernilai `PERLU_DITINJAU`. Tampilkan berdampingan: kurva NDVI, rentang pita, jumlah dilaporkan, dan **realisasi Tenant lain di zona & musim sama**. SLA 1 hari kerja dengan countdown. Putusan operator menentukan apakah cap 10% berlaku. | FR-7.12a, FR-5.6 | M |
 
 ### 1d. Error & System States (2)
@@ -122,6 +124,9 @@ Setiap perubahan v2.3 dapat ditelusuri dari FR → diagram → halaman.
 | **FR-7.12e** Cold start | — | `PN0`, `PL0` | `THN` | `alt` NDVI tak tersedia | TN-19c, ER-23 |
 | **FR-7.13** Senioritas shortfall | UC-4b | `ALC`, `SP3`, `H1` | `PSN`, `PSC` | `ORDER BY senioritas DESC` | BY-11d, TN-19a |
 | **FR-7.11** Cap gugur | UC-7a → UC-4c | `DPL`, `DCAP`, `DSUB` | `PSU`, `PHB` | `alt` opsi assurance | BY-11a, BY-11e |
+| **FR-5.8** Umur simpan komoditas | — | — | — | — | OP-14 |
+| **FR-5.9** Umur produk saat tiba | — | — | `PUS` | `Note` pada konfirmasi panen | BY-12b |
+| **FR-5.10** Antrean pantau umur simpan | — | — | — | — | OP-14 |
 | **FR-7.2** Pencairan per Tenant | UC-11 | `G9` | — | `loop` disbursement | TN-25 |
 | **§5.8** Demand Intelligence ditunda | UC-13 *(abu-abu)* | — | *(dihapus dari alur Tenant)* | — | TN-27, TN-28 → pasca-MVP |
 

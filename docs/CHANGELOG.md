@@ -6,6 +6,26 @@
 
 ---
 
+## v2.4 — Umur Simpan sebagai Atribut Mutu
+**13 Agustus 2026**
+
+Satu penambahan cakupan, dan satu penegasan atas apa yang TETAP di luar cakupan.
+
+| # | Perubahan | Referensi |
+|---|---|---|
+| 1 | **Umur simpan per komoditas** menjadi konstanta produk, dengan penanda kalibrasi yang sama seperti rendemen. | FR-5.8 |
+| 2 | **Umur produk saat tiba** dihitung dari stempel server node Panen; sisa umur simpan tampil ke pembeli. | FR-5.9 |
+| 3 | **Antrean pantau Operator** untuk batch yang umur simpannya menipis — informatif, bukan penghalang. | FR-5.10 |
+| 4 | **Manajemen gudang dan stok ditegaskan tetap di luar lingkup.** | §11.2 |
+
+**Mengapa ini masuk padahal PRD sengaja menghindari penyimpanan.** Versi 2.3 membatasi komoditas ke yang tahan suhu ambien justru supaya masalah penyimpanan tidak perlu dipecahkan sama sekali, dan model bisnisnya asset-light. Keputusan itu TIDAK dibatalkan. Yang ditambahkan bukan fasilitas, melainkan perhitungan: berapa lama komoditas ini bertahan, dan sudah berapa lama sejak dipanen. Tidak ada gudang, lokasi simpan, sensor, atau rantai dingin yang ikut masuk.
+
+**Mengapa ini justru memperkuat yang sudah ada.** Toleransi susut 3% (FR-5.2) dan jendela klaim 2 jam (FR-5.3) selama ini berdiri tanpa dasar fisik yang tertulis. Umur simpan memberi keduanya alasan yang bisa diperiksa, dan memberi pembeli satu-satunya angka kesegaran yang tidak berasal dari klaim penjual — karena diturunkan dari stempel server, bukan dari tanggal yang diketik.
+
+**Mengapa informatif, bukan penghalang.** Memblokir pengiriman menuntut ambang, dan ambang di produk ini punya doktrinnya sendiri (FR-7.12c). Ambang umur simpan memang tidak bisa dipermainkan pihak yang melaporkan — ia diturunkan dari stempel server dan konstanta komoditas — tetapi angkanya sendiri masih estimasi yang belum divalidasi lapangan. Menolak pengiriman berdasarkan tebakan adalah persis kesalahan yang FR-7.12e ada untuk mencegah. Gerbang menyusul setelah kalibrasinya nyata.
+
+---
+
 ## v2.3.1 — Dua keputusan implementasi
 **12 Agustus 2026**
 

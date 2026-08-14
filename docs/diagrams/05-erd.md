@@ -91,6 +91,7 @@ erDiagram
         numeric shrink_tolerance_pct "3 persen untuk komoditas MVP - FR-5.2"
         numeric avg_yield_kg_per_ha "basis pembatas kuota dan pita kewajaran - FR-3.3 FR-4.10"
         jsonb grade_standards "definisi A B C per komoditas - FR-5.1"
+        int shelf_life_days "umur simpan suhu ambien - FR-5.8 - INDIKATIF wajib validasi"
     }
 
     COMMODITY_SEASON_BASELINES {
