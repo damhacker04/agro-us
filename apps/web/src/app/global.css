@@ -1,3 +1,61 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    /* Serat kertas sekuriti. Halus dengan sengaja: kertas berharga tidak berteriak, ia
+       hanya menolak terlihat rata saat didekatkan. */
+    --serat: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23f)' opacity='0.4'/%3E%3C/svg%3E");
+  }
+
+  ::selection {
+    background-color: #5b3e96;
+    color: #f6f7f2;
+  }
+}
+
+@layer components {
+  /* Ground kertas sekuriti: warna dasar + serat yang nyaris tak terlihat. */
+  .kertas-sekuriti {
+    position: relative;
+    isolation: isolate;
+  }
+  .kertas-sekuriti::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background-image: var(--serat);
+    opacity: 0.055;
+    mix-blend-mode: multiply;
+    pointer-events: none;
+  }
+
+  /* Cap verifikasi: tinta yang tidak rata karena ditekan tangan, bukan dicetak mesin. */
+  .cap {
+    mix-blend-mode: multiply;
+    opacity: 0.92;
+  }
+
+  /* Baris data formulir — label kecil di atas, nilai terukur di bawah. */
+  .baris-data {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    border-top: 1px solid theme("colors.kertas.garis");
+    padding-top: 0.6rem;
+  }
+}
+
+/* Satu gerak berwibawa, dan hanya untuk yang memintanya. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -253,15 +253,23 @@ export class CourierService {
    * notifikasi "kurir mendekat" sepanjang kilometer terakhir. Satu kali per pengiriman
    * sudah cukup — tahap berikutnya (kurir tiba) yang benar-benar menuntut tindakan.
    *
-   * Penanda disimpan di memori: kalau proses API di-restart di tengah pengiriman,
-   * pembeli mungkin menerima satu notifikasi mendekat tambahan. Ditukar sadar dengan
-   * tidak menambah kolom di tabel pengiriman hanya untuk keperluan ini.
+   * Penandanya kolom `notified_1km_at`, BUKAN Set di memori seperti sebelumnya. Set itu
+   * salah dalam tiga cara sekaligus: hilang setiap redeploy sehingga pembeli diberi tahu
+   * dua kali, tidak dibagi antar instans sehingga tiap instans memberi tahu sendiri, dan
+   * membuat kolomnya tetap NULL selamanya sehingga FR-10.2 tidak bisa diaudit — padahal
+   * jendela 60 menit dihitung dari `arrived_at`, dan memisahkan keduanya justru alasan
+   * kolom ini ada (ERD v2.3 poin 7).
+   *
+   * `updateMany` dengan syarat masih NULL bersifat atomik: hanya satu pemanggil yang
+   * memperoleh count 1, sisanya keluar tanpa mengirim apa pun.
    */
-  private readonly sudahDiberitahuMendekat = new Set<string>();
-
   private async notifMendekatSekali(shipmentId: string, distanceM: number) {
-    if (this.sudahDiberitahuMendekat.has(shipmentId)) return;
-    this.sudahDiberitahuMendekat.add(shipmentId);
+    const klaim = await this.prisma.shipment.updateMany({
+      where: { id: shipmentId, notified1kmAt: null },
+      data: { notified1kmAt: new Date() },
+    });
+    if (klaim.count !== 1) return;
+
     await this.notif.kirimKePembeliPengiriman(
       shipmentId,
       "KURIR_MENDEKAT",

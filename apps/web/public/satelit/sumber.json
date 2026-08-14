@@ -1,0 +1,53 @@
+{
+  "sumber": "Sentinel-2 L2A via earth-search AWS Open Data",
+  "scene": [
+    {
+      "label": "puncak",
+      "sceneId": "S2C_49MFM_20260701_0_L2A",
+      "tanggal": "2026-07-01",
+      "awanPct": 0.1,
+      "platform": "sentinel-2c",
+      "ndviRerataKotak": 0.6427,
+      "ukuran": [
+        516,
+        515
+      ],
+      "bbox4326": [
+        112.4476,
+        -7.8637,
+        112.4941,
+        -7.8172
+      ],
+      "plot4326": [
+        112.4701,
+        -7.8412,
+        112.4716,
+        -7.8397
+      ]
+    },
+    {
+      "label": "panen",
+      "sceneId": "S2B_49MFM_20260726_0_L2A",
+      "tanggal": "2026-07-26",
+      "awanPct": 3.6,
+      "platform": "sentinel-2b",
+      "ndviRerataKotak": 0.5569,
+      "ukuran": [
+        516,
+        515
+      ],
+      "bbox4326": [
+        112.4476,
+        -7.8637,
+        112.4941,
+        -7.8172
+      ],
+      "plot4326": [
+        112.4701,
+        -7.8412,
+        112.4716,
+        -7.8397
+      ]
+    }
+  ]
+}

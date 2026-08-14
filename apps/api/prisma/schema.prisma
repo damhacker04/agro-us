@@ -578,6 +578,11 @@ model Shipment {
   pinAttempts       Int                                  @default(0) @map("pin_attempts") // maks 5 — FR-6.3 (CHECK di SQL)
   receivedMode      ReceivedMode?                        @map("received_mode")
   podPhotoUrl       String?                              @map("pod_photo_url") // sinyal-2 dual-signal
+  /// Notif-2 (FR-10.2) — kurir masuk radius 1 km. SENGAJA terpisah dari `arrivedAt`:
+  /// jendela 60 menit dihitung dari kedatangan, bukan dari notifikasi pertama yang
+  /// diterima pembeli, dan tanpa dua kolom aturan itu tidak dapat ditegakkan maupun
+  /// diaudit (ERD v2.3 poin 7).
+  notified1kmAt     DateTime?                            @map("notified_1km_at") @db.Timestamptz(6)
   arrivedAt         DateTime?                            @map("arrived_at") @db.Timestamptz(6)
   claimWindowEndsAt DateTime?                            @map("claim_window_ends_at") @db.Timestamptz(6) // 2 jam / 24 jam
   completedAt       DateTime?                            @map("completed_at") @db.Timestamptz(6)

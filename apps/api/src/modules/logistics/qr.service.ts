@@ -1,5 +1,12 @@
 import { createHash, randomBytes, randomInt } from "node:crypto";
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import * as QRCode from "qrcode";
 import { COURIER_PIN_LENGTH, type GenerateQrResponse } from "@agro-os/shared";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -13,6 +20,8 @@ import { PrismaService } from "../../prisma/prisma.service";
  */
 @Injectable()
 export class QrService {
+  private readonly log = new Logger(QrService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   private pepper(): string {
@@ -29,7 +38,23 @@ export class QrService {
 
   private baseUrl(): string {
     // URL yang dipindai kurir harus mengarah ke halaman PWA, bukan ke API.
-    return process.env.SCAN_BASE_URL ?? "http://localhost:3000/scan";
+    const dari = process.env["SCAN_BASE_URL"];
+    if (dari) return dari.replace(/\/+$/, "");
+
+    // Tanpa nilai ini, QR yang TERCETAK dan tertempel di box menunjuk localhost. Kurir
+    // yang memindainya tidak sampai ke mana pun, dan kegagalannya baru ketahuan di
+    // lapangan — setelah barangnya berangkat. Nilai bawaan diam-diam adalah pilihan yang
+    // salah di sini: ia menghasilkan artefak fisik yang rusak, bukan sekadar respons yang
+    // rusak, dan artefak fisik tidak bisa ditarik kembali dengan satu deploy.
+    if (process.env["NODE_ENV"] === "production") {
+      this.log.error("SCAN_BASE_URL belum diset — penerbitan QR ditolak.");
+      throw new ServiceUnavailableException({
+        code: "SCAN_BASE_URL_MISSING",
+        message: "Alamat halaman pindai belum dikonfigurasi, sehingga QR tidak dapat diterbitkan.",
+      });
+    }
+    this.log.warn("SCAN_BASE_URL belum diset — memakai localhost. Hanya untuk pengembangan.");
+    return "http://localhost:3000/scan";
   }
 
   /**

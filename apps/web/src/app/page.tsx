@@ -1,417 +1,606 @@
-"use client";
-
-import React, { useState } from "react";
+import React from "react";
+import Image from "next/image";
 import Link from "next/link";
-import { 
-  Leaf, 
-  Search, 
-  ShieldCheck, 
-  Satellite, 
-  Truck, 
-  ArrowRight, 
-  X,
-  CheckCircle2,
-  Smartphone,
-  Map,
-  ShieldAlert
-} from "lucide-react";
+import {
+  CLAIM_AUTO_SETTLE_MAX_PCT,
+  COURIER_PIN_MAX_ATTEMPTS,
+  GEOFENCE_RADIUS_M,
+  MAX_PLAUSIBLE_JUMP_M,
+  MAX_PLAUSIBLE_SPEED_KMH,
+  PRENOTIFY_RADIUS_M,
+  QUOTA_MULTIPLIER_NORMAL,
+} from "@agro-os/shared";
+import { BarisAturan, KepalaBagian } from "@/components/bagian";
+import { Guilloche } from "@/components/guilloche";
+import { KurvaNdvi } from "@/components/kurva-ndvi";
+import { angka, rupiah, tanggalPanjang } from "@/lib/format-id";
+import {
+  CAKUPAN,
+  DERET_NDVI,
+  EFISIENSI,
+  MUTU_GRADE,
+  PERAN,
+  RANTAI,
+  SCENE,
+  SERTIFIKAT,
+} from "@/lib/sertifikat";
+
+/**
+ * Landing page AgroUs — dunia visual "Label Sertifikasi".
+ *
+ * Kontrak arahnya ada di `layout.tsx` sebagai komentar HTML yang bertahan di markup build.
+ *
+ * SUSUNAN halaman mengikuti empat hal yang deskripsi temanya minta ditingkatkan: efisiensi
+ * rantai pasok, transparansi distribusi, kualitas produk, dan keamanan produk. Kata-katanya
+ * tidak pernah disalin ke halaman — yang ditiru struktur jawabannya, supaya pembaca yang
+ * memegang kriteria itu menemukan jawabannya tanpa mencari.
+ *
+ * Verifikasi satelit BUKAN salah satu dari empat: ia mekanisme yang membuat keempatnya bisa
+ * dijanjikan, jadi ia berdiri lebih dulu.
+ *
+ * Aturan yang mengikat isi: setiap angka berasal dari basis data produksi
+ * (`lib/sertifikat.ts`), dari scene Sentinel-2 yang benar-benar ditarik, atau diimpor
+ * langsung dari `@agro-os/shared` supaya tidak bisa melenceng dari aturan yang benar-benar
+ * dijalankan server. Tidak ada pelanggan, testimoni, logo mitra, atau metrik penggunaan.
+ */
+
+const layak = DERET_NDVI.filter((d) => d.ndvi !== null).length;
+const tertutup = DERET_NDVI.length - layak;
+const kurang = SERTIFIKAT.kuota.terjual - SERTIFIKAT.kuota.terpenuhi;
+
+/** Catatan kaki yang menempel pada fakta yang dikualifikasinya, bukan berdiri sendiri. */
+function Dagger({ n, judul }: { n: 1 | 2; judul: string }) {
+  return (
+    <sup className="ml-1 font-mono text-[11px] text-stempel" title={judul}>
+      {"†".repeat(n)}
+    </sup>
+  );
+}
+
+function Kolom({
+  nomor,
+  label,
+  children,
+}: {
+  nomor: string;
+  label: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="baris-data">
+      <div className="flex items-baseline gap-2">
+        <span className="font-mono text-[10px] text-tinta-samar">{nomor}</span>
+        <span className="text-[10px] font-semibold uppercase tracking-cap text-tinta-samar">{label}</span>
+      </div>
+      <div className="font-mono text-[15px] leading-snug text-tinta">{children}</div>
+    </div>
+  );
+}
 
 export default function LandingPage() {
-  // State untuk mengontrol modal mana yang terbuka ('satelit', 'escrow', 'logistik', atau null)
-  const [activeModal, setActiveModal] = useState<string | null>(null);
-
   return (
-    <div className="min-h-screen bg-white font-sans text-gray-800">
-      {/* Nvabar */}
-      <nav className="flex items-center justify-between px-8 py-4 border-b border-gray-100">
-        <div className="flex items-center gap-2 text-emerald-900">
-          <img src="/logo.png" alt="AgroUs Logo" className="w-10 h-10 object-contain" />
-          <span className="text-xl font-bold font-fredoka">AgroUs</span>
-        </div>
-        <div className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-500">
-        </div>
-        <div className="w-24"></div> {/* Placeholder for balance */}
-      </nav>
-
-      {/* Hero Section */}
-      <section className="px-8 py-16 md:py-24 max-w-7xl mx-auto grid md:grid-cols-2 gap-12 items-center">
-        <div className="space-y-6">
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-gray-100 rounded-full text-xs font-semibold text-gray-600 tracking-wide">
-            <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
-            VERIFIED SUPPLY CHAIN
-          </div>
-          <h1 className="text-4xl md:text-5xl font-bold text-emerald-950 font-fredoka leading-tight">
-            Kami tidak asal percaya klaim petani. <span className="text-emerald-700">Kami memverifikasinya.</span>
-          </h1>
-          <p className="text-gray-600 md:text-lg leading-relaxed max-w-md">
-            Platform rantai pasok agrikultur B2B pertama dengan Verified Timeline. Dapatkan kepastian pasokan yang divalidasi langsung oleh citra satelit Sentinel-2.
-          </p>
-          <div className="flex flex-wrap items-center gap-4 pt-4">
-            <Link href="/auth/buyer" className="flex items-center gap-2 px-6 py-3 bg-emerald-900 text-white font-medium rounded-lg hover:bg-emerald-800 transition">
-              Cari Produk <Search className="w-4 h-4" />
-            </Link>
-            <Link href="/auth/tenant" className="px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition">
-              Mulai Menjual
-            </Link>
-          </div>
+    <main className="kertas-sekuriti min-h-screen bg-kertas font-sertifikat text-tinta">
+      {/* ======================= SERTIFIKAT ======================= */}
+      <section className="relative overflow-hidden border-b-2 border-tinta">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-[22%] top-1/2 hidden w-[85vh] -translate-y-1/2 text-ungu opacity-[0.42] md:block"
+        >
+          <Guilloche />
         </div>
 
-        {/* Hero Graphic Mockup */}
-        <div className="relative bg-gray-900 rounded-2xl overflow-hidden shadow-2xl aspect-[4/3] border-4 border-gray-100">
-          {/* Dummy Satellite Map Background */}
-          <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-20"></div>
-          <div className="absolute inset-0 bg-emerald-900/40 mix-blend-overlay"></div>
-          
-          {/* Mockup UI Elements */}
-          <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm p-3 rounded-lg shadow-sm">
-            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1">
-              <Satellite className="w-3 h-3"/> Sentinel-2 Sensor Data
+        <div className="relative mx-auto grid max-w-[1180px] gap-y-12 px-6 py-10 md:px-10 md:py-14">
+          <header className="flex flex-wrap items-center justify-between gap-6 border-b border-tinta pb-6">
+            <div className="flex items-center gap-3">
+              <Image src="/logo.png" alt="" width={40} height={40} className="h-10 w-10 object-contain" />
+              <span className="text-[19px] font-bold tracking-[0.02em]">AgroUs</span>
+            </div>
+            <p className="font-mono text-[11px] uppercase tracking-cap text-tinta-samar">
+              Malang Raya · cabai, bawang, umbi
             </p>
-            <p className="text-sm font-bold text-emerald-950">NDVI Index: 0.82</p>
-            <p className="text-[10px] text-gray-400">Updated 2h ago</p>
-          </div>
+          </header>
 
-          <div className="absolute bottom-4 left-4 right-4 bg-white/90 backdrop-blur-sm p-4 rounded-xl shadow-lg">
-            <div className="flex justify-between items-end mb-2">
-              <div>
-                <p className="text-xs font-bold text-emerald-700 flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3"/> Verified Status
-                </p>
-                <p className="text-[10px] text-gray-500">Fase: Pre-Harvest Verification</p>
-              </div>
-              <p className="text-xl font-bold text-emerald-900">75%</p>
+          <div className="grid gap-10 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+            <div className="max-w-[26ch]">
+              <h1
+                className="text-balance text-[clamp(2.4rem,5.6vw,4.25rem)] font-extrabold leading-[0.94] tracking-[-0.035em]"
+                style={{ fontStretch: "112%" }}
+              >
+                Sertifikat untuk panen yang belum ada.
+              </h1>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-1.5">
-              <div className="bg-emerald-700 h-1.5 rounded-full w-3/4"></div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Features Section */}
-      <section className="bg-emerald-50 py-20 px-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center max-w-2xl mx-auto mb-16">
-            <h2 className="text-3xl font-bold text-emerald-950 font-fredoka mb-4">
-              Membangun Kepercayaan Melalui Data Mutlak
-            </h2>
-            <p className="text-gray-600">
-              Kami menghilangkan ketidakpastian dalam perdagangan komoditas pertanian dengan verifikasi tiga lapis.
+            <p className="max-w-[46ch] text-[17px] leading-relaxed text-tinta-lembut md:text-right">
+              Pembeli mengunci pasokan berbulan-bulan sebelum barangnya tumbuh. Halaman ini
+              satu contoh nyata dari produksi — lengkap dengan bagian yang gagal.
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6">
-            {/* Feature 1 */}
-            <div 
-              onClick={() => setActiveModal('escrow')}
-              className="bg-white p-8 rounded-2xl shadow-sm border border-emerald-100 hover:shadow-md transition cursor-pointer group"
-            >
-              <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-800 mb-6 group-hover:scale-110 transition">
-                <ShieldCheck className="w-6 h-6" />
-              </div>
-              <h3 className="text-xl font-bold text-emerald-950 mb-3 font-fredoka">Transaksi Aman</h3>
-              <p className="text-sm text-gray-600 mb-6 leading-relaxed">
-                Kunci harga dan volume sebelum tanam. Dana ditahan di escrow dengan perlindungan Harvest Assurance yang menjamin pengembalian jika gagal panen terverifikasi.
-              </p>
-              <span className="text-sm font-semibold text-emerald-700 flex items-center gap-1 group-hover:gap-2 transition-all">
-                Pelajari Selengkapnya <ArrowRight className="w-4 h-4" />
+          <div className="grid gap-x-10 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
+            <Kolom nomor="01" label="Komoditas">
+              {SERTIFIKAT.produk}
+              <span className="ml-2 text-tinta-samar">Grade {SERTIFIKAT.grade}</span>
+            </Kolom>
+            <Kolom nomor="02" label="Produsen">
+              {SERTIFIKAT.tenant}
+              <span className="mt-0.5 block text-[13px] text-tinta-samar">{SERTIFIKAT.zona}</span>
+            </Kolom>
+            <Kolom nomor="03" label="Lahan">
+              {SERTIFIKAT.lahan.lat.toFixed(5)}, {SERTIFIKAT.lahan.lng.toFixed(5)}
+              <span className="mt-0.5 block text-[13px] text-tinta-samar">
+                {SERTIFIKAT.lahan.luasHa} ha · efektif {SERTIFIKAT.lahan.luasEfektifHa} ha
               </span>
+            </Kolom>
+            <Kolom
+              nomor="04"
+              label={
+                <>
+                  Harga terkunci
+                  <Dagger n={1} judul="Escrow belum di mitra berizin" />
+                </>
+              }
+            >
+              {rupiah(SERTIFIKAT.hargaTerkunci)}
+              <span className="mt-0.5 block text-[13px] text-tinta-samar">per box, sejak pra-tanam</span>
+            </Kolom>
+            <Kolom nomor="05" label="Tanam">
+              {tanggalPanjang(SERTIFIKAT.tanam)}
+            </Kolom>
+            <Kolom nomor="06" label="Panen diklaim">
+              {tanggalPanjang(SERTIFIKAT.panenKlaim)}
+            </Kolom>
+            <Kolom nomor="07" label="Kuota terjual">
+              {SERTIFIKAT.kuota.terjual} box
+              <span className="mt-0.5 block text-[13px] text-tinta-samar">
+                dari kapasitas {angka(SERTIFIKAT.kuota.total)}
+              </span>
+            </Kolom>
+            <Kolom nomor="08" label="Terpenuhi">
+              <span className="text-stempel">{SERTIFIKAT.kuota.terpenuhi} box</span>
+              <span className="mt-0.5 block text-[13px] text-tinta-samar">kurang {kurang} box</span>
+            </Kolom>
+          </div>
+
+          <div className="flex flex-col gap-8 border-t-2 border-tinta pt-8 md:flex-row md:items-end md:justify-between">
+            <div className="flex flex-wrap items-center gap-4">
+              <Link
+                href="#verifikasi"
+                className="bg-tinta px-7 py-3.5 text-[15px] font-semibold text-kertas-terang transition-colors hover:bg-ungu focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ungu"
+              >
+                Bagaimana ini diverifikasi
+              </Link>
+              <Link
+                href="#masuk"
+                className="border border-tinta px-7 py-3.5 text-[15px] font-semibold transition-colors hover:bg-tinta hover:text-kertas-terang focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ungu"
+              >
+                Masuk ke aplikasi
+              </Link>
             </div>
 
-            {/* Feature 2 */}
-            <div 
-              onClick={() => setActiveModal('satelit')}
-              className="bg-white p-8 rounded-2xl shadow-sm border border-emerald-100 hover:shadow-md transition cursor-pointer group"
-            >
-              <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-800 mb-6 group-hover:scale-110 transition">
-                <Satellite className="w-6 h-6" />
-              </div>
-              <h3 className="text-xl font-bold text-emerald-950 mb-3 font-fredoka">Verifikasi Satelit</h3>
-              <p className="text-sm text-gray-600 mb-6 leading-relaxed">
-                Riwayat tanam mutlak. Divalidasi silang secara otomatis setiap 5 hari dari orbit Sentinel-2 untuk memantau biomassa dan kesehatan tanaman secara objektif.
+            <div className="cap max-w-[24rem] border-[2.5px] border-stempel px-5 py-3 text-stempel">
+              <p className="text-[11px] font-bold uppercase tracking-cap">
+                Diperiksa citra satelit
+                <Dagger n={2} judul="Penjadwalan produksi belum menyala" />
               </p>
-              <span className="text-sm font-semibold text-emerald-700 flex items-center gap-1 group-hover:gap-2 transition-all">
-                Lihat Demo Peta <ArrowRight className="w-4 h-4" />
-              </span>
-            </div>
-
-            {/* Feature 3 */}
-            <div 
-              onClick={() => setActiveModal('logistik')}
-              className="bg-white p-8 rounded-2xl shadow-sm border border-emerald-100 hover:shadow-md transition cursor-pointer group"
-            >
-              <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-800 mb-6 group-hover:scale-110 transition">
-                <Truck className="w-6 h-6" />
-              </div>
-              <h3 className="text-xl font-bold text-emerald-950 mb-3 font-fredoka">Zero-Install Logistik</h3>
-              <p className="text-sm text-gray-600 mb-6 leading-relaxed">
-                Pelacakan real-time dan notifikasi Dual-Signal PoD melalui browser mobile tanpa perlu memaksa kurir mengunduh aplikasi tambahan. Integrasi langsung ke WhatsApp.
+              <p className="mt-1.5 font-mono text-[12px] leading-relaxed">
+                {SCENE.puncak.id}
+                <br />
+                {tanggalPanjang(SCENE.puncak.tanggal)} · tutupan awan {SCENE.puncak.awanPct}%
               </p>
-              <span className="text-sm font-semibold text-emerald-700 flex items-center gap-1 group-hover:gap-2 transition-all">
-                Integrasi Logistik <ArrowRight className="w-4 h-4" />
-              </span>
             </div>
           </div>
-        </div>
-      </section>
 
-      {/* Bottom CTA / Stats */}
-      <section className="max-w-7xl mx-auto px-8 py-16 grid md:grid-cols-3 gap-6">
-        <div className="md:col-span-2 bg-emerald-950 rounded-2xl p-10 flex flex-col justify-center text-white relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-16 opacity-10">
-             <Leaf className="w-64 h-64" />
+          {/* Catatan kaki menempel pada kolom yang dikualifikasinya, bukan menjadi daftar
+              kekurangan terpisah tepat sebelum ajakan bertindak. */}
+          <div className="grid gap-3 border-t border-kertas-garis pt-6 font-mono text-[12px] leading-relaxed text-tinta-samar md:grid-cols-2">
+            <p>
+              <span className="text-stempel">†</span> Buku besar escrow berjalan penuh dan mencatat
+              setiap mutasi, tetapi mitra pembayaran berizin belum tersambung: instruksi pencairan
+              berstatus menunggu, bukan berhasil.
+            </p>
+            <p>
+              <span className="text-stempel">††</span> Citra dan nomor scene di halaman ini ditarik
+              sungguhan. Penjadwalan verifikasi di produksi belum menyala, jadi angka NDVI di
+              aplikasi peragaan masih data contoh.
+            </p>
           </div>
-          <h2 className="text-3xl font-bold font-fredoka mb-4 z-10">Tersambung ke 5,000+ Lahan Terverifikasi</h2>
-          <p className="text-emerald-100 mb-8 max-w-md z-10">
-            Kami memberikan akses langsung ke produsen tangan pertama dengan data transparansi penuh yang belum pernah ada sebelumnya.
+
+          <p className="font-mono text-[11px] tracking-[0.2em] text-tinta-samar">
+            SERI {SERTIFIKAT.seri} · BATCH {SERTIFIKAT.batchId}
           </p>
-          <div className="flex gap-4 z-10">
-            <span className="px-4 py-2 bg-emerald-800/50 rounded-lg text-sm font-medium border border-emerald-700">120k Ton Komoditas</span>
-            <span className="px-4 py-2 bg-emerald-800/50 rounded-lg text-sm font-medium border border-emerald-700">98% Panen Tepat Waktu</span>
-          </div>
-        </div>
-        
-        <div className="bg-gray-200 rounded-2xl relative overflow-hidden h-64 md:h-auto border border-gray-200">
-           {/* Placeholder for Sustainable Sourcing Image */}
-           <div className="absolute inset-0 bg-gradient-to-t from-emerald-950 to-transparent z-10"></div>
-           <div className="absolute bottom-6 left-6 z-20">
-             <h3 className="text-xl font-bold text-white font-fredoka">Sustainable Sourcing</h3>
-             <p className="text-xs text-emerald-100 mt-1">Validasi kepatuhan lingkungan otomatis.</p>
-           </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-gray-100 py-8 px-8 flex flex-col md:flex-row justify-between items-center text-sm text-gray-500 max-w-7xl mx-auto">
-        <div className="flex items-center gap-2 font-bold text-emerald-900 mb-4 md:mb-0">
-          <Leaf className="w-5 h-5" /> AgroUs
-        </div>
-        <p>© 2026 AgroUs. Precision Agriculture Solutions.</p>
-        <div className="flex gap-6 mt-4 md:mt-0">
-          <a href="#" className="hover:text-emerald-900">Privacy Policy</a>
-          <a href="#" className="hover:text-emerald-900">Terms of Service</a>
-        </div>
-      </footer>
+      {/* ======================= MEKANISME: VERIFIKASI ======================= */}
+      <section id="verifikasi" className="scroll-mt-4 bg-ungu text-kertas-terang">
+        <div className="mx-auto max-w-[1180px] px-6 py-20 md:px-10 md:py-28">
+          <h2
+            className="max-w-[16ch] text-balance text-[clamp(2rem,4.6vw,3.4rem)] font-extrabold leading-[0.98] tracking-[-0.03em]"
+            style={{ fontStretch: "108%" }}
+          >
+            Petani melaporkan panennya sendiri. Itu masalahnya.
+          </h2>
+          <p className="mt-7 max-w-[68ch] text-[17px] leading-relaxed text-kabut-ungu">
+            Siapa pun bisa mengetik angka panen yang menguntungkan dirinya. Karena itu angka
+            yang dilaporkan tidak pernah berdiri sendiri di sini: ia diuji terhadap sesuatu
+            yang tidak bisa disetel Tenant — kehijauan lahannya sendiri, dilihat dari orbit,
+            setiap lima hari, sepanjang musim. Dari sinilah keempat hal berikutnya bisa
+            dijanjikan.
+          </p>
 
-      {/* ========================================= */}
-      {/* MODALS OVERLAYS */}
-      {/* ========================================= */}
-      
-      {activeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-emerald-950/40 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl relative overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            
-            {/* Close Button */}
-            <button 
-              onClick={() => setActiveModal(null)}
-              className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-800 hover:bg-gray-100 rounded-full z-20"
-            >
-              <X className="w-5 h-5" />
-            </button>
+          <div className="mt-16 bg-kertas-terang p-6 text-tinta md:p-10">
+            <KurvaNdvi />
+          </div>
 
-            {/* MODAL 1: ZERO-INSTALL LOGISTIK */}
-            {activeModal === 'logistik' && (
-              <div className="p-10 grid md:grid-cols-2 gap-10 items-center">
-                {/* Phone Mockup */}
-                <div className="flex justify-center">
-                  <div className="w-64 h-[500px] border-[8px] border-gray-900 rounded-[2.5rem] relative bg-gray-50 shadow-inner overflow-hidden flex flex-col">
-                    <div className="absolute top-0 inset-x-0 h-6 bg-gray-900 rounded-b-xl mx-16"></div>
-                    {/* Mockup App UI */}
-                    <div className="flex-1 p-4 pt-10 flex flex-col">
-                      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 mb-4 flex items-center gap-2 text-xs">
-                         <ShieldCheck className="w-4 h-4 text-emerald-600"/> agrous.com/track/991
-                      </div>
-                      <div className="bg-gray-100 rounded-lg flex-1 mb-4 relative overflow-hidden">
-                         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/diagonal-stripes.png')] opacity-10"></div>
-                         {/* Marker */}
-                         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-blue-500/20 rounded-full flex items-center justify-center">
-                            <div className="w-3 h-3 bg-blue-600 border-2 border-white rounded-full"></div>
-                         </div>
-                      </div>
-                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-                        <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">Status Pengiriman</p>
-                        <p className="font-bold text-gray-800 text-sm mb-1 leading-tight">Mengantar ke Resto Bumbu Desa</p>
-                        <p className="text-xs text-gray-500 mb-4 flex items-center gap-1"><Truck className="w-3 h-3"/> Estimasi tiba dalam 12 menit</p>
-                        <button className="w-full bg-emerald-600 text-white py-2.5 rounded-lg text-sm font-semibold flex justify-center items-center gap-2"></button>
-                          <CheckCircle2 className="w-4 h-4" /> Konfirmasi Sampai (PoD)
-                        {/* </p> */}
-                      </div>
-                    </div>
-                  </div>
+          <div className="mt-10 grid gap-6 md:grid-cols-2">
+            {[SCENE.puncak, SCENE.panen].map((s) => (
+              <figure key={s.id} className="bg-kertas-terang p-4 text-tinta">
+                <div className="relative aspect-square overflow-hidden">
+                  <Image
+                    src={s.berkas}
+                    alt={`Citra Sentinel-2 kawasan Pujon, ${tanggalPanjang(s.tanggal)}`}
+                    fill
+                    sizes="(max-width: 768px) 100vw, 560px"
+                    className="object-cover"
+                  />
+                  <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full" aria-hidden fill="none">
+                    <rect x="48.35" y="48.35" width="3.3" height="3.3" className="stroke-stempel" strokeWidth="0.7" />
+                    <line x1="51.65" y1="48.35" x2="70" y2="30" className="stroke-stempel" strokeWidth="0.4" />
+                    <text x="70.6" y="29.4" className="fill-stempel font-mono" fontSize="3">
+                      lahan
+                    </text>
+                  </svg>
                 </div>
-                {/* Text Content */}
-                <div>
-                  <h2 className="text-2xl font-bold font-fredoka text-emerald-950 mb-2">Zero-Install Logistik: <span className="font-normal text-gray-600">Tanpa Repot Download Aplikasi</span></h2>
-                  <p className="text-sm text-gray-500 mb-8">Kurir hanya butuh kamera HP bawaan. Pembeli dapat notifikasi real-time langsung ke WhatsApp.</p>
-                  
-                  <div className="space-y-6">
-                    <div className="flex gap-4">
-                      <div className="mt-1"><Map className="w-5 h-5 text-emerald-600"/></div>
-                      <div>
-                        <h4 className="font-bold text-gray-800 text-sm">Siapkan Label QR</h4>
-                        <p className="text-xs text-gray-500 mt-1">Tenant menempelkan Label QR unik pada box panen sebelum dikirim.</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-4">
-                      <div className="mt-1"><Smartphone className="w-5 h-5 text-emerald-600"/></div>
-                      <div>
-                        <h4 className="font-bold text-gray-800 text-sm">Scan Tanpa Aplikasi</h4>
-                        <p className="text-xs text-gray-500 mt-1">Kurir scan QR pakai kamera HP biasa. Browser terbuka otomatis untuk tracking.</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-4">
-                      <div className="mt-1"><Truck className="w-5 h-5 text-emerald-600"/></div>
-                      <div>
-                        <h4 className="font-bold text-gray-800 text-sm">Web-GPS Tracking</h4>
-                        <p className="text-xs text-gray-500 mt-1">Sistem melacak lokasi kurir via Web-GPS selama browser tracking terbuka di HP.</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-8 bg-blue-50 border border-blue-100 rounded-xl p-4 flex gap-3">
-                    <ShieldCheck className="w-6 h-6 text-blue-600 shrink-0" />
-                    <div>
-                      <h4 className="font-bold text-blue-900 text-sm">Dual-Signal PoD</h4>
-                      <p className="text-xs text-blue-800/80 mt-1 leading-relaxed">Proof of Delivery diverifikasi dari dua sisi: Kurir menekan tombol sampai, dan Pembeli menekan konfirmasi terima barang di dasbor mereka.</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* MODAL 2: VALIDASI SATELIT */}
-            {activeModal === 'satelit' && (
-              <div className="p-8">
-                <div className="mb-6">
-                  <h2 className="text-xl font-bold font-fredoka text-emerald-950">Demo: Validasi Satelit Sentinel-2</h2>
-                  <p className="text-sm text-gray-500">Lihat bagaimana kami memantau fase tanam hingga panen menggunakan data Indeks Vegetasi (NDVI).</p>
-                </div>
-                <div className="bg-gray-900 w-full h-[400px] rounded-xl relative overflow-hidden">
-                   <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-20"></div>
-                   
-                   {/* Map Elements Mockup */}
-                   <div className="absolute top-1/2 left-1/3 -translate-x-1/2 -translate-y-1/2 w-64 h-48 border-2 border-emerald-400 bg-emerald-500/20 rotate-6 backdrop-blur-sm flex items-center justify-center">
-                     <span className="bg-white text-xs font-bold px-2 py-1 rounded shadow-sm flex items-center gap-1"><CheckCircle2 className="w-3 h-3 text-emerald-600"/> Blok A: Sawi Pakcoy</span>
-                   </div>
-                   
-                   <div className="absolute top-1/3 right-1/3 w-48 h-32 border-2 border-amber-400 bg-amber-500/20 -rotate-3 backdrop-blur-sm flex items-center justify-center">
-                     <span className="bg-white text-xs font-bold px-2 py-1 rounded shadow-sm">Blok B: Persiapan Lahan</span>
-                   </div>
-
-                   {/* Floating Stats */}
-                   <div className="absolute top-4 right-4 bg-white p-4 rounded-xl shadow-lg w-64">
-                     <p className="text-[10px] font-bold text-red-500 uppercase flex items-center gap-1 mb-1">
-                       <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span> LIVE
-                     </p>
-                     <h4 className="text-2xl font-bold text-emerald-950 font-fredoka">NDVI Index: 0.82</h4>
-                     <p className="text-xs text-gray-500 mb-3">Tanaman sangat sehat</p>
-                     <div className="flex justify-between items-end mb-1">
-                        <span className="text-[10px] font-semibold text-gray-600">Kelembaban Tanah</span>
-                        <span className="text-[10px] font-bold text-emerald-700">68%</span>
-                     </div>
-                     <div className="w-full bg-gray-100 rounded-full h-1">
-                       <div className="bg-emerald-500 h-1 rounded-full w-[68%]"></div>
-                     </div>
-                   </div>
-
-                   {/* Bottom Slider Control */}
-                   <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[90%] bg-white p-4 rounded-xl shadow-lg">
-                      <div className="flex justify-between items-center mb-4">
-                        <div className="flex items-center gap-3">
-                          <button className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
-                            ▶
-                          </button>
-                          <div>
-                            <p className="text-sm font-bold text-gray-800">Analisis Time-Series</p>
-                            <p className="text-xs text-gray-500">Fase Pertumbuhan -15 Hari</p>
-                          </div>
-                        </div>
-                        <span className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full text-xs font-bold border border-emerald-100">
-                          H+25: Vegetasi Maksimal
-                        </span>
-                      </div>
-                      <div className="w-full bg-gray-200 h-2 rounded-full relative">
-                        <div className="absolute top-0 left-0 h-2 bg-emerald-500 rounded-full w-1/3"></div>
-                        <div className="absolute top-1/2 left-1/3 -translate-y-1/2 w-4 h-4 bg-white border-2 border-emerald-600 rounded-full shadow-sm"></div>
-                      </div>
-                      <div className="flex justify-between mt-2 text-[10px] text-gray-400 font-medium">
-                        <span>H-1</span>
-                        <span>H+15</span>
-                        <span className="text-emerald-700 font-bold">H+25</span>
-                        <span>H+35</span>
-                        <span>H+45</span>
-                      </div>
-                   </div>
-                </div>
-              </div>
-            )}
-
-            {/* MODAL 3: TRANSAKSI AMAN (ESCROW) */}
-            {activeModal === 'escrow' && (
-              <div className="p-10">
-                <div className="text-center mb-10">
-                  <h2 className="text-2xl font-bold font-fredoka text-emerald-950 mb-2">Cara Kerja Transaksi Aman (Harvest Assurance)</h2>
-                  <p className="text-sm text-gray-500 max-w-lg mx-auto">Pelajari bagaimana sistem escrow kami melindungi dana pembeli dan menjamin kepastian bagi petani.</p>
-                </div>
-                
-                {/* Stepper */}
-                <div className="relative flex justify-between items-start mb-12 max-w-2xl mx-auto">
-                  <div className="absolute top-6 left-0 w-full h-0.5 bg-gray-200 -z-10"></div>
-                  
-                  {/* Step 1 */}
-                  <div className="flex flex-col items-center w-32">
-                    <div className="w-12 h-12 bg-emerald-900 rounded-full flex items-center justify-center text-white shadow-md border-4 border-white mb-3">
-                       <ShieldCheck className="w-5 h-5" />
-                    </div>
-                    <h4 className="font-bold text-sm text-gray-800 text-center">Pembayaran</h4>
-                    <p className="text-[10px] text-gray-500 text-center mt-1">HORECA membayar ke Escrow.</p>
-                  </div>
-
-                  {/* Step 2 */}
-                  <div className="flex flex-col items-center w-32">
-                    <div className="w-12 h-12 bg-emerald-700 rounded-full flex items-center justify-center text-white shadow-md border-4 border-white mb-3">
-                       <ShieldCheck className="w-5 h-5" />
-                    </div>
-                    <h4 className="font-bold text-sm text-gray-800 text-center">Dana Ditahan</h4>
-                    <p className="text-[10px] text-gray-500 text-center mt-1">Uang aman selama masa tanam.</p>
-                  </div>
-
-                  {/* Step 3 */}
-                  <div className="flex flex-col items-center w-32">
-                    <div className="w-12 h-12 bg-emerald-700 rounded-full flex items-center justify-center text-white shadow-md border-4 border-white mb-3">
-                       <Truck className="w-5 h-5" />
-                    </div>
-                    <h4 className="font-bold text-sm text-gray-800 text-center">Panen & Kirim</h4>
-                    <p className="text-[10px] text-gray-500 text-center mt-1">Petani mengirim pesanan.</p>
-                  </div>
-
-                  {/* Step 4 */}
-                  <div className="flex flex-col items-center w-32">
-                    <div className="w-12 h-12 bg-emerald-700 rounded-full flex items-center justify-center text-white shadow-md border-4 border-white mb-3">
-                       <CheckCircle2 className="w-5 h-5" />
-                    </div>
-                    <h4 className="font-bold text-sm text-gray-800 text-center">Pencairan</h4>
-                    <p className="text-[10px] text-gray-500 text-center mt-1">Dana cair setelah PoD.</p>
-                  </div>
-                </div>
-
-                {/* Force Majeure Box */}
-                <div className="bg-green-50 border border-green-200 rounded-xl p-5 flex gap-4 max-w-2xl mx-auto">
-                   <div className="mt-1">
-                     <div className="w-8 h-8 rounded-full bg-emerald-900 text-white flex items-center justify-center">
-                       <ShieldAlert className="w-4 h-4" />
-                     </div>
-                   </div>
-                   <div>
-                     <h4 className="font-bold text-emerald-950 text-sm mb-1 uppercase tracking-wide">Jaminan Gagal Panen (Force Majeure)</h4>
-                     <p className="text-xs text-emerald-900/80 leading-relaxed">Jika satelit <strong>Sentinel-2</strong> mendeteksi anomali vegetasi fatal atau gagal panen sebelum jadwal, dana di Escrow akan otomatis dikembalikan (refund) <strong>100% ke pihak Pembeli</strong>.</p>
-                   </div>
-                </div>
-              </div>
-            )}
+                <figcaption className="mt-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <span className="text-[14px] font-semibold">{s.keterangan}</span>
+                  <span className="font-mono text-[11px] text-tinta-samar">
+                    {s.id} · awan {s.awanPct}%
+                  </span>
+                </figcaption>
+              </figure>
+            ))}
           </div>
         </div>
-      )}
-    </div>
+      </section>
+
+      {/* ======================= 1. EFISIENSI RANTAI PASOK ======================= */}
+      <section className="kertas-sekuriti border-b-2 border-tinta bg-kertas">
+        <div className="mx-auto max-w-[1180px] px-6 py-20 md:px-10 md:py-28">
+          <KepalaBagian judul="Permintaan dikunci sebelum modal keluar." lebarJudul="max-w-[20ch]">
+            Urutan lazimnya terbalik: petani menanam dulu, memanen, baru mencari pembeli, dan
+            menanggung sendiri kalau harga jatuh. Di sini kuota dibuka sebelum benih masuk
+            tanah, sehingga jumlah dan harga sudah pasti sejak awal — untuk kedua pihak.
+          </KepalaBagian>
+
+          <div className="mt-14">
+            {EFISIENSI.map((e) => (
+              <BarisAturan key={e.label} nilai={e.angka} label={e.label} warnaNilai="text-ungu">
+                {e.isi}
+              </BarisAturan>
+            ))}
+            <BarisAturan
+              nilai={String(QUOTA_MULTIPLIER_NORMAL * 100)}
+              satuan="%"
+              label="pengali kuota"
+              warnaNilai="text-ungu"
+            >
+              Hanya sebagian kapasitas lahan yang boleh dijual, menyisakan bantalan untuk musim
+              yang tidak sempurna. Angka ini turun sendiri bila realisasi Tenant menyimpang
+              berulang dari rata-rata zonanya.
+            </BarisAturan>
+          </div>
+        </div>
+      </section>
+
+      {/* ======================= 2. TRANSPARANSI DISTRIBUSI ======================= */}
+      <section className="bg-biru text-kertas-terang">
+        <div className="mx-auto max-w-[1180px] px-6 py-20 md:px-10 md:py-28">
+          <KepalaBagian
+            nada="warna"
+            judul="Kurir tidak memasang apa pun, dan tetap terlacak."
+            lebarJudul="max-w-[20ch]"
+          >
+            Pengantar barang di lapangan tidak akan mengunduh aplikasi untuk satu pengiriman.
+            Jadi seluruh alurnya berjalan di peramban, dimulai dari memindai QR dengan kamera
+            bawaan ponsel — dan justru di situ pengawasannya diperketat, bukan dilonggarkan.
+          </KepalaBagian>
+
+          <div className="mt-14">
+            <BarisAturan
+              nilai="1"
+              satuan="× pakai"
+              label="token QR"
+              warnaNilai="text-kertas-terang"
+              warnaGaris="border-biru-muda/40"
+              warnaTeks="text-kabut-biru"
+            >
+              Setiap token hanya bisa ditukar sekali. Jaminannya indeks unik parsial di basis
+              data, bukan pemeriksaan aplikasi — dua pemindaian bersamaan atas token yang sama
+              tidak mungkin dua-duanya lolos.
+            </BarisAturan>
+            <BarisAturan
+              nilai={String(COURIER_PIN_MAX_ATTEMPTS)}
+              satuan="percobaan"
+              label="Kode Antar 4 digit"
+              warnaNilai="text-kertas-terang"
+              warnaGaris="border-biru-muda/40"
+              warnaTeks="text-kabut-biru"
+            >
+              Memindai QR saja tidak cukup membuka pengiriman. Lewat batas ini token terkunci,
+              dan Tenant harus menerbitkan kode baru.
+            </BarisAturan>
+            <BarisAturan
+              nilai={angka(MAX_PLAUSIBLE_JUMP_M)}
+              satuan="m"
+              label="lompatan posisi ditolak"
+              warnaNilai="text-kertas-terang"
+              warnaGaris="border-biru-muda/40"
+              warnaTeks="text-kabut-biru"
+            >
+              Posisi yang melompat lebih jauh dari ini, atau menyiratkan kecepatan di atas{" "}
+              {MAX_PLAUSIBLE_SPEED_KMH} km/jam, ditandai tidak masuk akal dan tidak ikut
+              menggerakkan status. Pelacakan yang menerima koordinat apa pun bukan pelacakan.
+            </BarisAturan>
+            <BarisAturan
+              nilai={angka(PRENOTIFY_RADIUS_M)}
+              satuan="m"
+              label="pemberitahuan mendekat"
+              warnaNilai="text-kertas-terang"
+              warnaGaris="border-biru-muda/40"
+              warnaTeks="text-kabut-biru"
+            >
+              Penerima dikabari sebelum kurir tiba, supaya barang tidak menunggu di depan pintu.
+              Terpisah dari penanda kedatangan agar keduanya bisa diaudit sendiri-sendiri.
+            </BarisAturan>
+            <BarisAturan
+              nilai={String(GEOFENCE_RADIUS_M)}
+              satuan="m"
+              label="geofence kedatangan"
+              warnaNilai="text-kertas-terang"
+              warnaGaris="border-biru-muda/40"
+              warnaTeks="text-kabut-biru"
+            >
+              Status Tiba tidak ditekan kurir, melainkan terpicu jaraknya sendiri ke titik
+              tujuan. Serah terimanya kemudian menuntut dua sinyal terpisah: pindaian kurir dan
+              konfirmasi penerima.
+            </BarisAturan>
+          </div>
+        </div>
+      </section>
+
+      {/* ======================= 3. KUALITAS PRODUK ======================= */}
+      <section className="kertas-sekuriti border-b-2 border-tinta bg-kertas">
+        <div className="mx-auto max-w-[1180px] px-6 py-20 md:px-10 md:py-28">
+          <KepalaBagian
+            judul="Mutu disepakati di muka, bukan diperdebatkan setelah barang datang."
+            lebarJudul="max-w-[24ch]"
+          >
+            Sengketa mutu hampir selalu berawal dari dua pihak yang tidak pernah menyepakati
+            artinya bagus. Grade, toleransi susut, dan tenggat pengajuan klaim ditetapkan
+            sebelum transaksi, per komoditas.
+          </KepalaBagian>
+
+          <div className="mt-14 overflow-x-auto">
+            <table className="w-full min-w-[36rem] border-collapse text-left">
+              <caption className="sr-only">Definisi grade A, B, dan C</caption>
+              <thead>
+                <tr className="border-b border-tinta">
+                  {["Grade", "Keseragaman min.", "Cacat maks.", "Definisi"].map((h) => (
+                    <th
+                      key={h}
+                      scope="col"
+                      className="pb-3 text-[10px] font-semibold uppercase tracking-cap text-tinta-samar"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {MUTU_GRADE.map((g) => (
+                  <tr key={g.grade} className="border-b border-kertas-garis">
+                    <td className="py-4 font-mono text-[20px] text-jambu">{g.grade}</td>
+                    <td className="py-4 font-mono text-[15px]">{g.seragam}%</td>
+                    <td className="py-4 font-mono text-[15px]">{g.cacat}%</td>
+                    <td className="max-w-[36ch] py-4 text-[15px] leading-relaxed text-tinta-lembut">{g.isi}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-12">
+            <BarisAturan nilai="2" satuan="jam" label="jendela klaim mutu" warnaNilai="text-jambu">
+              Dihitung sejak status Diterima. Lewat itu pesanan dianggap diterima penuh dan
+              escrow dicairkan. Tenggat yang pendek justru melindungi kedua pihak: mutu hasil
+              pertanian berubah cepat, dan buktinya ikut kabur bersama waktu.
+            </BarisAturan>
+            <BarisAturan
+              nilai={String(CLAIM_AUTO_SETTLE_MAX_PCT)}
+              satuan="%"
+              label="batas selesai otomatis"
+              warnaNilai="text-jambu"
+            >
+              Klaim di bawah nilai ini diselesaikan lewat potongan escrow tanpa peninjauan
+              manual. Di atasnya masuk antrean Operator — mesin menandai, manusia memutuskan.
+            </BarisAturan>
+            <BarisAturan nilai="3" satuan="%" label="toleransi susut" warnaNilai="text-jambu">
+              Disepakati per komoditas sebelum transaksi. Selisih di dalam toleransi tidak dapat
+              diklaim, sehingga tidak ada tawar-menawar atas penyusutan yang memang wajar.
+            </BarisAturan>
+          </div>
+        </div>
+      </section>
+
+      {/* ======================= 4. KEAMANAN PRODUK ======================= */}
+      <section className="bg-tinta text-kertas-terang">
+        <div className="mx-auto max-w-[1180px] px-6 py-20 md:px-10 md:py-28">
+          <KepalaBagian
+            nada="warna"
+            judul="Catatan yang tidak bisa disunting belakangan."
+            lebarJudul="max-w-[20ch]"
+          >
+            Ketertelusuran hanya berarti kalau catatannya tidak bisa dirapikan setelah ada
+            masalah. Setiap kegiatan disimpan sebagai baris baru yang memuat sidik jari baris
+            sebelumnya; mengubah satu catatan lama memutus seluruh rantai sesudahnya. Basis
+            datanya menolak operasi ubah dan hapus, termasuk dari koneksi administratif.
+          </KepalaBagian>
+
+          <ol className="mt-14 border-t border-tinta-lembut">
+            {RANTAI.map((n) => (
+              <li
+                key={n.seq}
+                className="grid items-baseline gap-x-8 gap-y-2 border-b border-tinta-lembut py-6 md:grid-cols-[3rem_11rem_minmax(0,1fr)_auto]"
+              >
+                <span className="font-mono text-[13px] text-kertas-garis">
+                  {String(n.seq).padStart(2, "0")}
+                </span>
+                <span className="text-[16px] font-semibold">{n.kegiatan}</span>
+                <span className="max-w-[58ch] text-[15px] leading-relaxed text-kertas-garis">{n.catatan}</span>
+                <span className="font-mono text-[12px] text-kertas-garis md:text-right">
+                  {n.prev ? (
+                    <>
+                      <span className="opacity-60">{n.prev}</span>
+                      <span className="mx-1.5">&rarr;</span>
+                    </>
+                  ) : null}
+                  <span className="text-ungu-muda">{n.hash}</span>
+                  <span className="ml-2 block text-[11px] md:mt-1 md:inline-block">{n.tanggal}</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+
+          <p className="mt-8 max-w-[68ch] text-[15px] leading-relaxed text-kertas-garis">
+            Baris terakhir mengakui panen yang gagal sebagian, dan tidak ada yang menghapusnya.
+            Itulah gunanya: catatan yang hanya memuat kabar baik tidak membuktikan apa pun. Uang
+            pembeli mengikuti aturan yang sama — buku besar escrow bersifat tambah-saja, dan
+            koreksi dilakukan dengan menambah baris, bukan menghapus jejak.
+          </p>
+        </div>
+      </section>
+
+      {/* ======================= PERAN & BATAS LINGKUP ======================= */}
+      <section className="border-b-2 border-tinta">
+        <h2 className="sr-only">Empat peran, empat salinan</h2>
+        <div className="grid md:grid-cols-4">
+          {PERAN.map((p) => {
+            const ground =
+              p.label === "ungu"
+                ? "bg-ungu"
+                : p.label === "biru"
+                  ? "bg-biru"
+                  : p.label === "merah-jambu"
+                    ? "bg-jambu"
+                    : "bg-tinta";
+            const kabut =
+              p.label === "ungu"
+                ? "text-kabut-ungu"
+                : p.label === "biru"
+                  ? "text-kabut-biru"
+                  : p.label === "merah-jambu"
+                    ? "text-kabut-jambu"
+                    : "text-kertas-garis";
+            return (
+              <div
+                key={p.nama}
+                className={`${ground} flex flex-col gap-4 px-7 py-12 text-kertas-terang md:px-8 md:py-16`}
+              >
+                <h3 className="text-[26px] font-extrabold leading-none" style={{ fontStretch: "108%" }}>
+                  {p.nama}
+                </h3>
+                <p className={`text-[13px] font-medium ${kabut}`}>{p.isi}</p>
+                <p className="mt-2 max-w-[34ch] text-[15px] leading-relaxed">{p.tugas}</p>
+                <p className={`mt-auto max-w-[34ch] pt-6 text-[13px] leading-relaxed ${kabut}`}>{p.catatan}</p>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Batas lingkup dinyatakan apa adanya. Dua dari empat tahap rantai agro memang tidak
+            dikerjakan produk ini, dan menyamarkannya di depan pembaca yang memegang deskripsi
+            temanya sendiri akan meruntuhkan kepercayaan yang dibangun seluruh halaman. */}
+        <div className="kertas-sekuriti bg-kertas">
+          <div className="mx-auto max-w-[1180px] px-6 py-14 md:px-10">
+            <p className="max-w-[68ch] text-[15px] leading-relaxed text-tinta-lembut">
+              Empat warna di atas adalah warna label sertifikasi benih Indonesia — penjenis,
+              dasar, pokok, sebar. Dipakai di sini untuk hal yang sama: menandai mutu yang tidak
+              bisa dilihat mata. Dan seperti label sungguhan, ia menyatakan juga apa yang tidak
+              dijaminnya.
+            </p>
+            <dl className="mt-10 grid gap-x-10 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
+              {CAKUPAN.map((c) => (
+                <div key={c.tahap} className={`border-t pt-4 ${c.ada ? "border-tinta" : "border-kertas-garis"}`}>
+                  <dt className="flex items-baseline gap-2 text-[15px] font-bold">
+                    <span className={`font-mono text-[12px] ${c.ada ? "text-ungu" : "text-tinta-samar"}`}>
+                      {c.ada ? "✓" : "—"}
+                    </span>
+                    {c.tahap}
+                  </dt>
+                  <dd className="mt-2 text-[14px] leading-relaxed text-tinta-lembut">{c.isi}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </div>
+      </section>
+
+      {/* ======================= MASUK ======================= */}
+      <section id="masuk" className="kertas-sekuriti scroll-mt-4 bg-kertas">
+        <div className="mx-auto max-w-[1180px] px-6 py-20 md:px-10 md:py-28">
+          <div className="grid gap-12 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+            <div>
+              <h2
+                className="max-w-[15ch] text-balance text-[clamp(2rem,4.6vw,3.4rem)] font-extrabold leading-[0.98] tracking-[-0.03em]"
+                style={{ fontStretch: "108%" }}
+              >
+                Periksa sendiri, jangan percaya halaman ini.
+              </h2>
+              <p className="mt-7 max-w-[62ch] text-[17px] leading-relaxed text-tinta-lembut">
+                Seluruh alur berjalan di produksi dengan data peragaan. Masuk sebagai peran mana
+                pun, telusuri rantainya, dan bandingkan dengan yang tertulis di sini.
+              </p>
+            </div>
+            <div aria-hidden className="hidden w-40 shrink-0 text-ungu opacity-50 md:block lg:w-52">
+              <Guilloche diam />
+            </div>
+          </div>
+
+          <div className="mt-14 flex flex-wrap gap-4">
+            <Link
+              href="/auth/tenant"
+              className="bg-ungu px-7 py-3.5 text-[15px] font-semibold text-kertas-terang transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta"
+            >
+              Masuk sebagai Tenant
+            </Link>
+            <Link
+              href="/auth/buyer"
+              className="bg-biru px-7 py-3.5 text-[15px] font-semibold text-kertas-terang transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta"
+            >
+              Masuk sebagai Pembeli
+            </Link>
+            <Link
+              href="/auth/operator/login"
+              className="border border-tinta px-7 py-3.5 text-[15px] font-semibold transition-colors hover:bg-tinta hover:text-kertas-terang focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta"
+            >
+              Masuk sebagai Operator
+            </Link>
+          </div>
+
+          <p className="mt-8 max-w-[68ch] font-mono text-[13px] leading-relaxed text-tinta-samar">
+            Nomor telepon akun peragaan tercantum di README repositori. Mode peragaan aktif,
+            jadi kode OTP dikembalikan langsung oleh API — dan itu wajib dimatikan sebelum ada
+            data sungguhan. Tidak ada pelanggan, testimoni, logo mitra, atau angka penggunaan di
+            halaman ini; tidak ada karena memang belum ada.
+          </p>
+
+          <footer className="mt-20 flex flex-wrap items-baseline justify-between gap-4 border-t border-tinta pt-8 font-mono text-[11px] uppercase tracking-cap text-tinta-samar">
+            <span>AgroUs · Malang Raya</span>
+            <span>
+              {layak} amatan layak · {tertutup} tertutup awan · citra Sentinel-2 L2A, AWS Open Data
+            </span>
+          </footer>
+        </div>
+      </section>
+    </main>
   );
 }
