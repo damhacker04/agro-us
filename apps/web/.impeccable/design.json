@@ -1,0 +1,279 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-14T00:00:00.000Z",
+  "title": "Design System: AgroUs — Label Sertifikasi",
+  "extensions": {
+    "scope": {
+      "implementedRoutes": ["/"],
+      "note": "This world is implemented on the landing route only (src/app/page.tsx). The other 57 page.tsx files under src/app/ still carry the incumbent Poppins/Fredoka styling with hardcoded hex (#0a381f, emerald-900) and no tokens. Tailwind's `sans` family stays mapped to Poppins on purpose so unmigrated pages do not silently change typeface; the new world is registered separately as the `sertifikat` family (Archivo)."
+    },
+    "colorMeta": {
+      "kertas": {
+        "role": "neutral",
+        "displayName": "Security Paper",
+        "canonical": "#EDEFE8",
+        "tonalRamp": ["oklch(15% 0.011 120)", "oklch(26% 0.011 120)", "oklch(38% 0.011 120)", "oklch(50% 0.011 120)", "oklch(62% 0.011 120)", "oklch(74% 0.011 120)", "oklch(86% 0.011 120)", "oklch(95% 0.011 120)"]
+      },
+      "kertas-terang": {
+        "role": "neutral",
+        "displayName": "Bright Paper",
+        "canonical": "#F6F7F2",
+        "tonalRamp": ["oklch(15% 0.008 120)", "oklch(26% 0.008 120)", "oklch(38% 0.008 120)", "oklch(50% 0.008 120)", "oklch(62% 0.008 120)", "oklch(75% 0.008 120)", "oklch(87% 0.008 120)", "oklch(97% 0.008 120)"]
+      },
+      "kertas-garis": {
+        "role": "neutral",
+        "displayName": "Paper Rule",
+        "canonical": "#D3D8CB",
+        "tonalRamp": ["oklch(15% 0.018 120)", "oklch(26% 0.018 120)", "oklch(38% 0.018 120)", "oklch(50% 0.018 120)", "oklch(62% 0.018 120)", "oklch(74% 0.018 120)", "oklch(86% 0.018 120)", "oklch(95% 0.018 120)"]
+      },
+      "tinta": {
+        "role": "primary",
+        "displayName": "Deep Intaglio Ink",
+        "canonical": "#141A2E",
+        "tonalRamp": ["oklch(15% 0.040 265)", "oklch(20% 0.040 265)", "oklch(31% 0.040 265)", "oklch(43% 0.040 265)", "oklch(55% 0.040 265)", "oklch(68% 0.040 265)", "oklch(82% 0.040 265)", "oklch(95% 0.040 265)"]
+      },
+      "tinta-lembut": {
+        "role": "neutral",
+        "displayName": "Soft Ink",
+        "canonical": "#3A4259",
+        "tonalRamp": ["oklch(15% 0.035 265)", "oklch(26% 0.035 265)", "oklch(35% 0.035 265)", "oklch(47% 0.035 265)", "oklch(59% 0.035 265)", "oklch(71% 0.035 265)", "oklch(84% 0.035 265)", "oklch(95% 0.035 265)"]
+      },
+      "tinta-samar": {
+        "role": "neutral",
+        "displayName": "Faint Ink",
+        "canonical": "#5C6478",
+        "tonalRamp": ["oklch(15% 0.028 265)", "oklch(26% 0.028 265)", "oklch(38% 0.028 265)", "oklch(48% 0.028 265)", "oklch(60% 0.028 265)", "oklch(72% 0.028 265)", "oklch(84% 0.028 265)", "oklch(95% 0.028 265)"],
+        "contrastNote": "Darkened from #6E7690 purely to clear 4.5:1 on kertas — 3.84:1 became 4.63:1."
+      },
+      "ungu": {
+        "role": "primary",
+        "displayName": "Certification Purple",
+        "canonical": "#5B3E96",
+        "tonalRamp": ["oklch(15% 0.150 295)", "oklch(26% 0.150 295)", "oklch(35% 0.150 295)", "oklch(42% 0.150 295)", "oklch(56% 0.150 295)", "oklch(70% 0.130 295)", "oklch(84% 0.090 295)", "oklch(95% 0.040 295)"]
+      },
+      "ungu-tua": {
+        "role": "primary",
+        "displayName": "Deep Certification Purple",
+        "canonical": "#3B2668",
+        "tonalRamp": ["oklch(15% 0.140 295)", "oklch(24% 0.140 295)", "oklch(31% 0.140 295)", "oklch(43% 0.140 295)", "oklch(55% 0.140 295)", "oklch(69% 0.120 295)", "oklch(83% 0.085 295)", "oklch(95% 0.038 295)"]
+      },
+      "ungu-muda": {
+        "role": "primary",
+        "displayName": "Pale Certification Purple",
+        "canonical": "#9A80CE",
+        "tonalRamp": ["oklch(15% 0.110 295)", "oklch(26% 0.110 295)", "oklch(38% 0.110 295)", "oklch(50% 0.110 295)", "oklch(62% 0.110 295)", "oklch(71% 0.110 295)", "oklch(85% 0.080 295)", "oklch(95% 0.035 295)"],
+        "contrastNote": "Lightened from #8B6FC4 purely to clear 4.5:1 for 12px hash text on the tinta ground — 4.25:1 became 5.1:1."
+      },
+      "biru": {
+        "role": "secondary",
+        "displayName": "Certification Blue",
+        "canonical": "#1B63A8",
+        "tonalRamp": ["oklch(15% 0.130 250)", "oklch(26% 0.130 250)", "oklch(37% 0.130 250)", "oklch(48% 0.130 250)", "oklch(60% 0.130 250)", "oklch(72% 0.110 250)", "oklch(85% 0.075 250)", "oklch(95% 0.032 250)"]
+      },
+      "biru-tua": {
+        "role": "secondary",
+        "displayName": "Deep Certification Blue",
+        "canonical": "#0E3F70",
+        "tonalRamp": ["oklch(15% 0.120 250)", "oklch(25% 0.120 250)", "oklch(34% 0.120 250)", "oklch(46% 0.120 250)", "oklch(58% 0.120 250)", "oklch(71% 0.105 250)", "oklch(84% 0.072 250)", "oklch(95% 0.030 250)"]
+      },
+      "biru-muda": {
+        "role": "secondary",
+        "displayName": "Pale Certification Blue",
+        "canonical": "#5B9AD6",
+        "tonalRamp": ["oklch(15% 0.100 250)", "oklch(26% 0.100 250)", "oklch(38% 0.100 250)", "oklch(50% 0.100 250)", "oklch(62% 0.100 250)", "oklch(70% 0.100 250)", "oklch(85% 0.070 250)", "oklch(95% 0.030 250)"]
+      },
+      "jambu": {
+        "role": "tertiary",
+        "displayName": "Certification Pink",
+        "canonical": "#A63A55",
+        "tonalRamp": ["oklch(15% 0.150 12)", "oklch(26% 0.150 12)", "oklch(37% 0.150 12)", "oklch(47% 0.150 12)", "oklch(60% 0.150 12)", "oklch(72% 0.125 12)", "oklch(85% 0.085 12)", "oklch(95% 0.038 12)"],
+        "contrastNote": "Darkened from #C24E6C purely to clear 4.5:1 for 15px white text on it — 4.24:1 became 5.3:1."
+      },
+      "jambu-tua": {
+        "role": "tertiary",
+        "displayName": "Deep Certification Pink",
+        "canonical": "#7A2439",
+        "tonalRamp": ["oklch(15% 0.140 12)", "oklch(25% 0.140 12)", "oklch(35% 0.140 12)", "oklch(47% 0.140 12)", "oklch(59% 0.140 12)", "oklch(71% 0.120 12)", "oklch(84% 0.082 12)", "oklch(95% 0.036 12)"]
+      },
+      "stempel": {
+        "role": "tertiary",
+        "displayName": "Stamp Vermilion",
+        "canonical": "#C8321E",
+        "tonalRamp": ["oklch(15% 0.190 32)", "oklch(26% 0.190 32)", "oklch(38% 0.190 32)", "oklch(50% 0.190 32)", "oklch(54% 0.190 32)", "oklch(70% 0.160 32)", "oklch(84% 0.105 32)", "oklch(95% 0.045 32)"]
+      },
+      "kabut-ungu": {
+        "role": "neutral",
+        "displayName": "Purple Mist",
+        "canonical": "#CDBFE8",
+        "tonalRamp": ["oklch(15% 0.060 295)", "oklch(26% 0.060 295)", "oklch(38% 0.060 295)", "oklch(50% 0.060 295)", "oklch(62% 0.060 295)", "oklch(74% 0.060 295)", "oklch(83% 0.060 295)", "oklch(95% 0.030 295)"]
+      },
+      "kabut-biru": {
+        "role": "neutral",
+        "displayName": "Blue Mist",
+        "canonical": "#DCE9F7",
+        "tonalRamp": ["oklch(15% 0.030 250)", "oklch(26% 0.030 250)", "oklch(38% 0.030 250)", "oklch(50% 0.030 250)", "oklch(62% 0.030 250)", "oklch(74% 0.030 250)", "oklch(86% 0.030 250)", "oklch(95% 0.030 250)"]
+      },
+      "kabut-jambu": {
+        "role": "neutral",
+        "displayName": "Pink Mist",
+        "canonical": "#F7DEE5",
+        "tonalRamp": ["oklch(15% 0.030 12)", "oklch(26% 0.030 12)", "oklch(38% 0.030 12)", "oklch(50% 0.030 12)", "oklch(62% 0.030 12)", "oklch(74% 0.030 12)", "oklch(86% 0.030 12)", "oklch(95% 0.028 12)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "The page's single h1. Presence comes from font-stretch 112% plus weight 800, never from a contrast serif." },
+      "headline": { "displayName": "Headline", "purpose": "Section titles via KepalaBagian, at font-stretch 108%." },
+      "title": { "displayName": "Title", "purpose": "Role-panel names in the four-role colour band." },
+      "lead": { "displayName": "Lead", "purpose": "The paragraph directly under a headline, capped at 68ch." },
+      "body": { "displayName": "Body", "purpose": "Rule-row explanations, table prose, closing notes; capped at 58ch." },
+      "small": { "displayName": "Small", "purpose": "Sub-values inside a certificate field, journey notes." },
+      "label": { "displayName": "Label", "purpose": "Field names, table headers, footer. Always small, semibold, uppercase, 0.26em tracked." },
+      "data": { "displayName": "Data", "purpose": "Measured values only: coordinates, dates, currency, thresholds enforced by the server." },
+      "data-display": { "displayName": "Data Display", "purpose": "The value that leads a rule row or grade cell, standing alone at 20-26px." },
+      "data-meta": { "displayName": "Data Meta", "purpose": "Serials, batch ids, hashes, scene ids, cloud percentages." }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "gores", "value": "gores 2.8s cubic-bezier(0.16, 1, 0.3, 1) forwards", "purpose": "The page's one authored moment: the guilloche strokes itself on, ring by ring from the inside out, via pathLength=1 and strokeDasharray/offset. Staggered 0.075s per ring." },
+      { "name": "naik", "value": "naik 0.7s cubic-bezier(0.16, 1, 0.3, 1) both", "purpose": "Declared in tailwind.config.ts but not used on the built route. Not part of the recorded system." },
+      { "name": "transisi-keadaan", "value": "transition-colors / transition-opacity, Tailwind default 150ms", "purpose": "The only other movement in the system: hover state changes on buttons." },
+      { "name": "reduced-motion", "value": "@media (prefers-reduced-motion: reduce) { animation-duration: 0.01ms; transition-duration: 0.01ms; scroll-behavior: auto }", "purpose": "Global honour of reduced-motion in global.css, applied to *, ::before and ::after." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "container", "value": "1180px" }
+    ],
+    "textures": [
+      { "name": "serat", "value": "SVG feTurbulence fractalNoise, baseFrequency 0.9, 3 octaves, desaturated, 180x180, painted on a ::before at opacity 0.055 with mix-blend-mode: multiply under isolation: isolate", "purpose": "The security-paper fibre applied by .kertas-sekuriti. Deliberately near-invisible: valuable paper does not shout, it only refuses to look flat up close." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "tombol-utama",
+      "description": "The document's main action. Ink block that turns certification purple on hover.",
+      "html": "<a class=\"ds-btn-utama\" href=\"#\">Bagaimana ini diverifikasi</a>",
+      "css": ".ds-btn-utama { display: inline-block; background: #141A2E; color: #F6F7F2; font-family: Archivo, ui-sans-serif, system-ui, sans-serif; font-size: 15px; font-weight: 600; padding: 14px 28px; border: none; border-radius: 0; text-decoration: none; transition: background-color 0.15s ease; } .ds-btn-utama:hover { background: #5B3E96; } .ds-btn-utama:focus-visible { outline: 2px solid #5B3E96; outline-offset: 2px; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "tombol-garis",
+      "description": "Secondary action. A 1px ink rule that inverts to a solid fill on hover.",
+      "html": "<a class=\"ds-btn-garis\" href=\"#\">Masuk ke aplikasi</a>",
+      "css": ".ds-btn-garis { display: inline-block; background: transparent; color: #141A2E; font-family: Archivo, ui-sans-serif, system-ui, sans-serif; font-size: 15px; font-weight: 600; padding: 14px 28px; border: 1px solid #141A2E; border-radius: 0; text-decoration: none; transition: background-color 0.15s ease, color 0.15s ease; } .ds-btn-garis:hover { background: #141A2E; color: #F6F7F2; } .ds-btn-garis:focus-visible { outline: 2px solid #5B3E96; outline-offset: 2px; }"
+    },
+    {
+      "name": "Role Door Button",
+      "kind": "button",
+      "refersTo": "tombol-peran-tenant",
+      "description": "Sign-in entry per role, each carrying that role's certification colour. Purple for Tenant, blue for Pembeli.",
+      "html": "<div style=\"display:flex;gap:16px;flex-wrap:wrap\"><a class=\"ds-btn-peran ds-btn-peran--ungu\" href=\"#\">Masuk sebagai Tenant</a><a class=\"ds-btn-peran ds-btn-peran--biru\" href=\"#\">Masuk sebagai Pembeli</a></div>",
+      "css": ".ds-btn-peran { display: inline-block; color: #F6F7F2; font-family: Archivo, ui-sans-serif, system-ui, sans-serif; font-size: 15px; font-weight: 600; padding: 14px 28px; border: none; border-radius: 0; text-decoration: none; transition: opacity 0.15s ease; } .ds-btn-peran--ungu { background: #5B3E96; } .ds-btn-peran--biru { background: #1B63A8; } .ds-btn-peran:hover { opacity: 0.9; } .ds-btn-peran:focus-visible { outline: 2px solid #141A2E; outline-offset: 2px; }"
+    },
+    {
+      "name": "Certificate Field",
+      "kind": "custom",
+      "refersTo": "baris-data",
+      "description": "The atom of the page: a numbered form field with a hairline top rule, a tracked uppercase label, a monospace value, and an optional faint sub-value. Not a card.",
+      "html": "<div class=\"ds-baris-data\"><div class=\"ds-baris-data__kepala\"><span class=\"ds-baris-data__nomor\">03</span><span class=\"ds-baris-data__label\">Lahan</span></div><div class=\"ds-baris-data__nilai\">-7.84120, 112.47355<span class=\"ds-baris-data__sub\">1.8 ha &middot; efektif 1.55 ha</span></div></div>",
+      "css": ".ds-baris-data { display: flex; flex-direction: column; gap: 0.2rem; border-top: 1px solid #D3D8CB; padding-top: 0.6rem; max-width: 18rem; } .ds-baris-data__kepala { display: flex; align-items: baseline; gap: 8px; } .ds-baris-data__nomor { font-family: 'Chivo Mono', ui-monospace, monospace; font-size: 10px; color: #5C6478; } .ds-baris-data__label { font-family: Archivo, ui-sans-serif, system-ui, sans-serif; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.26em; color: #5C6478; } .ds-baris-data__nilai { font-family: 'Chivo Mono', ui-monospace, monospace; font-size: 15px; line-height: 1.375; color: #141A2E; } .ds-baris-data__sub { display: block; margin-top: 2px; font-size: 13px; color: #5C6478; }"
+    },
+    {
+      "name": "Rule Row",
+      "kind": "custom",
+      "refersTo": "baris-aturan",
+      "description": "The refusal of the icon-title-text feature card. A server-enforced threshold stands as a large monospace number at the left, with its explanation beside it.",
+      "html": "<div class=\"ds-baris-aturan\"><div><div class=\"ds-baris-aturan__nilai\">70<span class=\"ds-baris-aturan__satuan\">%</span></div><div class=\"ds-baris-aturan__label\">pengali kuota</div></div><p class=\"ds-baris-aturan__isi\">Hanya sebagian kapasitas lahan yang boleh dijual, menyisakan bantalan untuk musim yang tidak sempurna.</p></div>",
+      "css": ".ds-baris-aturan { display: grid; grid-template-columns: 13rem minmax(0, 1fr); column-gap: 32px; row-gap: 8px; border-top: 1px solid #D3D8CB; padding: 24px 0; } .ds-baris-aturan__nilai { font-family: 'Chivo Mono', ui-monospace, monospace; font-size: 26px; line-height: 1; color: #5B3E96; } .ds-baris-aturan__satuan { margin-left: 4px; font-size: 15px; } .ds-baris-aturan__label { margin-top: 8px; font-family: Archivo, ui-sans-serif, system-ui, sans-serif; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.26em; color: #3A4259; } .ds-baris-aturan__isi { margin: 0; max-width: 58ch; font-family: Archivo, ui-sans-serif, system-ui, sans-serif; font-size: 15px; line-height: 1.625; color: #3A4259; } @media (max-width: 767px) { .ds-baris-aturan { grid-template-columns: 1fr; } }"
+    },
+    {
+      "name": "Verification Stamp",
+      "kind": "custom",
+      "refersTo": "cap-verifikasi",
+      "description": "A hand-pressed vermilion cartouche. Multiply blend and 0.92 opacity let the paper show through the ink. It never asserts more than the monospace beneath it can support.",
+      "html": "<div class=\"ds-cap\"><p class=\"ds-cap__judul\">Diperiksa citra satelit<sup class=\"ds-cap__dagger\">&dagger;&dagger;</sup></p><p class=\"ds-cap__bukti\">S2B_MSIL2A_20260624T025539<br>24 Juni 2026 &middot; tutupan awan 6%</p></div>",
+      "css": ".ds-cap { max-width: 24rem; border: 2.5px solid #C8321E; color: #C8321E; padding: 12px 20px; border-radius: 0; mix-blend-mode: multiply; opacity: 0.92; } .ds-cap__judul { margin: 0; font-family: Archivo, ui-sans-serif, system-ui, sans-serif; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.26em; } .ds-cap__dagger { margin-left: 4px; font-family: 'Chivo Mono', ui-monospace, monospace; font-size: 11px; } .ds-cap__bukti { margin: 6px 0 0; font-family: 'Chivo Mono', ui-monospace, monospace; font-size: 12px; line-height: 1.625; }"
+    },
+    {
+      "name": "Section Head",
+      "kind": "custom",
+      "refersTo": "pita-warna",
+      "description": "KepalaBagian. Owns section rhythm so the space above a heading always exceeds the space below it. The lead's colour switches with the ground it sits on.",
+      "html": "<header class=\"ds-kepala\"><h2 class=\"ds-kepala__judul\">Anda tahu harganya sekarang, bukan saat panen raya.</h2><p class=\"ds-kepala__isi\">Kuota dibuka sebelum benih masuk tanah, jadi jumlah dan harga sudah terkunci sejak awal.</p></header>",
+      "css": ".ds-kepala__judul { margin: 0; max-width: 22ch; font-family: Archivo, ui-sans-serif, system-ui, sans-serif; font-size: clamp(1.9rem, 4.2vw, 3.1rem); font-weight: 800; line-height: 1; letter-spacing: -0.032em; font-stretch: 108%; text-wrap: balance; color: #141A2E; } .ds-kepala__isi { margin: 24px 0 0; max-width: 68ch; font-family: Archivo, ui-sans-serif, system-ui, sans-serif; font-size: 17px; line-height: 1.625; color: #3A4259; }"
+    },
+    {
+      "name": "Grade Table",
+      "kind": "custom",
+      "refersTo": "baris-data",
+      "description": "Hairline-ruled data table. Tracked uppercase headers, monospace identifiers in the section's colour, no zebra striping and no cell borders.",
+      "html": "<table class=\"ds-tabel\"><thead><tr><th>Grade</th><th>Keseragaman min.</th><th>Cacat maks.</th></tr></thead><tbody><tr><td class=\"ds-tabel__id\">A</td><td class=\"ds-tabel__num\">90%</td><td class=\"ds-tabel__num\">3%</td></tr><tr><td class=\"ds-tabel__id\">B</td><td class=\"ds-tabel__num\">80%</td><td class=\"ds-tabel__num\">7%</td></tr></tbody></table>",
+      "css": ".ds-tabel { width: 100%; border-collapse: collapse; text-align: left; } .ds-tabel th { padding: 0 24px 12px 0; font-family: Archivo, ui-sans-serif, system-ui, sans-serif; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.26em; color: #5C6478; border-bottom: 1px solid #141A2E; } .ds-tabel td { padding: 16px 24px 16px 0; border-bottom: 1px solid #D3D8CB; } .ds-tabel__id { font-family: 'Chivo Mono', ui-monospace, monospace; font-size: 20px; color: #A63A55; } .ds-tabel__num { font-family: 'Chivo Mono', ui-monospace, monospace; font-size: 15px; color: #141A2E; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Seed Certification Label",
+    "overview": "Indonesia already has a system for declaring a quality the eye cannot check. Seed certification labels are colour-coded by class — white for penjenis, purple for dasar, blue for pokok, pink for sebar — and they get stapled to a sack of seed to state, officially, what is inside it. This product does the same thing for a harvest that does not exist yet, so it borrows the label's actual visual apparatus rather than inventing a mood: cold security paper, intaglio blue-black ink, a vermilion hand-pressed stamp, a guilloche rosette, and one flat grotesk doing all the structural work.\n\nThe consequence is that colour is not decoration here. A certification colour takes an entire full-bleed region of the page and holds it — purple for the verification mechanism, blue for distribution, ink-black for the hash chain, paper for everything measured. Nothing is a tinted accent sprinkled onto a neutral ground, because that is not how a grade label behaves. Depth is likewise material rather than optical: there is not one box-shadow in the build. Surfaces separate by ground colour, by 2px ink rules, and by a barely-visible paper fibre; the only blend mode in the system belongs to the stamp, because ink pressed by hand sits unevenly on paper.\n\nThe two rejections in the direction contract still hold in the shipped code: no green gradient hero with a photograph of a farmer and three feature cards, and no reflex-opposite dark space-mission dashboard. The page is a document. It reads like something that was issued.",
+    "keyCharacteristics": [
+      "Four state-issued certification colours, each owning a whole page region",
+      "Cold grey-green security paper (#EDEFE8), never cream",
+      "Zero border radius, zero shadow — a document has neither",
+      "One grotesk (Archivo) for all structure, its display voice coming from width",
+      "Monospace reserved strictly for values a machine measured",
+      "One authored motion moment for the entire page",
+      "The system states its own gaps: cloud-blocked dates leave visible holes"
+    ],
+    "rules": [
+      { "name": "The Whole-Region Rule", "body": "A certification colour claims an entire full-bleed section — its ground, its type, its rules — or it does not appear at all. Purple, blue, and ink each own a band running the full width of the viewport. Never scatter a certification colour as an accent on a neutral ground; that is the tinted-dashboard habit this world exists to refuse.", "section": "colors" },
+      { "name": "The One Red Rule", "body": "stempel (#C8321E) is the system's only red and belongs to the act of stamping and flagging: the verification cartouche, footnote daggers, the claimed-harvest line, an unmet quota. It is never a button, never a heading, never an error state.", "section": "colors" },
+      { "name": "The Own-Hue Mist Rule", "body": "Secondary text on a coloured ground uses that ground's own kabut tint, never grey. Grey on purple reads as dirt and fails contrast; a tint from the same hue stays legibly part of the same document.", "section": "colors" },
+      { "name": "The Contrast-Derived Palette Rule", "body": "Three values in this palette were moved for measurement, not for taste: tinta-samar darkened from #6E7690 (3.84:1 to 4.63:1), ungu-muda lightened from #8B6FC4 (4.25:1 to 5.1:1), jambu darkened from #C24E6C (4.24:1 to 5.3:1). Any new value earns its place the same way: it clears 4.5:1 against the ground it will actually sit on, and it says so in a comment.", "section": "colors" },
+      { "name": "The Measured-Data Rule", "body": "Chivo Mono sets only values a machine measured: serial and batch numbers, hashes, coordinates, NDVI values, dates, distances, currency, thresholds enforced by the server. It never sets prose, headings, or a label whose only job is to look technical.", "section": "typography" },
+      { "name": "The Width-Not-Serif Rule", "body": "Display presence comes from font-stretch (108% for sections, 112% for the h1) plus weight 800 and tight negative tracking. Do not introduce a contrast serif, a second display family, or a script face to get emphasis; widen the grotesk.", "section": "typography" },
+      { "name": "The ch-On-The-Text Rule", "body": "A max-w expressed in ch must sit on the text element itself, never on a wrapper. On a wrapper the unit resolves against the inherited 16px, not against the 68px heading — recorded in the code after it broke the h1 into nine lines.", "section": "typography" },
+      { "name": "The Tracking-Cap Rule", "body": "Uppercase in this system is always small (10-12px), always semibold, and always at 0.26em tracking. Uppercase at body size or at normal tracking does not exist here.", "section": "typography" },
+      { "name": "The Scroll-Don't-Shrink Rule", "body": "Wide data does not shrink to fit a phone; it scrolls horizontally inside its own container. An SVG scaled down scales its labels with it — at 375px a 13px label renders at 4px and the page's central evidence stops being readable.", "section": "layout" },
+      { "name": "The Section Rhythm Rule", "body": "New sections use KepalaBagian for their head and lead. Do not hand-place a heading and a paragraph with local margins; the rhythm is the component's job.", "section": "layout" },
+      { "name": "The Flat-Paper Rule", "body": "No shadows, no glows, no elevation levels, no frosted glass. If a surface needs to separate, change its ground or draw a rule.", "section": "elevation" },
+      { "name": "The Pressed-Ink Rule", "body": "mix-blend-mode: multiply belongs to the verification stamp and to the paper fibre, nothing else. The stamp additionally sits at opacity 0.92 so its vermilion picks up the paper underneath — ink pressed by hand, not printed by machine.", "section": "elevation" },
+      { "name": "The Zero-Radius Rule", "body": "Radius is 0 everywhere. A rounded corner in this world reads as a different product's UI kit pasted onto a document.", "section": "shapes" },
+      { "name": "The Two-Weight Rule", "body": "2px means 'region ends here'; 1px means 'next row of the same record'. Do not introduce a third weight to signal a third kind of importance — change the ground instead.", "section": "shapes" },
+      { "name": "The One-Authored-Moment Rule", "body": "The page gets one piece of narrative motion: the guilloche stroking itself on, inner ring to outer. Additional entrance animations, scroll-triggered reveals, parallax, or counters are not additions to this system — they are dilutions of its single moment.", "section": "components" }
+    ],
+    "dos": [
+      "Do give a certification colour a whole region — its ground, type, and rules — or leave it out (The Whole-Region Rule).",
+      "Do tint secondary text on coloured grounds from that ground's hue using kabut-ungu, kabut-biru, or kabut-jambu. Never grey.",
+      "Do verify any new colour clears 4.5:1 against the ground it will actually sit on, and record the measurement in a comment beside the token, as tinta-samar, ungu-muda, and jambu already do.",
+      "Do set every measured value in Chivo Mono, and let large values (20-26px) stand on their own at the left of a rule row.",
+      "Do format Indonesian numbers and dates through src/lib/format-id.ts (tanggalPanjang, tanggalPendek, angka, rupiah, desimal). toLocaleDateString(\"id-ID\") depends on runtime ICU data and produces a hydration mismatch between server and browser.",
+      "Do put max-w in ch on the text element itself, never on a wrapper.",
+      "Do let wide data scroll horizontally inside its own container rather than shrink (The Scroll-Don't-Shrink Rule).",
+      "Do show the system's own gaps — missing points, empty rings, coverage marks, footnote daggers. 'Cannot be assessed' is a first-class visual state here, and it must read differently from 'problem'.",
+      "Do use aria-label (with role=\"img\") to name a meaningful SVG, and aria-hidden plus focusable=\"false\" for decorative ones.",
+      "Do build new sections with KepalaBagian and BarisAturan so rhythm and the rule-row pattern stay consistent."
+    ],
+    "donts": [
+      "Don't add a <title> element inside an SVG. React 19 treats it as document metadata and hoists it to <head>, so the server and client markup diverge and the whole tree is discarded with a hydration error. Use aria-label.",
+      "Don't compute trigonometry at render time for generated geometry. Precompute it into a constants module the way scripts/buat-guilloche.mjs does.",
+      "Don't add box-shadow, glows, gradients, or frosted glass. Depth is ground colour, ink rules, and paper fibre (The Flat-Paper Rule).",
+      "Don't round a corner. Radius is 0 everywhere.",
+      "Don't use stempel as an accent, a button, or a generic error colour. It stamps and it flags, nothing else.",
+      "Don't use monospace as a 'technical' costume on prose, headings, or decorative labels.",
+      "Don't introduce a second display face, a contrast serif, or a script face. Widen Archivo instead (The Width-Not-Serif Rule).",
+      "Don't introduce an icon set. This system has zero glyph icons — its marks are the numbered field index, the dagger, the coverage marks, and the guilloche.",
+      "Don't rebuild the rule rows as icon-title-text feature cards. The numbers are enforced server-side and are the content, not the decoration.",
+      "Don't reuse the guilloche from one plot on another plot's certificate. The pattern is that plot's data; reusing it makes it a decoration and voids the reason it is there.",
+      "Don't add customer logos, testimonials, partner badges, press mentions, or usage metrics. PRODUCT.md binds this: none of those exist, and none may be fabricated.",
+      "Don't repoint Tailwind's sans family at Archivo yet, and don't apply font-sertifikat to a page you are not migrating in full. sans stays mapped to Poppins on purpose so the 57 unmigrated pages do not silently change typeface; the new world is registered separately as sertifikat. Migrate a page completely or leave it alone."
+    ],
+    "divergences": [
+      "First viewport: the direction contract calls for the batch certificate to lead at document scale. After the audience narrowed to institutional buyers, the built page leads with an offer headline ('Harga terkunci sebelum benihnya ditanam.') and places the certificate data block immediately beneath it as the proof of that offer.",
+      "Observation count: the contract says 17 NDVI observations. The series holds 19, of which 17 draw a guilloche ring and 2 are cloud gaps.",
+      "Scope: the world is fully implemented on the / route only. It is a design system by intent and a single-route implementation by fact until the remaining 57 pages migrate."
+    ]
+  }
+}
