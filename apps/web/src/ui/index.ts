@@ -18,6 +18,7 @@
  */
 
 export { Halaman } from "./halaman";
+export { Cangkang, type ItemMenu } from "./cangkang";
 export { JudulHalaman, JudulPanel, Label, Nilai, Prosa, Sunyi } from "./teks";
 export { Panel, Deret, Ubin, BarisData } from "./panel";
 export { Pil, Tanda } from "./status";
