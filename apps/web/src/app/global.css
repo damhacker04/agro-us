@@ -4,9 +4,18 @@
 
 @layer base {
   :root {
-    /* Serat kertas sekuriti. Halus dengan sengaja: kertas berharga tidak berteriak, ia
-       hanya menolak terlihat rata saat didekatkan. */
-    --serat: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23f)' opacity='0.4'/%3E%3C/svg%3E");
+    /*
+     * Serat kertas sekuriti. Halus dengan sengaja: kertas berharga tidak berteriak, ia
+     * hanya menolak terlihat rata saat didekatkan.
+     *
+     * `baseFrequency` DITURUNKAN dari 0.9 ke 0.38. Pada 0.9 ukuran ciri noise ≈1,1px —
+     * di bawah batas yang bisa dilihat mata maupun dipertahankan penskalaan layar, jadi
+     * berapa pun alfanya dinaikkan hasilnya hanya kertas rata yang sedikit lebih gelap,
+     * bukan serat. Menaikkan alfa saja memperbaiki setengah masalah dan menyembunyikan
+     * setengahnya. Pada 0.38 cirinya ≈2,6px: termottle seperti kertas laid saat didekatkan,
+     * lenyap pada jarak baca.
+     */
+    --serat: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.38' numOctaves='3'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23f)' opacity='0.4'/%3E%3C/svg%3E");
   }
 
   ::selection {
@@ -21,15 +30,55 @@
     position: relative;
     isolation: isolate;
   }
+  /*
+   * ARITMETIKANYA, karena angka ini pernah salah dan salahnya tidak terlihat.
+   *
+   * `--serat` memuat rect noise pada `opacity 0.4`. Lapisan ini sebelumnya `0.055`, jadi
+   * alfa efektifnya 0,4 × 0,055 = 0,022. Dengan `multiply`, penggelapan maksimumnya 2,2%
+   * dan nilai tengah noise membuatnya ~1,1% — di bawah ambang beda yang bisa dilihat pada
+   * bidang datar. Artinya kertas sekuriti yang dinyatakan OWN-WORLD tidak pernah
+   * benar-benar dicetak: bahan yang diklaim tapi tidak menggambar apa pun, sekelas dengan
+   * guilloche kosong, hanya lebih murah.
+   *
+   * 0,14 × 0,4 = 0,056 → penggelapan sampai 5,6%. Cukup untuk menolak terlihat rata saat
+   * didekatkan, masih jauh di bawah ambang di mana tekstur terbaca sebagai kotoran.
+   */
   .kertas-sekuriti::before {
     content: "";
     position: absolute;
     inset: 0;
     z-index: -1;
     background-image: var(--serat);
-    opacity: 0.055;
+    opacity: 0.14;
     mix-blend-mode: multiply;
     pointer-events: none;
+  }
+
+  /*
+   * Pita guilloche ponsel: hadir di margin atas, habis sebelum tipografi display.
+   *
+   * Mengembalikan ornamen ke layar sempit membuatnya membentang y −96…384, sementara h1
+   * duduk di 193…338 — ke-17 cincin memotong kotak judul. Terukur itu bukan kegagalan
+   * (kontras tinta di atas piksel goresan 12,47:1, bersih 14,88:1), tetapi tak satu pun
+   * alat yang kami punya bisa menyatakan apakah garis rambut 0,64px pada alfa efektif
+   * 0,116 mengganggu bacaan — perkakas kontras hanya membaca token `bg-kertas` yang rata.
+   *
+   * Jadi pertanyaannya dihapus, bukan ditebak: ornamennya pudar habis pada 55% tinggi pita
+   * (≈y 168), 25px di atas judul. Ini juga perilaku kertas berharga yang sebenarnya —
+   * guilloche padat di tepi, kosong di bidang teks.
+   *
+   * Di ≥768px pita ini tidak dipakai; di sana ornamennya rosette samping yang memang
+   * tidak pernah bersinggungan dengan kolom teks.
+   */
+  .pita-guilloche {
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 30%, transparent 55%);
+    mask-image: linear-gradient(to bottom, #000 0%, #000 30%, transparent 55%);
+  }
+  @media (min-width: 768px) {
+    .pita-guilloche {
+      -webkit-mask-image: none;
+      mask-image: none;
+    }
   }
 
   /* Cap verifikasi: tinta yang tidak rata karena ditekan tangan, bukan dicetak mesin. */

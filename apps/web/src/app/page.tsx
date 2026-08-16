@@ -60,35 +60,59 @@ const kurang = SERTIFIKAT.kuota.terjual - SERTIFIKAT.kuota.terpenuhi;
  * adalah karakter paling penting di blok itu, satu-satunya yang menyatakan cakupan
  * separuh. Ketiganya kini satu keluarga: kotak yang sama, tebal goresan yang sama.
  */
+const KATA_CAKUPAN: Record<string, string> = {
+  penuh: "tercakup penuh",
+  sebagian: "tercakup sebagian",
+  tidak: "tidak tercakup",
+};
+
 function TandaCakupan({ status, className }: { status: string; className?: string }) {
   return (
-    <svg
-      viewBox="0 0 16 16"
-      className={`h-3.5 w-3.5 shrink-0 ${className ?? ""}`}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.9}
-      strokeLinecap="square"
-      aria-hidden
-    >
-      {status === "penuh" && <path d="M3 8.4 L6.4 12 L13 4" />}
-      {status === "sebagian" && (
-        <>
-          <path d="M3 6.2 H13" />
-          <path d="M3 11 H13" />
-          <path d="M8 2.4 V9" />
-        </>
-      )}
-      {status === "tidak" && <path d="M3 8 H13" />}
-    </svg>
+    <>
+      <svg
+        viewBox="0 0 16 16"
+        className={`h-3.5 w-3.5 shrink-0 ${className ?? ""}`}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.9}
+        strokeLinecap="square"
+        aria-hidden
+      >
+        {status === "penuh" && <path d="M3 8.4 L6.4 12 L13 4" />}
+        {status === "sebagian" && (
+          <>
+            <path d="M3 6.2 H13" />
+            <path d="M3 11 H13" />
+            <path d="M8 2.4 V9" />
+          </>
+        )}
+        {status === "tidak" && <path d="M3 8 H13" />}
+      </svg>
+      {/* Statusnya HARUS ada sebagai teks. Menggambar tandanya memperbaiki satu cacat dan
+          membuat cacat lain: glif `✓ ± —` yang lama setidaknya karakter sungguhan di pohon
+          aksesibilitas, sedangkan SVG ber-`aria-hidden` tidak meninggalkan apa pun — dan
+          nama tahap saja tidak menyatakan apakah ia tercakup. Blok inilah yang paling tidak
+          boleh kehilangan itu: seluruh gunanya adalah mengakui `sebagian` pada Penyimpanan,
+          pengakuan yang bisa saja kami sembunyikan. */}
+      <span className="sr-only">{KATA_CAKUPAN[status] ?? status}: </span>
+    </>
   );
 }
 
-/** Catatan kaki yang menempel pada fakta yang dikualifikasinya, bukan berdiri sendiri. */
+/**
+ * Catatan kaki yang menempel pada fakta yang dikualifikasinya, bukan berdiri sendiri.
+ *
+ * Penjelasannya TIDAK boleh hanya di atribut `title`: tooltip itu mouse-only, dan halaman
+ * ini terutama dibaca di ponsel. Teksnya kini masuk pohon aksesibilitas; pembaca yang
+ * melihat tetap dilayani catatan kaki yang tercetak di bawah blok yang sama.
+ */
 function Dagger({ n, judul }: { n: 1 | 2; judul: string }) {
   return (
-    <sup className="ml-1 font-mono text-[11px] text-stempel" title={judul}>
+    <sup className="ml-1 font-mono text-[11px] text-stempel">
       {"†".repeat(n)}
+      {/* `normal-case`: label induknya `uppercase`, dan sebagian pembaca layar melafalkan
+          teks hasil transformasi — kalimat penuh yang dikapital seluruhnya bisa dieja. */}
+      <span className="sr-only normal-case"> (catatan: {judul})</span>
     </sup>
   );
 }
@@ -124,7 +148,7 @@ export default function LandingPage() {
             besar kembali jadi rosette samping. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute -right-[38%] -top-24 w-[128vw] text-ungu opacity-[0.3] md:-right-[22%] md:top-1/2 md:w-[85vh] md:-translate-y-1/2 md:opacity-[0.42]"
+          className="pita-guilloche pointer-events-none absolute -right-[38%] -top-24 w-[128vw] text-ungu opacity-[0.3] md:-right-[22%] md:top-1/2 md:w-[85vh] md:-translate-y-1/2 md:opacity-[0.42]"
         >
           <Guilloche />
         </div>
@@ -349,9 +373,14 @@ export default function LandingPage() {
             judul="Posisi barang Anda diukur, bukan dilaporkan."
             lebarJudul="max-w-[22ch]"
           >
+            {/* "pengawasannya diperketat" DIHAPUS. Bukan tuduhan, jadi bukan pelanggaran
+                aturan nada — tetapi `diawasi` justru kata yang prinsip 4 PRODUCT.md larang
+                dikenakan pada sisi pasokan, dan logika judul di atas ("diukur, bukan
+                dilaporkan") berlaku untuk kalimat ini juga. Yang benar terjadi bukan
+                pengawasan yang diperketat, melainkan pengukuran yang lebih rapat. */}
             Pengantar barang tidak akan mengunduh aplikasi untuk satu pengiriman, jadi seluruh
-            alurnya berjalan di peramban dari hasil pindai QR. Justru di situ pengawasannya
-            diperketat. Di bawah ini satu pengiriman sungguhan dari produksi, apa adanya.
+            alurnya berjalan di peramban dari hasil pindai QR. Justru di situ posisinya paling
+            rapat diukur. Di bawah ini satu pengiriman sungguhan dari produksi, apa adanya.
           </KepalaBagian>
 
           {/* Perjalanan nyata memimpin; aturannya menyusul sebagai penjelasan. Angka yang

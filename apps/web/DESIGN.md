@@ -582,3 +582,33 @@ intent:
   The series holds 19 observations, of which 17 draw a ring and 2 are cloud gaps.
 - **Scope.** The contract's world is fully implemented on `/` only. It is a design system by
   intent and a single-route implementation by fact until the remaining pages migrate.
+
+## The ceiling gap: world vocabulary left unspent
+
+Named here rather than left implicit, because the difference between "we chose not to" and
+"we didn't think of it" is the difference between a ceiling and an oversight. None of these
+make the page wrong. They mark how much of the security-document vocabulary this build
+declined to spend — and the first one is the place the page is more timid than the artefact
+it descends from.
+
+- **Overprint.** The verification stamp parks politely beside the certificate fields. Real
+  stamps land *on* the document, off-angle, clipping whatever is under them, with the
+  underlying text still legible through the ink. Doing that properly needs a clipping rule
+  the page never establishes — which is why it wasn't done, not because it wouldn't work.
+- **Microprint.** Lines of type set small enough to read as a rule until magnified. The page
+  has plenty of rules that could have carried it.
+- **Watermark.** No sheet-scale mark under the certificate block.
+- **Margin furniture.** The document carries only `SERI · BATCH`. Real security stock carries
+  registration marks, plate numbers, and edge indicia.
+
+Two adjacent lessons from this build's own review, kept because they generalise:
+
+- **A material the page claims and does not visibly render is a defect, not a shortfall.**
+  The security-paper fiber sat at effective alpha 0.022 — the sheet was flat, so OWN-WORLD
+  claimed security paper the build never printed. Same class as the blank guilloché, only
+  cheaper.
+- **Fixing the stated cause is not the same as fixing the defect.** Raising that alpha alone
+  would not have made the fiber read: at `baseFrequency 0.9` the grain is ≈1.1px, below what
+  any display preserves, so it averages to flat tint at every opacity. The frequency had to
+  drop to 0.38 as well. Verify the fix by looking at the result, never by confirming the
+  edit landed.
