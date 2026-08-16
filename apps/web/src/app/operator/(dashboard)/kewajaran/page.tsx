@@ -1,9 +1,22 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, CircleSlash, Loader2, Scale, TriangleAlert } from "lucide-react";
 import type { PlausibilityReviewItem, YieldPlausibility } from "@agro-os/shared";
 import { GalatApi, ambilAntreanKewajaran, putuskanKewajaran } from "@/lib/api";
+import {
+  Galat,
+  Halaman,
+  Kosong,
+  Label,
+  Memuat,
+  Panel,
+  Pil,
+  Deret,
+  Sunyi,
+  Tanda,
+  Ubin,
+  type Nada,
+} from "@/ui";
 
 /**
  * OP-13 — Antrean Tinjauan Kewajaran Hasil (FR-7.12a, FR-5.6).
@@ -16,19 +29,34 @@ import { GalatApi, ambilAntreanKewajaran, putuskanKewajaran } from "@/lib/api";
  *
  * Putusan di sini menggantikan verdict otomatis dan menentukan apakah cap 10% berlaku
  * untuk shortfall batch ini (FR-7.11). Mesin menandai, manusia memutuskan.
+ *
+ * MIGRASI DUNIA. Halaman ini salah satu dari empat bukti bahwa kit `@/ui` benar-benar
+ * memikul halaman kerja, bukan cuma terdokumentasi. Yang berubah bukan warnanya saja:
+ * ikon dekoratif di samping judul dibuang (ia tidak menandai apa pun yang judulnya belum
+ * katakan), spinner diganti kerangka muat yang menyatakan bentuk isi yang akan datang, dan
+ * ketiga tombol putusan berhenti jadi wash pucat — di dunia ini warna menguasai region kecil
+ * secara utuh atau masuk lewat garis, tidak pernah jadi latar pudar dengan teks senada.
  */
 
-const OPSI: { nilai: YieldPlausibility; label: string; kelas: string; jelas: string }[] = [
+const OPSI: {
+  nilai: YieldPlausibility;
+  label: string;
+  nada: Nada;
+  tanda: "penuh" | "sebagian" | "tidak";
+  jelas: string;
+}[] = [
   {
     nilai: "WAJAR",
     label: "Wajar",
-    kelas: "border-emerald-600 bg-emerald-50 text-emerald-800",
+    nada: "utama",
+    tanda: "penuh",
     jelas: "Cap 10% tetap berlaku — Tenant terlindungi seperti biasa.",
   },
   {
     nilai: "TIDAK_WAJAR",
     label: "Tidak wajar",
-    kelas: "border-red-600 bg-red-50 text-red-800",
+    nada: "awas",
+    tanda: "tidak",
     jelas: "Cap 10% GUGUR — Tenant menanggung selisih substitusi penuh.",
   },
   {
@@ -37,7 +65,8 @@ const OPSI: { nilai: YieldPlausibility; label: string; kelas: string; jelas: str
     // menebak, dan tebakan itu menempel pada uang seseorang.
     nilai: "TIDAK_DAPAT_DINILAI",
     label: "Tidak dapat dinilai",
-    kelas: "border-slate-500 bg-slate-50 text-slate-700",
+    nada: "netral",
+    tanda: "sebagian",
     jelas: "Tidak ada dasar cukup. Cap tetap berlaku, tidak ada penalti kuota.",
   },
 ];
@@ -48,12 +77,17 @@ const DASAR: Record<string, string> = {
   TIDAK_ADA_DASAR: "tidak ada dasar",
 };
 
-function sisaSla(iso: string | null) {
-  if (!iso) return { teks: "tanpa tenggat", kelas: "bg-gray-100 text-gray-600" };
+/**
+ * Tenggat dibedakan jadi tiga, bukan diwarnai gradasi: lewat menuntut tindakan sekarang,
+ * mendekat menuntut perhatian, sisanya tidak menuntut apa-apa. Pil penuh disediakan untuk
+ * yang pertama saja — kalau setiap baris antrean berkedip, tidak ada yang berkedip.
+ */
+function sisaSla(iso: string | null): { teks: string; nada: Nada; garis: boolean } {
+  if (!iso) return { teks: "tanpa tenggat", nada: "netral", garis: true };
   const jam = (new Date(iso).getTime() - Date.now()) / 3_600_000;
-  if (jam < 0) return { teks: `lewat ${Math.abs(Math.round(jam))} jam`, kelas: "bg-red-100 text-red-800" };
-  if (jam < 6) return { teks: `sisa ${Math.round(jam)} jam`, kelas: "bg-amber-100 text-amber-900" };
-  return { teks: `sisa ${Math.round(jam)} jam`, kelas: "bg-emerald-100 text-emerald-800" };
+  if (jam < 0) return { teks: `lewat ${Math.abs(Math.round(jam))} jam`, nada: "awas", garis: false };
+  if (jam < 6) return { teks: `sisa ${Math.round(jam)} jam`, nada: "awas", garis: true };
+  return { teks: `sisa ${Math.round(jam)} jam`, nada: "netral", garis: true };
 }
 
 /** Sparkline NDVI — cukup untuk melihat bentuk kurvanya, tanpa pustaka grafik. */
@@ -61,9 +95,9 @@ function KurvaNdvi({ titik }: { titik: PlausibilityReviewItem["ndviSeries"] }) {
   const layak = titik.filter((t) => t.usable && t.ndvi !== null);
   if (layak.length < 2) {
     return (
-      <p className="text-xs text-gray-500">
+      <Sunyi className="text-[12px]">
         Hanya {layak.length} citra layak pakai — kurva tidak dapat digambar.
-      </p>
+      </Sunyi>
     );
   }
   const L = 240;
@@ -74,13 +108,27 @@ function KurvaNdvi({ titik }: { titik: PlausibilityReviewItem["ndviSeries"] }) {
     .join(" ");
   return (
     <div>
-      <svg viewBox={`0 0 ${L} ${T}`} className="h-12 w-full" preserveAspectRatio="none">
-        <path d={d} fill="none" stroke="#047857" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+      <svg
+        viewBox={`0 0 ${L} ${T}`}
+        className="h-12 w-full text-ungu"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label={`Kurva kehijauan lahan, ${layak.length} citra layak pakai`}
+      >
+        <path
+          d={d}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.6}
+          strokeLinecap="square"
+          strokeLinejoin="miter"
+          vectorEffect="non-scaling-stroke"
+        />
       </svg>
-      <p className="mt-1 text-[10px] text-gray-500">
+      <Sunyi className="mt-1.5 text-[11px]">
         {layak.length} dari {titik.length} citra layak pakai · {layak[0]!.date} →{" "}
         {layak[layak.length - 1]!.date}
-      </p>
+      </Sunyi>
     </div>
   );
 }
@@ -117,107 +165,95 @@ export default function OperatorKewajaranPage() {
   }
 
   return (
-    <div className="p-8">
-      <div className="mb-6">
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900">
-          <Scale className="h-5 w-5 text-amber-700" /> Antrean Tinjauan Kewajaran
-        </h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Hasil panen yang penilaian otomatisnya marginal. Putusan Anda menggantikan penilaian
-          mesin dan menentukan apakah cap tanggungan 10% berlaku untuk batch ini.
-        </p>
-      </div>
+    <Halaman
+      judul="Antrean tinjauan kewajaran"
+      pengantar="Hasil panen yang penilaian otomatisnya marginal. Putusan Anda menggantikan penilaian mesin dan menentukan apakah cap tanggungan 10% berlaku untuk batch ini."
+    >
+      {galat ? (
+        <Galat judul="Antrean tidak dapat diproses" className="mb-6">
+          {galat} Muat ulang halaman ini; bila tetap gagal, putusan yang tertunda tidak hilang —
+          ia tetap di antrean sampai ada yang menutupnya.
+        </Galat>
+      ) : null}
 
-      {galat && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          {galat}
-        </div>
-      )}
+      {memuat ? <Memuat baris={3} label="Memuat antrean tinjauan" /> : null}
 
-      {memuat && <p className="text-sm text-gray-500">Memuat antrean…</p>}
+      {!memuat && antrean.length === 0 && !galat ? (
+        <Kosong judul="Tidak ada penilaian yang menunggu tinjauan">
+          Antrean kosong berarti setiap hasil panen yang dilaporkan sejauh ini masih di dalam
+          pita kewajarannya sendiri. Batch baru muncul di sini secara otomatis ketika angka
+          yang dilaporkan menyimpang cukup jauh untuk menuntut mata manusia.
+        </Kosong>
+      ) : null}
 
-      {!memuat && antrean.length === 0 && !galat && (
-        <div className="rounded-xl border border-gray-200 bg-gray-50 p-8 text-center">
-          <CheckCircle2 className="mx-auto mb-2 h-6 w-6 text-emerald-600" />
-          <p className="text-sm text-gray-600">Tidak ada penilaian yang menunggu tinjauan.</p>
-        </div>
-      )}
-
-      <div className="space-y-4">
+      <div className="space-y-8">
         {antrean.map((a) => {
           const sla = sisaSla(a.slaDueAt);
           const adaPita = a.expectedMinBox !== null && a.expectedMaxBox !== null;
+          const sedang = proses === a.assessmentId;
           return (
-            <article key={a.assessmentId} className="rounded-2xl border border-gray-200 bg-white p-6">
-              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="font-bold text-gray-900">{a.productName}</h2>
-                  <p className="text-xs text-gray-500">
-                    {a.tenantName} · {a.commodityName}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
+            <Panel
+              key={a.assessmentId}
+              label={`${a.tenantName} · ${a.commodityName}`}
+              judul={a.productName}
+              aksi={
+                <>
                   {/* Penyelidikan ambang tidak dilarang — ia dicatat dan terlihat di sini. */}
-                  {a.attemptCount > 1 && (
-                    <span
-                      className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-800"
-                      title="Tenant meminta pratinjau lebih dari sekali sebelum mengonfirmasi"
-                    >
+                  {a.attemptCount > 1 ? (
+                    <Pil nada="awas" garis>
                       {a.attemptCount}× dinilai
-                    </span>
-                  )}
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${sla.kelas}`}>
+                    </Pil>
+                  ) : null}
+                  <Pil nada={sla.nada} garis={sla.garis}>
                     {sla.teks}
-                  </span>
-                </div>
-              </div>
-
-              <div className="mb-5 grid gap-5 md:grid-cols-2">
+                  </Pil>
+                </>
+              }
+            >
+              <div className="grid gap-8 md:grid-cols-2">
                 <div>
-                  <div className="mb-3 grid grid-cols-2 gap-3">
-                    <div className="rounded-lg bg-gray-50 p-3">
-                      <div className="text-[10px] text-gray-500">Dilaporkan Tenant</div>
-                      <div className="text-lg font-black text-gray-900">{a.reportedBox} box</div>
-                    </div>
-                    <div className="rounded-lg bg-gray-50 p-3">
-                      <div className="text-[10px] text-gray-500">Pita kewajaran</div>
-                      <div className="text-lg font-black text-gray-900">
-                        {adaPita ? `${a.expectedMinBox}–${a.expectedMaxBox}` : "—"}
-                      </div>
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-gray-500">
+                  <Deret kolom={2}>
+                    <Ubin label="Dilaporkan Tenant" nilai={a.reportedBox} satuan="box" />
+                    <Ubin
+                      label="Pita kewajaran"
+                      nilai={adaPita ? `${a.expectedMinBox}–${a.expectedMaxBox}` : "—"}
+                      satuan={adaPita ? "box" : undefined}
+                      nada={adaPita ? "netral" : "awas"}
+                    />
+                  </Deret>
+                  <Sunyi className="mt-4 text-[12px]">
                     Terjual {a.quotaBoxSold} box · puncak NDVI{" "}
                     {a.peakNdvi === null ? "—" : a.peakNdvi.toFixed(2)} · dasar:{" "}
                     {DASAR[a.basis] ?? a.basis}
-                  </p>
+                  </Sunyi>
                 </div>
 
                 <div>
-                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
-                    Kurva kehijauan lahan
-                  </div>
+                  <Label className="mb-2">Kurva kehijauan lahan</Label>
                   <KurvaNdvi titik={a.ndviSeries} />
                 </div>
               </div>
 
               {/* Pembanding lintas-Tenant. Tanpa ini, musim buruk yang merata tidak bisa
                   dibedakan dari satu Tenant yang menyembunyikan hasil. */}
-              <div className="mb-5 rounded-xl border border-sky-200 bg-sky-50 p-4">
-                <div className="mb-2 text-xs font-bold text-sky-900">
+              <div className="mt-8 border-t-2 border-biru pt-4">
+                <Label className="text-biru">
                   Realisasi Tenant lain, komoditas &amp; minggu panen sama
-                </div>
+                </Label>
                 {a.zonePeers.length === 0 ? (
-                  <p className="text-xs text-sky-800">
+                  <Sunyi className="mt-2 text-[13px]">
                     Belum ada Tenant pembanding. Tanpa pembanding, satu-satunya dasar adalah pita
                     dari lahan Tenant ini sendiri.
-                  </p>
+                  </Sunyi>
                 ) : (
-                  <ul className="space-y-1 text-xs text-sky-900">
+                  <ul className="mt-3 space-y-1.5">
                     {a.zonePeers.map((p, i) => (
-                      <li key={`${p.tenantName}-${i}`} className="flex justify-between gap-3">
+                      <li
+                        key={`${p.tenantName}-${i}`}
+                        className="flex justify-between gap-4 text-[14px] text-tinta"
+                      >
                         <span className="truncate">{p.tenantName}</span>
-                        <span className="font-bold">
+                        <span className="shrink-0 font-mono">
                           {Math.round(p.fulfillmentRatio * 100)}% terpenuhi
                         </span>
                       </li>
@@ -226,35 +262,59 @@ export default function OperatorKewajaranPage() {
                 )}
               </div>
 
-              <div className="grid gap-2 sm:grid-cols-3">
+              <div className="mt-8 grid gap-3 sm:grid-cols-3">
                 {OPSI.map((o) => (
-                  <button
+                  <PilihanPutusan
                     key={o.nilai}
-                    type="button"
-                    disabled={proses === a.assessmentId}
+                    opsi={o}
+                    sibuk={sedang}
                     onClick={() => putuskan(a.assessmentId, o.nilai)}
-                    className={`rounded-lg border p-3 text-left transition hover:brightness-95 disabled:opacity-60 ${o.kelas}`}
-                  >
-                    <div className="flex items-center gap-1.5 text-sm font-bold">
-                      {proses === a.assessmentId ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : o.nilai === "WAJAR" ? (
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                      ) : o.nilai === "TIDAK_WAJAR" ? (
-                        <TriangleAlert className="h-3.5 w-3.5" />
-                      ) : (
-                        <CircleSlash className="h-3.5 w-3.5" />
-                      )}
-                      {o.label}
-                    </div>
-                    <p className="mt-1 text-[10px] leading-snug opacity-90">{o.jelas}</p>
-                  </button>
+                  />
                 ))}
               </div>
-            </article>
+            </Panel>
           );
         })}
       </div>
-    </div>
+    </Halaman>
+  );
+}
+
+/**
+ * Tombol putusan — bukan `Tombol` biasa, karena ketiganya membawa penjelasan konsekuensinya
+ * dan itu bagian dari keputusannya, bukan tooltip. Tetap tunduk hukum kit: radius nol,
+ * warna masuk lewat aturan tebal di atas, tanda menggores 1,6px, cincin fokus beroffset.
+ */
+function PilihanPutusan({
+  opsi,
+  sibuk,
+  onClick,
+}: {
+  opsi: (typeof OPSI)[number];
+  sibuk: boolean;
+  onClick: () => void;
+}) {
+  const warna = { utama: "text-ungu", awas: "text-jambu", netral: "text-tinta", kabar: "text-biru" }[
+    opsi.nada
+  ];
+  const garis = { utama: "border-ungu", awas: "border-jambu", netral: "border-tinta", kabar: "border-biru" }[
+    opsi.nada
+  ];
+  return (
+    <button
+      type="button"
+      disabled={sibuk}
+      aria-busy={sibuk || undefined}
+      onClick={onClick}
+      className={`relative border-t-2 ${garis} bg-kertas p-4 text-left transition-colors duration-150 hover:bg-kertas-garis/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ungu disabled:cursor-not-allowed disabled:opacity-45 ${
+        sibuk ? "tombol-sibuk" : ""
+      }`}
+    >
+      <span className={`flex items-center gap-2 text-[14px] font-bold ${warna}`}>
+        <Tanda jenis={opsi.tanda} />
+        {opsi.label}
+      </span>
+      <span className="mt-2 block text-[12px] leading-snug text-tinta-lembut">{opsi.jelas}</span>
+    </button>
   );
 }

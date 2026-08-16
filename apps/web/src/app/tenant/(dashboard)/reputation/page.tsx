@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { Info, Scale, Settings2, ThumbsUp, TrendingDown } from "lucide-react";
 import {
   QUOTA_MULTIPLIER_NORMAL,
   QUOTA_MULTIPLIER_PENALTY,
@@ -10,6 +9,7 @@ import {
 } from "@agro-os/shared";
 import type { TenantProfileResponse } from "@agro-os/shared";
 import { GalatApi, ambilProfilTenant } from "@/lib/api";
+import { Galat, Halaman, Label, Memuat, Panel, Prosa, Sunyi, Ubin } from "@/ui";
 
 /**
  * TN-33 — Kinerja & Reputasi Tenant.
@@ -31,6 +31,12 @@ import { GalatApi, ambilProfilTenant } from "@/lib/api";
  *
  * Nada: informatif, bukan mengancam (aturan desain v2.3 butir 4). Tenant adalah sisi
  * pasok yang harus diakuisisi, bukan tersangka yang diawasi.
+ *
+ * MIGRASI DUNIA. Selain warna dan tipografi, tiga hal dibuang karena memang tidak pernah
+ * membawa isi: `font-serif` di seluruh halaman (serif sistem sebagai suara display adalah
+ * kostum, bukan pilihan), ikon `Settings2` raksasa yang diputar 45° dengan tulisan "SEHAT"
+ * ditumpuk di tengahnya, dan ikon hantu di pojok tiap kartu. Yang tersisa adalah tiga angka
+ * dan kalimat yang menjelaskannya — dan itu memang seluruh isi halaman ini.
  */
 const persen = (r: number | null) => (r === null ? null : Math.round(r * 1000) / 10);
 
@@ -49,15 +55,22 @@ export default function ReputationPage() {
       .finally(() => setMemuat(false));
   }, []);
 
-  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat reputasi…</div>;
+  if (memuat) {
+    return (
+      <Halaman judul="Kinerja &amp; reputasi farm">
+        <Memuat baris={3} label="Memuat reputasi" />
+      </Halaman>
+    );
+  }
 
   if (galat || !profil) {
     return (
-      <div className="p-8">
-        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
-          {galat || "Profil Tenant tidak ditemukan"}
-        </div>
-      </div>
+      <Halaman judul="Kinerja &amp; reputasi farm">
+        <Galat judul="Reputasi tidak dapat dimuat">
+          {galat || "Profil Tenant tidak ditemukan."} Angka di halaman ini dihitung ulang tiap
+          siklus dan tidak hilang — muat ulang halaman untuk mencoba lagi.
+        </Galat>
+      </Halaman>
     );
   }
 
@@ -70,135 +83,102 @@ export default function ReputationPage() {
   const kenaPenalti = pengali <= QUOTA_MULTIPLIER_PENALTY;
 
   return (
-    <div className="p-8 max-w-6xl mx-auto space-y-8 bg-white min-h-screen font-serif">
-      <div>
-        <h1 className="text-3xl font-bold text-[#0a381f] mb-2">Kinerja &amp; Reputasi Farm</h1>
-        <p className="text-sm text-gray-500 font-sans">
-          Metrik keandalan pasokan Anda (rolling {SHORTFALL_PENALTY_ROLLING_CYCLES} siklus
-          terakhir).
-        </p>
-      </div>
-
+    <Halaman
+      judul="Kinerja &amp; reputasi farm"
+      pengantar={`Keandalan pasokan Anda, dihitung dari ${SHORTFALL_PENALTY_ROLLING_CYCLES} siklus terakhir yang berjalan.`}
+    >
       {/* Muncul HANYA setelah penalti benar-benar berlaku, dan isinya penjelasan
           perhitungan — bukan peringatan "Anda mendekati ambang". Peringatan semacam itu
           memberi tahu persis seberapa jauh Tenant boleh menyimpang. */}
-      {kenaPenalti && (
-        <div className="bg-[#fdf2f2] border border-[#fbd5d5] rounded-xl p-6 font-sans">
-          <div className="flex items-start gap-4">
-            <div className="w-8 h-8 rounded-full bg-[#f8b4b4] text-[#9b1c1c] flex items-center justify-center shrink-0 mt-1">
-              <Info className="w-4 h-4" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-[#9b1c1c] mb-2">Kuota Anda sedang dibatasi</h2>
-              <p className="text-sm text-[#c81e1e] leading-relaxed">
-                Realisasi panen Anda menyimpang dari pola wajar pada beberapa siklus
-                terakhir, sehingga pengali kuota diturunkan ke{" "}
-                <strong className="font-black">{pengali}x</strong>. Pengali kembali normal
-                setelah {SHORTFALL_PENALTY_ROLLING_CYCLES} siklus realisasi Anda kembali
-                dalam batas wajar — saat ini{" "}
-                <strong className="font-black">{profil.cleanCyclesStreak}</strong> siklus
-                berturut-turut sudah tercatat wajar.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      {kenaPenalti ? (
+        <Panel label="Status kuota" judul="Kuota Anda sedang dibatasi" nada="awas" className="mb-8">
+          <Prosa>
+            Realisasi panen Anda menyimpang dari pola wajar pada beberapa siklus terakhir,
+            sehingga pengali kuota diturunkan ke <span className="font-mono text-jambu">{pengali}×</span>.
+            Pengali kembali normal setelah {SHORTFALL_PENALTY_ROLLING_CYCLES} siklus realisasi
+            Anda kembali dalam batas wajar — saat ini{" "}
+            <span className="font-mono text-tinta">{profil.cleanCyclesStreak}</span> siklus
+            berturut-turut sudah tercatat wajar.
+          </Prosa>
+        </Panel>
+      ) : null}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-sans">
+      <div className="grid gap-x-10 gap-y-8 md:grid-cols-3">
         {/* TN-34 — Posisi Realisasi vs Zona. Menggantikan tampilan rasio shortfall. */}
-        <div className="border border-gray-200 rounded-xl p-6 shadow-sm flex flex-col justify-between min-h-[220px]">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2 font-bold text-gray-900">
-                <TrendingDown className="w-4 h-4 text-gray-400" /> Realisasi vs Rata-rata Zona
-              </div>
-            </div>
-            <div
-              className={`text-4xl font-black mb-2 ${
-                posisi === null
-                  ? "text-gray-300"
-                  : posisi < 0
-                    ? "text-amber-700"
-                    : "text-[#0a381f]"
-              }`}
-            >
-              {posisi === null
-                ? "—"
-                : `${posisi > 0 ? "+" : ""}${Math.round(posisi * 10) / 10}%`}
-            </div>
-          </div>
-          <p className="text-[10px] text-gray-500">
+        <div>
+          <Ubin
+            label="Realisasi vs rata-rata zona"
+            nilai={posisi === null ? "—" : `${posisi > 0 ? "+" : ""}${Math.round(posisi * 10) / 10}%`}
+            nada={posisi === null ? "netral" : posisi < 0 ? "awas" : "utama"}
+          />
+          <Sunyi className="mt-3 text-[12px]">
             {posisi === null
               ? "Belum ada cukup Tenant pembanding pada komoditas dan musim yang sama, jadi posisi Anda belum bisa dihitung. Tidak ada penilaian yang dijatuhkan tanpa dasar."
               : posisi < 0
                 ? "Realisasi panen Anda di bawah rata-rata zona untuk komoditas dan musim ini."
                 : "Realisasi panen Anda di atas atau setara rata-rata zona untuk komoditas dan musim ini."}
-          </p>
+          </Sunyi>
         </div>
 
         {/* Rasio Klaim Mutu — TIDAK punya masalah yang sama: pengajunya PEMBELI, bukan
             pihak yang diuntungkan bila angkanya salah. Target 5% boleh ditampilkan. */}
-        <div className="border border-gray-200 rounded-xl p-6 shadow-sm flex flex-col justify-between min-h-[220px]">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2 font-bold text-gray-900">
-                <ThumbsUp className="w-4 h-4 text-emerald-600" /> Rasio Klaim Mutu
-              </div>
-              <div className="w-12 h-12 text-emerald-100 flex items-center justify-center opacity-50 relative">
-                <Settings2 className="w-10 h-10 absolute rotate-45" />
-                {klaim !== null && klaim < 5 && (
-                  <span className="text-[8px] font-black absolute text-emerald-800 tracking-widest z-10">
-                    SEHAT
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="flex items-baseline gap-2 mb-4">
-              <div
-                className={`text-4xl font-black ${klaim === null ? "text-gray-300" : "text-[#0a381f]"}`}
-              >
-                {klaim === null ? "—" : `${klaim}%`}
-              </div>
-              <span className="text-[10px] text-gray-500 font-bold">/ target &lt; 5%</span>
-            </div>
-            <div className="w-full bg-[#eef3fb] rounded-full h-2 mb-4">
-              <div
-                className="bg-[#0a381f] h-2 rounded-full"
-                style={{ width: `${Math.min(((klaim ?? 0) / 5) * 100, 100)}%` }}
-              />
-            </div>
-          </div>
-          <p className="text-[10px] text-gray-500">
+        <div>
+          <Ubin
+            label="Rasio klaim mutu"
+            nilai={klaim === null ? "—" : `${klaim}%`}
+            nada={klaim !== null && klaim >= 5 ? "awas" : "utama"}
+            catatan={<span className="font-mono">target &lt; 5%</span>}
+          />
+          {klaim !== null ? <PitaTarget nilai={klaim} target={5} /> : null}
+          <Sunyi className="mt-3 text-[12px]">
             {klaim === null
               ? "Belum ada pengiriman yang melewati jendela klaim mutu."
               : "Bagian pengiriman yang diklaim bermasalah oleh pembeli."}
-          </p>
+          </Sunyi>
         </div>
 
         {/* Quota Multiplier — nilai berjalan, tanpa skala yang membocorkan batasnya. */}
-        <div className="border border-gray-200 rounded-xl p-6 shadow-sm flex flex-col justify-between min-h-[220px]">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2 font-bold text-gray-900">
-                <Scale className="w-4 h-4 text-amber-700" /> Quota Multiplier Berjalan
-              </div>
-              <Scale className="w-12 h-12 text-[#f3e8d2] opacity-50" />
-            </div>
-            <div className="text-4xl font-black text-amber-900 mb-2">{pengali}x</div>
-          </div>
-          <p className="text-[10px] text-gray-500">
+        <div>
+          <Ubin
+            label="Pengali kuota berjalan"
+            nilai={`${pengali}×`}
+            nada={kenaPenalti ? "awas" : "netral"}
+          />
+          <Sunyi className="mt-3 text-[12px]">
             {kenaPenalti
-              ? `Dibatasi ke ${pengali}x. Nilai normal ${QUOTA_MULTIPLIER_NORMAL}x.`
-              : `Kuota PO maksimum = luas lahan × rendemen × ${pengali}x. Ini nilai normal.`}
-          </p>
+              ? `Dibatasi ke ${pengali}×. Nilai normal ${QUOTA_MULTIPLIER_NORMAL}×.`
+              : `Kuota PO maksimum = luas lahan × rendemen × ${pengali}×. Ini nilai normal.`}
+          </Sunyi>
         </div>
       </div>
 
-      <div className="font-sans">
-        <Link href="/tenant/batch" className="text-sm font-semibold text-emerald-700 hover:underline">
-          Lihat batch dan riwayat panen →
+      <div className="mt-12 border-t border-kertas-garis pt-5">
+        <Label className="mb-2">Selanjutnya</Label>
+        <Link
+          href="/tenant/batch"
+          className="text-[15px] font-semibold text-ungu underline-offset-4 transition-colors duration-150 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ungu"
+        >
+          Lihat batch dan riwayat panen
         </Link>
       </div>
+    </Halaman>
+  );
+}
+
+/**
+ * Pita target — bukan progress bar berujung bulat.
+ *
+ * Yang diukur di sini sah untuk ditampilkan skalanya: targetnya 5%, dan pengaju klaim adalah
+ * PEMBELI, jadi tidak ada yang diuntungkan dengan melapor tepat di bawah garis. Bentuknya
+ * dua aturan bertumpuk setebal 3px, radius nol — dunia ini mengukur dengan garis, dan garis
+ * yang terisi sebagian adalah persis bagaimana dokumen cetak menunjukkan proporsi.
+ */
+function PitaTarget({ nilai, target }: { nilai: number; target: number }) {
+  const isi = Math.min((nilai / target) * 100, 100);
+  const lewat = nilai >= target;
+  return (
+    <div className="mt-3 h-[3px] w-full bg-kertas-garis" aria-hidden>
+      <div className={`h-full ${lewat ? "bg-jambu" : "bg-ungu"}`} style={{ width: `${isi}%` }} />
     </div>
   );
 }

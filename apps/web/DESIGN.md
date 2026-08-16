@@ -553,8 +553,11 @@ this system — they are dilutions of its single moment.
 - **Don't** use monospace as a "technical" costume on prose, headings, or decorative labels.
 - **Don't** introduce a second display face, a contrast serif, or a script face. Widen
   Archivo instead (The Width-Not-Serif Rule).
-- **Don't** introduce an icon set. This system has zero glyph icons — its marks are the
-  numbered field index, the dagger, the coverage `✓ ± —`, and the guilloché.
+- **Don't** introduce an icon set **on Persuade surfaces**. The landing page has zero glyph
+  icons — its marks are the numbered field index, the dagger, the drawn coverage marks, and
+  the guilloché. *(Amended for Operate: see The Icon Rule below. The ban was written for a
+  page where the guilloché carries all the marking; on 57 working pages icons do real
+  scanning work, and stripping them buys purity at the cost of task completion.)*
 - **Don't** rebuild the rule rows as icon-title-text feature cards. The numbers are enforced
   server-side and are the content, not the decoration.
 - **Don't** reuse the guilloché from one plot on another plot's certificate. The pattern *is*
@@ -567,6 +570,91 @@ this system — they are dilutions of its single moment.
   57 unmigrated pages do not silently change typeface (see the comment in
   `tailwind.config.ts`); the new world is registered separately as `sertifikat`. Migrate a
   page completely or leave it alone.
+
+## The working-page kit (`src/ui`)
+
+The landing page is Persuade; the other 57 pages are Operate. The kit is the same world
+translated for surfaces where the visitor is completing a task, not deciding. It lives in
+`src/ui` and knows nothing about AgroUs — no API calls, no mention of quota, escrow, batch, or
+plausibility, no import from `@/lib/api` or `@agro-os/shared`. The moment a component in there
+learns its domain it stops being a system, and `src/ui` becomes a second grab bag beside
+`src/components`.
+
+**`<Halaman>` is the migration switch.** It is the only place `font-sertifikat` turns on.
+Tailwind's `sans` still points at Poppins on purpose, so wrapping a page in `Halaman` is a
+claim that the page has left the old world completely — every gray, every rounded corner,
+every raw lucide icon replaced. Switching it on over unconverted content produces the worst of
+both: Archivo over white 16px-radius cards.
+
+Inventory: `Halaman` · `JudulHalaman` `JudulPanel` `Label` `Nilai` `Prosa` `Sunyi` ·
+`Panel` `Deret` `Ubin` `BarisData` · `Pil` `Tanda` · `Tombol` `TautanKembali` ·
+`Medan` `Masukan` `AreaTeks` `Pilihan` · `Galat` `Kosong` `Memuat` · `Ikon` · `NADA`.
+
+### Translating the Whole-Region Rule for Operate
+
+On the landing page a colour owns an entire region. A queue where every card owns a region is
+a patchwork, and Operate's floor is restrained colour. The translation uses this world's own
+device rather than a bolted-on accent: **colour enters through the rule**. The certificate
+separates every field with a 1px ink rule; a state thickens that rule to 2px in its colour and
+tints the label. The ground stays paper. Full colour is reserved for two things that really
+are small whole regions — the status pill and the error banner — where the region rule applies
+as written.
+
+Four tones, in `nada.ts`: `netral` (ink), `utama` (ungu — verified, primary, selected),
+`kabar` (biru — in progress, informational), `awas` (jambu — short, failed, claimed, dangerous).
+`stempel` is **not** among them: it stamps and it flags, and a colour used for everything stops
+meaning anything.
+
+### The Icon Rule
+
+Icons are permitted on Operate surfaces only, always through `<Ikon dari={…}>`, never by
+rendering a lucide component directly. Lucide ships round caps, round joins, and a stroke that
+scales with size — three things that collide with a zero-radius world of hairlines, which is
+why a raw lucide icon on security paper reads as a transplant from another app.
+
+**One stroke law: every mark in this system strokes at 1.6px, at every size.** That number is
+not taste — the drawn coverage mark strokes 1.9 on a 16 viewBox rendered at 14px, which is
+1.66px. `absoluteStrokeWidth` holds it there instead of thinning to a thread at 12px and
+thickening to a crayon at 20px. Caps are square, joins mitre.
+
+Import icons where they are used and pass them in. A re-export barrel forces 57 pages to drag
+one module carrying every glyph anyone ever used.
+
+### Compose classes with `cn()`, never with a template literal
+
+**This is not style advice, it is a correctness rule**, and it was learned by measurement. When
+a component's base classes and its caller's `className` both set the same property, both reach
+the `class` attribute and the winner is whichever Tailwind happened to emit later in the built
+CSS — not whichever was written later. Measured on the specimen page: `text-ungu` **beat**
+`text-tinta-samar`, while `text-biru`, `text-jambu` and `text-kabut-jambu` **lost** to that
+same class. Identical construction, three different outcomes — and one of them drew the error
+banner's title dark on the jambu ground, effectively invisible.
+
+Nothing catches this. Not typecheck, not the build, and not a contrast audit — the audit reads
+the colour actually in use, so it reports a pass for the wrong colour. `cn()` wraps
+`tailwind-merge`, which resolves per property group: last one wins, always.
+
+### Operate rules that differ from the landing page
+
+- **Fixed type scale, never `clamp()`.** Working pages are viewed at consistent DPI, and a
+  heading that shrinks because a sidebar opened reads as broken, not responsive. Steps hold at
+  ~1.2 — there are far more type elements here, and exaggerated contrast becomes noise.
+- **Skeletons, not spinners.** A spinner says "wait"; a skeleton says what is arriving and how
+  much of it, and it holds the layout so nothing jumps when the data lands. The busy button
+  grows a rule that sweeps its bottom edge (`.tombol-sibuk`), because this world owns no shape
+  that spins — a spinner would be the only rotating circle in the entire system.
+- **Empty states teach.** "No data" tells people what they can already see. In this product
+  empty often means something correct — an empty review queue is a healthy queue — so the tone
+  must not sound like a failure.
+- **Seven button states, not three:** rest, hover, keyboard focus, active, disabled, busy,
+  full-width. Focus is `outline` with an offset, not `ring`: `ring` inherits the element's
+  radius, and `outline` survives an `overflow-hidden` ancestor.
+- **`<Deret>` owns the collapse point.** A hand-written `grid-cols-4` is always right at
+  desktop and always broken at 375: `tracking-cap` labels are 0.26em wide and cannot be
+  narrowed, so "DILAPORKAN" collides with "PITA KEWAJARAN". It collapses to two columns, not
+  one — paired figures are read as pairs, and one column severs the comparison.
+- **`src/ui` must stay in `tailwind.config.ts` `content`.** A folder that is not scanned yields
+  components that render correct markup with zero styles and raise no error anywhere.
 
 ## Known divergences from the direction contract
 

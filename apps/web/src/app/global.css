@@ -87,6 +87,30 @@
     opacity: 0.92;
   }
 
+  /*
+   * Tombol sibuk: aturan yang menyapu tepi bawah.
+   *
+   * Dunia ini tidak punya satu pun bentuk yang berputar, jadi spinner akan jadi lingkaran
+   * berputar satu-satunya di seluruh sistem — perangkat pinjaman yang menandai dirinya
+   * sebagai pinjaman. Yang dimiliki dunia ini adalah garis, dan garis yang bergerak
+   * menyampaikan "sedang berjalan" persis sebaik roda yang berputar.
+   *
+   * Digambar di sini, bukan lewat `animate-*`: Tailwind hanya memancarkan `@keyframes` bila
+   * utility-nya muncul di berkas yang dipindainya, dan pelajaran itu sudah dibayar sekali
+   * ketika guilloche menggambar kosong di seluruh produksi.
+   */
+  .tombol-sibuk::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 2px;
+    width: 40%;
+    background-color: currentColor;
+    opacity: 0.55;
+    animation: sapu 1.1s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+  }
+
   /* Baris data formulir — label kecil di atas, nilai terukur di bawah. */
   .baris-data {
     display: flex;
@@ -116,6 +140,16 @@
   }
   to {
     stroke-dashoffset: 0;
+  }
+}
+
+/* Gerak keadaan halaman kerja: aturan yang menyapu di tepi tombol sibuk. */
+@keyframes sapu {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
   }
 }
 

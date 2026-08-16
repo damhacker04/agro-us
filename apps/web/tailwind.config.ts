@@ -16,6 +16,12 @@ const config: Config = {
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
+    // `src/ui` WAJIB ada di sini. Tailwind hanya memancarkan kelas yang benar-benar muncul
+    // di berkas yang dipindainya; folder yang tidak terdaftar menghasilkan komponen yang
+    // merender markup benar dengan nol gaya, tanpa satu pun galat. Persis kegagalan yang
+    // membuat guilloche menggambar kosong di produksi, dan ia tidak muncul di typecheck,
+    // tidak di build, dan tidak di pemeriksaan terukur mana pun.
+    "./src/ui/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
     extend: {

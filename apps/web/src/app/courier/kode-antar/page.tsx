@@ -2,7 +2,7 @@
 
 import React, { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { QrCode } from "lucide-react";
+import { Halaman, Panel, Prosa } from "@/ui";
 
 /**
  * Pengarah menuju alur Kode Antar yang sebenarnya.
@@ -14,6 +14,10 @@ import { QrCode } from "lucide-react";
  * yang diketik tidak pernah benar-benar diperiksa.
  *
  * Jadi: kalau token ada di query, teruskan; kalau tidak, minta kurir memindai QR-nya.
+ *
+ * Ikon QR yang dulu berdiri di atas judul DIHAPUS, bukan digaya ulang. Ia tidak menandai
+ * apa pun yang judulnya belum katakan, dan halaman ini dibuka kurir yang baru saja gagal
+ * masuk — satu glif dekoratif di puncaknya menunda kalimat yang benar-benar mereka butuhkan.
  */
 function Pengarah() {
   const router = useRouter();
@@ -23,26 +27,29 @@ function Pengarah() {
     if (token) router.replace(`/scan/${encodeURIComponent(token)}`);
   }, [token, router]);
 
-  if (token) return <div className="min-h-screen bg-[#f0f4f8]" />;
+  if (token) return <Kosongan />;
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-[#f0f4f8] p-6">
-      <div className="max-w-md w-full bg-white rounded-2xl border border-gray-200 shadow-sm p-8 text-center">
-        <QrCode className="w-10 h-10 text-gray-300 mx-auto mb-4" />
-        <h1 className="text-xl font-bold text-[#0a1c38] mb-2">Pindai QR pada Box</h1>
-        <p className="text-sm text-gray-600">
-          Kode Antar hanya bisa dimasukkan setelah QR box dipindai — QR itulah yang
-          menentukan pengiriman mana yang Anda bawa. Gunakan kamera ponsel Anda pada
-          stiker QR di box.
-        </p>
-      </div>
-    </main>
+    <Halaman lebar="sempit" className="flex min-h-screen items-center">
+      <Panel label="Kode Antar" judul="Pindai QR pada box" nada="kabar">
+        <Prosa className="text-[15px]">
+          Kode Antar hanya bisa dimasukkan setelah QR box dipindai — QR itulah yang menentukan
+          pengiriman mana yang Anda bawa. Arahkan kamera ponsel Anda ke stiker QR di box; tidak
+          ada aplikasi yang perlu dipasang.
+        </Prosa>
+      </Panel>
+    </Halaman>
   );
+}
+
+/** Ground yang sama dengan halaman tujuannya, supaya pengalihan tidak berkedip putih. */
+function Kosongan() {
+  return <div className="min-h-screen bg-kertas" />;
 }
 
 export default function KodeAntarPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#f0f4f8]" />}>
+    <Suspense fallback={<Kosongan />}>
       <Pengarah />
     </Suspense>
   );
