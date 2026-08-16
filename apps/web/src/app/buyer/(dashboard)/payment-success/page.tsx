@@ -1,16 +1,22 @@
 "use client";
 
 import React, { Suspense, useEffect, useState } from "react";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Check, Hourglass, ShieldCheck } from "lucide-react";
 import type { BuyerOrderDetail } from "@agro-os/shared";
 import { GalatApi, ambilPesananSatu } from "@/lib/api";
+import { rupiah, tanggalPendek } from "@/lib/format-id";
+import { Galat, Halaman, Label, Memuat, Panel, Pil, Prosa, Sunyi, TombolTaut } from "@/ui";
 
-const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
-const tgl = (iso: string) =>
-  new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
-
+/**
+ * BY-10 — Pembayaran diterima.
+ *
+ * Cakram centang hijau berdiameter 64px di puncak halaman DIBUANG. Halaman ini bukan
+ * perayaan: yang baru terjadi adalah uang pembeli berpindah ke escrow dan ditahan di sana,
+ * dan kalimat itulah yang paling perlu mereka baca. Judulnya kini menyatakannya.
+ *
+ * `toLocaleDateString("id-ID")` diganti `tanggalPendek` — data ICU runtime berbeda antara
+ * server dan peramban, dan selisih satu karakter membuang seluruh pohon React.
+ */
 function IsiHalaman() {
   const orderId = useSearchParams().get("pesanan") ?? "";
 
@@ -30,132 +36,119 @@ function IsiHalaman() {
   }, [orderId]);
 
   return (
-    <div className="p-8 max-w-4xl mx-auto flex flex-col items-center">
-      <div className="w-full bg-white border border-gray-200 rounded-2xl p-10 shadow-sm flex flex-col items-center">
-        <div className="w-16 h-16 bg-emerald-900 rounded-full flex items-center justify-center mb-6 shadow-md">
-          <Check className="w-8 h-8 text-white" strokeWidth={3} />
-        </div>
+    <Halaman
+      lebar="sempit"
+      judul="Pembayaran diterima, dana ditahan di escrow"
+      pengantar={
+        pesanan
+          ? `Pesanan ${pesanan.orderId.slice(0, 8).toUpperCase()} sudah terbayar. Uangnya belum sampai ke produsen.`
+          : "Pembayaran Anda sudah tercatat. Uangnya belum sampai ke produsen."
+      }
+    >
+      <Panel label="Status dana" judul="Ditahan sampai barang Anda terima" nada="utama">
+        <Prosa className="text-[14px]">
+          Dana{pesanan ? <span className="font-mono text-tinta"> {rupiah(pesanan.totalAmount)}</span> : ""}{" "}
+          ditahan sistem, bukan diteruskan. Ia baru berpindah ke produsen setelah Anda
+          mengonfirmasi penerimaan dan jendela klaim mutu berakhir — jadi selama tenggat itu
+          Anda masih punya jalan bila barangnya tidak sesuai.
+        </Prosa>
+      </Panel>
 
-        <h1 className="text-3xl font-black text-emerald-900 mb-3 tracking-tight">
-          Pembayaran Berhasil!
-        </h1>
-        <p className="text-sm text-gray-600 mb-10 text-center max-w-sm">
-          Terima kasih, pembayaran Anda
-          {pesanan && (
-            <>
-              {" "}
-              untuk{" "}
-              <strong>Pesanan #{pesanan.orderId.slice(0, 8).toUpperCase()}</strong>
-            </>
-          )}{" "}
-          telah kami terima.
-        </p>
+      {memuat ? <Memuat baris={3} label="Memuat ringkasan pesanan" className="mt-8" /> : null}
 
-        <div className="w-full bg-[#f0f5ff] border border-[#e0ebff] rounded-xl p-5 mb-8 flex gap-4">
-          <ShieldCheck className="w-5 h-5 text-blue-700 shrink-0 mt-0.5" />
-          <div>
-            <h4 className="font-bold text-blue-900 text-xs tracking-wider mb-1 uppercase">
-              Dana Diamankan di Escrow
-            </h4>
-            <p className="text-xs text-blue-800 leading-relaxed">
-              Dana{pesanan ? ` sebesar ${rp(pesanan.totalAmount)}` : ""} ditahan oleh sistem
-              AgroUs. Dana baru diteruskan ke Tenant setelah Anda mengonfirmasi penerimaan dan
-              jendela klaim mutu berakhir.
-            </p>
-          </div>
-        </div>
+      {galat ? (
+        <Galat judul="Ringkasan pesanan gagal dimuat" className="mt-8">
+          {galat} Pembayaran Anda tetap tercatat — buka halaman pesanan untuk melihat
+          statusnya.
+        </Galat>
+      ) : null}
 
-        {memuat && <p className="text-sm text-gray-500 mb-8">Memuat ringkasan pesanan…</p>}
-
-        {galat && (
-          <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-8">
-            {galat}
-          </p>
-        )}
-
-        {pesanan && (
-          <>
-            <div className="w-full border border-gray-200 rounded-xl p-6 mb-8">
-              <h2 className="text-sm font-bold text-gray-900 mb-4">Ringkasan Pesanan</h2>
-
-              <div className="space-y-3 mb-6">
-                {pesanan.shipments.flatMap((s) =>
-                  s.lines.map((l) => (
-                    <div key={l.orderItemId} className="flex justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="font-bold text-sm text-gray-900 truncate">
-                          {l.productName}
-                        </div>
-                        <div className="text-[10px] text-gray-500">
-                          {l.tenantName} · {rp(l.unitPriceLocked)} × {l.qtyBox} box
-                        </div>
-                      </div>
-                      <div className="text-sm font-semibold text-gray-900 shrink-0">
-                        {rp(l.subtotal)}
-                      </div>
+      {pesanan ? (
+        <>
+          <div className="mt-10">
+            <Label className="mb-4">Rincian pesanan</Label>
+            <ul>
+              {pesanan.shipments.flatMap((s) =>
+                s.lines.map((l) => (
+                  <li
+                    key={l.orderItemId}
+                    className="flex justify-between gap-6 border-t border-kertas-garis py-3"
+                  >
+                    <div className="min-w-0">
+                      <span className="block truncate text-[15px] font-semibold text-tinta">
+                        {l.productName}
+                      </span>
+                      <Sunyi className="mt-0.5 text-[12px]">
+                        {l.tenantName} · <span className="font-mono">{rupiah(l.unitPriceLocked)}</span> ×{" "}
+                        <span className="font-mono">{l.qtyBox}</span> box
+                      </Sunyi>
                     </div>
-                  )),
-                )}
-              </div>
-
-              <div className="border-t border-gray-100 pt-4 flex justify-between items-end">
-                <span className="font-bold text-gray-900 text-sm">Total Pembayaran</span>
-                <span className="text-xl font-bold text-emerald-950">
-                  {rp(pesanan.totalAmount)}
-                </span>
-              </div>
-              {/* Selisih total dengan jumlah item adalah ongkir dan add-on laporan.
-                  Rinciannya tidak ikut di kontrak detail pesanan, jadi tidak dikarang. */}
-            </div>
-
-            {/* Satu pesanan bisa jadi beberapa pengiriman — dikelompokkan per minggu
-                panen (FR-2.4), masing-masing punya tanggal siapnya sendiri. */}
-            <div className="w-full space-y-4 mb-8">
-              {pesanan.shipments.map((s, i) => (
-                <div
-                  key={s.shipmentId}
-                  className="bg-gray-50 border border-gray-100 rounded-xl p-4"
-                >
-                  <div className="flex justify-between items-center mb-3">
-                    <span className="text-xs font-semibold text-gray-600">
-                      Pengiriman {i + 1} dari {pesanan.shipments.length}
+                    <span className="shrink-0 font-mono text-[15px] text-tinta">
+                      {rupiah(l.subtotal)}
                     </span>
-                    <span className="bg-amber-100 text-amber-700 text-[10px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 border border-amber-200">
-                      <Hourglass className="w-3 h-3" /> {s.status.replace(/_/g, " ")}
-                    </span>
-                  </div>
-                  <div className="text-xs text-gray-600">
-                    Estimasi siap <strong className="text-gray-900">{tgl(s.readyDate)}</strong> ·{" "}
-                    {s.lines.map((l) => l.productName).join(", ")}
-                  </div>
-                </div>
-              ))}
+                  </li>
+                )),
+              )}
+            </ul>
+            <div className="flex items-baseline justify-between gap-4 border-t border-tinta py-4">
+              <span className="text-[15px] font-bold text-tinta">Total pembayaran</span>
+              <span className="font-mono text-[22px] text-tinta">
+                {rupiah(pesanan.totalAmount)}
+              </span>
             </div>
-          </>
-        )}
+            {/* Selisih total dengan jumlah item adalah ongkir dan add-on laporan.
+                Rinciannya tidak ikut di kontrak detail pesanan, jadi tidak dikarang. */}
+            <Sunyi className="text-[12px]">
+              Selisih dengan jumlah baris di atas adalah ongkir dan tambahan laporan
+              ketertelusuran, yang dirinci pada halaman pesanan.
+            </Sunyi>
+          </div>
 
-        <div className="w-full space-y-3">
-          <Link
-            href={pesanan ? `/buyer/orders/${pesanan.orderId}` : "/buyer/orders"}
-            className="w-full flex items-center justify-center py-3.5 px-4 rounded-xl font-semibold bg-emerald-950 text-white hover:bg-emerald-900 transition shadow-sm"
-          >
-            Lihat Status Pesanan
-          </Link>
-          <Link
-            href="/buyer/catalog"
-            className="w-full flex items-center justify-center py-3.5 px-4 rounded-xl font-semibold bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition shadow-sm"
-          >
-            Kembali ke Katalog
-          </Link>
-        </div>
+          {/* Satu pesanan bisa jadi beberapa pengiriman — dikelompokkan per minggu
+              panen (FR-2.4), masing-masing punya tanggal siapnya sendiri. */}
+          <div className="mt-10 space-y-5">
+            <Label>
+              {pesanan.shipments.length} pengiriman, dipecah menurut minggu panen
+            </Label>
+            {pesanan.shipments.map((s, i) => (
+              <Panel
+                key={s.shipmentId}
+                padat
+                nada="kabar"
+                label={`Pengiriman ${i + 1} dari ${pesanan.shipments.length}`}
+                judul={`Perkiraan siap ${tanggalPendek(s.readyDate)}`}
+                aksi={<Pil nada="kabar">{s.status.replace(/_/g, " ").toLowerCase()}</Pil>}
+              >
+                <Sunyi className="text-[13px]">
+                  {s.lines.map((l) => l.productName).join(" · ")}
+                </Sunyi>
+              </Panel>
+            ))}
+          </div>
+        </>
+      ) : null}
+
+      <div className="mt-10 flex flex-wrap gap-3">
+        <TombolTaut href={pesanan ? `/buyer/orders/${pesanan.orderId}` : "/buyer/orders"}>
+          Lihat status pesanan
+        </TombolTaut>
+        <TombolTaut href="/buyer/catalog" rupa="kedua">
+          Kembali ke katalog
+        </TombolTaut>
       </div>
-    </div>
+    </Halaman>
   );
 }
 
 export default function BuyerPaymentSuccessPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-sm text-gray-500">Memuat…</div>}>
+    <Suspense
+      fallback={
+        <Halaman lebar="sempit" judul="Pembayaran diterima">
+          <Memuat baris={3} />
+        </Halaman>
+      }
+    >
       <IsiHalaman />
     </Suspense>
   );

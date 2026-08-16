@@ -103,6 +103,115 @@ export function AreaTeks({
 }
 
 /**
+ * Centang — kotak, judul, dan penjelasannya sebagai satu sasaran klik.
+ *
+ * `appearance-none` mencabut kotak bawaan sistem, yang membulat di sebagian peramban.
+ * Centangnya digambar dengan hukum goresan yang sama seperti setiap tanda lain di sistem.
+ *
+ * Sengaja TIDAK pernah tercentang secara bawaan bila ia menambah biaya: mencentangkan
+ * otomatis membuat orang membayar sesuatu yang tidak pernah mereka pilih.
+ */
+export function Centang({
+  judul,
+  children,
+  className = "",
+  ...sisa
+}: Omit<React.InputHTMLAttributes<HTMLInputElement>, "type"> & {
+  judul: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex cursor-pointer gap-3 border-t-2 border-tinta bg-kertas-terang p-5",
+        "focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ungu",
+        className,
+      )}
+    >
+      <span className="relative mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
+        <input
+          {...sisa}
+          type="checkbox"
+          className="peer h-4 w-4 appearance-none border border-tinta bg-kertas-terang checked:bg-ungu checked:border-ungu focus:outline-none"
+        />
+        <svg
+          viewBox="0 0 16 16"
+          className="pointer-events-none absolute h-3 w-3 text-kertas-terang opacity-0 peer-checked:opacity-100"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2.2}
+          strokeLinecap="square"
+          strokeLinejoin="miter"
+          aria-hidden
+        >
+          <path d="M3 8.4 L6.4 12 L13 4" />
+        </svg>
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[15px] font-bold text-tinta">{judul}</span>
+        {children ? (
+          <span className="mt-1.5 block text-[13px] leading-relaxed text-tinta-lembut">
+            {children}
+          </span>
+        ) : null}
+      </span>
+    </label>
+  );
+}
+
+/**
+ * Pilihan tunggal. Dipakai ketika opsinya sedikit DAN perbandingannya bagian dari
+ * keputusan — metode bayar, tiga putusan kewajaran. Lebih dari lima opsi, atau opsi yang
+ * tidak perlu dibandingkan, tetap milik `<Pilihan>`.
+ */
+export function Radio({
+  nama,
+  nilai,
+  terpilih,
+  onPilih,
+  judul,
+  children,
+}: {
+  nama: string;
+  nilai: string;
+  terpilih: boolean;
+  onPilih: (nilai: string) => void;
+  judul: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex cursor-pointer items-start gap-3 border-t-2 px-4 py-3 transition-colors duration-150",
+        "focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ungu",
+        terpilih ? "border-ungu bg-kertas-terang" : "border-kertas-garis hover:bg-kertas-terang",
+      )}
+    >
+      <span className="relative mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
+        <input
+          type="radio"
+          name={nama}
+          value={nilai}
+          checked={terpilih}
+          onChange={() => onPilih(nilai)}
+          className="peer h-4 w-4 appearance-none border border-tinta bg-kertas-terang checked:border-ungu focus:outline-none"
+        />
+        {/* Penanda terpilih persegi, bukan titik bulat: radius nol berlaku sampai ke sini. */}
+        <span className="pointer-events-none absolute h-2 w-2 bg-ungu opacity-0 peer-checked:opacity-100" />
+      </span>
+      <span className="min-w-0">
+        <span className={cn("block text-[14px] font-semibold", terpilih ? "text-ungu" : "text-tinta")}>
+          {judul}
+        </span>
+        {children ? (
+          <span className="mt-1 block text-[12px] leading-snug text-tinta-lembut">{children}</span>
+        ) : null}
+      </span>
+    </label>
+  );
+}
+
+/**
  * `appearance-none` mencabut panah bawaan sistem, yang di setiap peramban punya bentuk dan
  * radiusnya sendiri — satu-satunya kendali yang bisa menyelundupkan sudut membulat ke dunia
  * beradius nol. Penggantinya digambar: dua garis lurus bertemu siku, sama seperti tanda lain.

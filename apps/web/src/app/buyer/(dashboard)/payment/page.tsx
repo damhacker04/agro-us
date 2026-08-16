@@ -2,11 +2,17 @@
 
 import React, { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Copy, Loader2, ShieldCheck } from "lucide-react";
+import { Copy } from "lucide-react";
 import { GalatApi, bayarSimulasi } from "@/lib/api";
+import { rupiah, tanggalPanjang } from "@/lib/format-id";
+import { Galat, Halaman, Ikon, Label, Panel, Prosa, Sunyi, Tombol } from "@/ui";
 
-const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
-
+/**
+ * BY-9 — Selesaikan pembayaran.
+ *
+ * `toLocaleString("id-ID")` untuk tenggat diganti `tanggalPanjang`: ia bergantung pada data
+ * ICU runtime, dan halaman ini dirender ulang di klien setelah SSR.
+ */
 function PaymentContent() {
   const router = useRouter();
   const sp = useSearchParams();
@@ -19,6 +25,7 @@ function PaymentContent() {
 
   const [proses, setProses] = useState(false);
   const [galat, setGalat] = useState("");
+  const [tersalin, setTersalin] = useState(false);
 
   async function tandaiLunas() {
     setProses(true);
@@ -32,79 +39,99 @@ function PaymentContent() {
     }
   }
 
+  async function salin() {
+    try {
+      await navigator.clipboard?.writeText(payload);
+      setTersalin(true);
+      setTimeout(() => setTersalin(false), 2000);
+    } catch {
+      /* Papan klip ditolak peramban — kodenya tetap terlihat dan bisa disalin manual. */
+    }
+  }
+
+  const namaPayload =
+    metode === "VA" ? "Nomor virtual account" : metode === "EWALLET" ? "Tautan e-wallet" : "Kode QRIS";
+
   return (
-    <div className="p-8 max-w-xl">
-      <h1 className="text-2xl font-bold text-emerald-950 mb-1">Selesaikan Pembayaran</h1>
-      <p className="text-sm text-gray-500 mb-6">
-        Tagihan <span className="font-mono">{invoice}</span>
-        {kedaluwarsa && ` · berlaku sampai ${new Date(kedaluwarsa).toLocaleString("id-ID")}`}
-      </p>
+    <Halaman
+      lebar="sempit"
+      judul="Selesaikan pembayaran"
+      pengantar="Dana yang Anda bayarkan ditahan di escrow, bukan diteruskan ke produsen. Ia baru berpindah setelah barang sampai dan jendela klaim mutu berakhir."
+    >
+      <Panel label={`Tagihan ${invoice}`} judul="Total tagihan" nada="utama">
+        <p className="font-mono text-[34px] leading-none text-tinta">{rupiah(jumlah)}</p>
+        {kedaluwarsa ? (
+          <Sunyi className="mt-3 text-[13px]">
+            Berlaku sampai {tanggalPanjang(kedaluwarsa)}.
+          </Sunyi>
+        ) : null}
 
-      <div className="bg-white border border-gray-200 rounded-xl p-6">
-        <div className="text-center mb-6">
-          <div className="text-xs font-bold text-gray-400 tracking-wider mb-1">TOTAL TAGIHAN</div>
-          <div className="text-3xl font-bold text-gray-900">{rp(jumlah)}</div>
-        </div>
-
-        <div className="rounded-lg bg-gray-50 border border-gray-200 p-4 mb-5">
-          <div className="text-xs font-bold text-gray-500 mb-2">
-            {metode === "VA" ? "NOMOR VIRTUAL ACCOUNT" : metode === "EWALLET" ? "TAUTAN E-WALLET" : "KODE QRIS"}
-          </div>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 text-sm break-all text-gray-800">{payload}</code>
+        <div className="mt-7 border-t border-kertas-garis pt-4">
+          <div className="flex items-start justify-between gap-4">
+            <Label>{namaPayload}</Label>
             <button
-              onClick={() => navigator.clipboard?.writeText(payload)}
-              className="shrink-0 w-8 h-8 rounded-lg border border-gray-300 flex items-center justify-center hover:bg-white"
+              type="button"
+              onClick={salin}
+              className="-mt-1 inline-flex shrink-0 items-center gap-1.5 text-[12px] font-semibold text-tinta-lembut transition-colors duration-150 hover:text-ungu focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ungu"
             >
-              <Copy className="w-4 h-4 text-gray-600" />
+              <Ikon dari={Copy} ukuran="xs" />
+              {tersalin ? "Tersalin" : "Salin"}
             </button>
           </div>
+          <code className="mt-2 block break-all font-mono text-[14px] leading-relaxed text-tinta">
+            {payload}
+          </code>
         </div>
+      </Panel>
 
-        {/**
-         * Tombol ini MENGGANTIKAN pembayaran sungguhan. Ada karena payment gateway belum
-         * tersambung; begitu tersambung, tombolnya hilang dan status berubah sendiri saat
-         * mitra memanggil balik.
-         *
-         * Tidak lagi memanggil `/payments/webhook`. Endpoint itu untuk mitra pembayaran,
-         * server ke server, dan kini menuntut tanda tangan HMAC. Tombol ini memakai jalur
-         * ber-otentikasi yang hanya bisa menandai lunas tagihan milik pembeli ini sendiri.
-         */}
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 mb-4">
-          <p className="text-xs text-amber-900">
-            <b>Mode peragaan.</b> Pembayaran belum tersambung ke penyedia sungguhan. Tombol di
-            bawah meniru panggilan balik dari gateway saat pembayaran diterima.
-          </p>
-        </div>
-
-        {galat && (
-          <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
-            {galat}
-          </p>
-        )}
-
-        <button
-          onClick={tandaiLunas}
-          disabled={proses || !invoice}
-          className="w-full bg-emerald-950 text-white text-sm font-semibold py-3 rounded-lg hover:bg-emerald-800 disabled:opacity-60 flex items-center justify-center gap-2"
-        >
-          {proses && <Loader2 className="w-4 h-4 animate-spin" />}
-          {proses ? "Memproses…" : "Saya Sudah Bayar"}
-        </button>
-
-        <p className="text-[11px] text-gray-500 mt-3 flex items-start gap-1.5">
-          <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-px text-emerald-700" />
-          Dana ditahan di escrow sampai barang Anda terima. Tenant baru dibayar setelah
-          jendela klaim mutu berakhir.
-        </p>
+      {/**
+       * Tombol ini MENGGANTIKAN pembayaran sungguhan. Ada karena payment gateway belum
+       * tersambung; begitu tersambung, tombolnya hilang dan status berubah sendiri saat
+       * mitra memanggil balik.
+       *
+       * Tidak lagi memanggil `/payments/webhook`. Endpoint itu untuk mitra pembayaran,
+       * server ke server, dan kini menuntut tanda tangan HMAC. Tombol ini memakai jalur
+       * ber-otentikasi yang hanya bisa menandai lunas tagihan milik pembeli ini sendiri.
+       */}
+      <div className="mt-8 border-t-2 border-biru pt-4">
+        <Label className="text-biru">Mode peragaan</Label>
+        <Prosa className="mt-2 text-[14px]">
+          Pembayaran belum tersambung ke penyedia sungguhan. Tombol di bawah meniru panggilan
+          balik dari gateway saat pembayaran diterima — di layanan sungguhan tombol ini tidak
+          ada, dan statusnya berubah sendiri.
+        </Prosa>
       </div>
-    </div>
+
+      {galat ? (
+        <Galat judul="Pembayaran tidak tercatat" className="mt-6">
+          {galat} Tagihan Anda belum ditandai lunas dan tidak ada dana yang berpindah — coba
+          lagi, atau muat ulang halaman ini.
+        </Galat>
+      ) : null}
+
+      <Tombol
+        penuh
+        className="mt-6"
+        onClick={tandaiLunas}
+        sibuk={proses}
+        labelSibuk="Memproses…"
+        disabled={!invoice}
+      >
+        Saya sudah bayar
+      </Tombol>
+    </Halaman>
   );
 }
 
 export default function PaymentPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-sm text-gray-500">Memuat…</div>}>
+    <Suspense
+      fallback={
+        <Halaman lebar="sempit" judul="Selesaikan pembayaran">
+          <Panel judul="Memuat…" />
+        </Halaman>
+      }
+    >
       <PaymentContent />
     </Suspense>
   );

@@ -5,6 +5,7 @@ import {
   type BuyerOrderDetail,
   PAYMENT_EXPIRY_MS,
   SHIPPING_COST_PER_PLAN,
+  TRACEABILITY_REPORT_FEE,
   type CheckoutResponse,
   type OrderSummary,
   type PreviewOrderResponse,
@@ -207,7 +208,7 @@ export class OrderService {
 
     const itemsTotal = plans.reduce((s, p) => s + p.subtotal, 0);
     const shippingTotal = plans.reduce((s, p) => s + p.shippingCost, 0);
-    const reportFee = dto.includeTraceabilityReport ? 25_000 : 0; // FR-2.10, dibundel di tagihan
+    const reportFee = dto.includeTraceabilityReport ? TRACEABILITY_REPORT_FEE : 0; // FR-2.10, dibundel di tagihan
     const totalAmount = itemsTotal + shippingTotal + reportFee;
 
     const { orderId, shipmentIds } = await this.prisma.$transaction(async (tx) => {

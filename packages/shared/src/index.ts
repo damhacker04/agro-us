@@ -232,6 +232,17 @@ export const PRENOTIFY_RADIUS_M = 1000;
 export const SUBSTITUTION_PRICE_GAP_CAP_PCT = 10;
 
 /**
+ * Biaya Laporan Ketertelusuran, dibundel ke tagihan yang sama (FR-2.10).
+ *
+ * DIPINDAH KE SINI karena sebelumnya ditulis dua kali secara terpisah: sekali di
+ * `order.service.ts` yang benar-benar menagihnya, sekali lagi di halaman checkout yang
+ * menampilkannya. Angka yang DITAGIHKAN ke pembeli tidak boleh punya dua sumber — begitu
+ * salah satunya berubah, pembeli menyetujui satu angka dan membayar angka lain, dan tidak
+ * ada satu pun uji yang akan memberitahu.
+ */
+export const TRACEABILITY_REPORT_FEE = 25_000;
+
+/**
  * ⚠️ AMBANG PENALTI SENGAJA TIDAK ADA DI SINI (FR-7.12c).
  *
  * Sampai v2.2 nilainya `SHORTFALL_PENALTY_THRESHOLD_PCT = 15` dan diekspor lewat kontrak

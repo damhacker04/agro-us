@@ -75,6 +75,42 @@ export function Tombol({
 }
 
 /**
+ * Tautan yang TAMPIL sebagai tombol.
+ *
+ * Ada karena tanpanya godaannya adalah membungkus `<Link>` dengan `<Tombol>` — kendali
+ * interaktif di dalam kendali interaktif, yang tidak valid, menghasilkan dua stop tab untuk
+ * satu sasaran, dan membuat pembaca layar mengumumkan tombol berisi tautan.
+ *
+ * Yang menentukan pilihannya bukan rupa melainkan AKIBAT: pindah tempat itu tautan (bisa
+ * dibuka di tab baru, punya alamat, masuk riwayat), mengubah sesuatu itu tombol. Rupa yang
+ * sama tidak membuat keduanya sama.
+ */
+export function TombolTaut({
+  href,
+  children,
+  rupa = "utama",
+  ukuran = "md",
+  penuh,
+  className = "",
+}: {
+  href: string;
+  children: React.ReactNode;
+  rupa?: Rupa;
+  ukuran?: keyof typeof UKURAN;
+  penuh?: boolean;
+  className?: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(DASAR, RUPA[rupa], UKURAN[ukuran], penuh ? "w-full" : "", className)}
+    >
+      {children}
+    </Link>
+  );
+}
+
+/**
  * Tautan kembali. Muncul 11 kali sebagai potongan kelas yang disalin tangan, dan setiap
  * salinan adalah kesempatan jaraknya melenceng.
  */

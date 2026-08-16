@@ -1,13 +1,23 @@
 "use client";
 
 import React, { Suspense, useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Loader2, ShieldCheck } from "lucide-react";
 import { GalatApi, mintaOtp, verifikasiOtp } from "@/lib/api";
 import { berandaPeran, simpanSesi } from "@/lib/auth";
 import { OTP_LENGTH } from "@agro-os/shared";
+import { Galat, Halaman, Label, Panel, Prosa, Sunyi, TautanKembali, Tombol } from "@/ui";
 
+/**
+ * Verifikasi kode masuk. Dipakai ketiga peran.
+ *
+ * Kotak OTP diset monospace: enam digit yang dibaca ulang dari layar ponsel adalah nilai
+ * terukur, dan monospace membuat tiap digit menempati kolom yang sama sehingga posisi
+ * kesalahan ketik terlihat tanpa dihitung.
+ *
+ * Ikon perisai di puncak kartu dibuang. Halaman ini dibuka orang yang sedang menunggu
+ * pesan masuk; satu glif dekoratif di atas judul menunda kalimat yang benar-benar mereka
+ * butuhkan — ke mana kodenya dikirim.
+ */
 function VerifyContent() {
   const router = useRouter();
   const sp = useSearchParams();
@@ -94,42 +104,42 @@ function VerifyContent() {
     }
   }
 
+  const lengkap = digit.join("").length === OTP_LENGTH;
+
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50">
-      <header className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-100">
-        <Link href="/" className="flex items-center gap-2">
-          <div className="w-6 h-6 text-emerald-600 bg-emerald-100 rounded-sm flex items-center justify-center font-bold">
-            A
-          </div>
-          <span className="text-xl font-bold text-emerald-950">AgroUs</span>
-        </Link>
+    <Halaman
+      lebar="sempit"
+      kembali={
         <button
+          type="button"
           onClick={() => router.back()}
-          className="flex items-center gap-2 text-sm text-gray-600 hover:text-emerald-700"
+          className="-my-2 inline-flex items-center gap-2 py-2 text-[13px] font-semibold text-tinta-lembut transition-colors duration-150 hover:text-ungu focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ungu"
         >
-          <ArrowLeft className="w-4 h-4" /> Ganti nomor
+          Ganti nomor
         </button>
-      </header>
+      }
+    >
+      <Panel label="Verifikasi" judul="Masukkan kode masuk" nada="utama">
+        <Prosa className="text-[14px]">
+          Kode {OTP_LENGTH} digit dikirim ke <span className="font-mono text-tinta">{phone}</span>.
+        </Prosa>
 
-      <main className="flex-1 flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
-          <div className="w-11 h-11 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center mb-4">
-            <ShieldCheck className="w-6 h-6" />
+        {kodeDemo ? (
+          <div className="mt-5 border-t-2 border-biru pt-3">
+            <Label className="text-biru">Mode peragaan</Label>
+            <Sunyi className="mt-1.5 text-[13px]">
+              Kodenya diisikan otomatis supaya penguji tidak perlu membuka log server. Di
+              layanan sungguhan kode hanya dikirim lewat WhatsApp atau SMS.
+            </Sunyi>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 mb-1">Masukkan Kode Masuk</h1>
-          <p className="text-sm text-gray-500 mb-6">
-            Kode {OTP_LENGTH} digit dikirim ke <span className="font-semibold">{phone}</span>
-          </p>
+        ) : null}
 
-          {kodeDemo && (
-            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-5">
-              Mode peragaan: kode diisikan otomatis. Di layanan sungguhan kode hanya dikirim
-              lewat WhatsApp/SMS.
-            </p>
-          )}
-
-          <form onSubmit={verifikasi} className="space-y-5">
-            <div className="flex gap-2 justify-between">
+        <form onSubmit={verifikasi} className="mt-6 space-y-5">
+          <fieldset>
+            <Label as="legend" className="mb-2">
+              Kode masuk
+            </Label>
+            <div className="flex gap-2">
               {digit.map((d, i) => (
                 <input
                   key={i}
@@ -137,48 +147,60 @@ function VerifyContent() {
                     refs.current[i] = el;
                   }}
                   inputMode="numeric"
+                  autoComplete={i === 0 ? "one-time-code" : "off"}
                   maxLength={OTP_LENGTH}
                   value={d}
                   onChange={(e) => isi(i, e.target.value)}
                   onKeyDown={(e) => mundur(i, e)}
-                  className="w-12 h-14 text-center text-xl font-bold border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  /* Tiap kotak dinamai sendiri. Tanpa ini pembaca layar mengumumkan enam
+                     kotak identik tanpa cara mengetahui yang mana sedang diisi. */
+                  aria-label={`Digit ke-${i + 1} dari ${OTP_LENGTH}`}
+                  className="h-14 w-full min-w-0 border border-kertas-garis bg-kertas-terang text-center font-mono text-[22px] text-tinta transition-colors duration-150 hover:border-tinta-samar focus:border-tinta focus:outline focus:outline-2 focus:outline-offset-1 focus:outline-ungu"
                 />
               ))}
             </div>
+          </fieldset>
 
-            {galat && (
-              <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                {galat}
-              </p>
-            )}
+          {galat ? (
+            <Galat judul="Kode ditolak">
+              {galat} Periksa ulang enam digitnya, atau kirim ulang kode baru di bawah.
+            </Galat>
+          ) : null}
 
-            <button
-              type="submit"
-              disabled={proses || digit.join("").length !== OTP_LENGTH}
-              className="w-full bg-emerald-950 text-white font-semibold py-2.5 rounded-lg hover:bg-emerald-800 transition disabled:opacity-60 flex items-center justify-center gap-2"
-            >
-              {proses && <Loader2 className="w-4 h-4 animate-spin" />}
-              {proses ? "Memeriksa…" : "Masuk"}
-            </button>
+          <Tombol
+            type="submit"
+            penuh
+            sibuk={proses}
+            labelSibuk="Memeriksa…"
+            disabled={!lengkap}
+          >
+            Masuk
+          </Tombol>
 
-            <button
-              type="button"
-              onClick={kirimUlang}
-              disabled={sisaDetik > 0}
-              className="w-full text-sm text-gray-600 hover:text-emerald-700 disabled:text-gray-400"
-            >
-              {sisaDetik > 0 ? `Kirim ulang dalam ${sisaDetik} detik` : "Kirim ulang kode"}
-            </button>
-          </form>
-        </div>
-      </main>
-    </div>
+          <Tombol
+            type="button"
+            rupa="sunyi"
+            penuh
+            onClick={kirimUlang}
+            disabled={sisaDetik > 0}
+          >
+            {sisaDetik > 0 ? `Kirim ulang dalam ${sisaDetik} detik` : "Kirim ulang kode"}
+          </Tombol>
+        </form>
+      </Panel>
+    </Halaman>
   );
 }
 
 export default function VerifyPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-sm text-gray-500">Memuat…</div>}>
+    <Suspense
+      fallback={
+        <Halaman lebar="sempit">
+          <Panel judul="Memuat…" />
+        </Halaman>
+      }
+    >
       <VerifyContent />
     </Suspense>
   );
