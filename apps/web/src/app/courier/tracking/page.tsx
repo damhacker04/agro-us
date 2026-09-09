@@ -2,25 +2,48 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Check, Crosshair, MapPin, Truck, X } from "lucide-react";
-import { GEOFENCE_RADIUS_M, POSITION_PING_INTERVAL_MS } from "@agro-os/shared";
+import {
+  GEOFENCE_RADIUS_M,
+  POSITION_PING_INTERVAL_MS,
+  SIGNAL_LOST_AFTER_MS,
+} from "@agro-os/shared";
 import type { VerifyCourierCodeResponse } from "@agro-os/shared";
 import { GalatApi, kirimPosisi, tandaiTanpaGps } from "@/lib/api";
+import { desimal, jamWib } from "@/lib/format-id";
+import { Galat, Halaman, Label, Panel, Pil, Prosa, Sunyi, Tombol } from "@/ui";
 
 type Kiriman = { jarakM: number; wajar: boolean; pada: number };
 
-const meter = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`);
+const jarak = (m: number) => (m >= 1000 ? `${desimal(m / 1000, 1)} km` : `${Math.round(m)} m`);
 
 /**
- * Layar kurir selama pengantaran (§5.6.3, FR-6.4).
+ * KR-2 — Layar kurir selama pengantaran (§5.6.3, FR-6.4).
  *
  * Posisi dikirim berkala; server yang memutuskan kewajarannya dan kapan dianggap tiba —
  * bukan halaman ini. Kalau geofence dihitung di sisi klien, siapa pun bisa mengaku tiba
  * dengan mengubah koordinat di peramban.
  *
- * TIDAK ada peta di sini. Menggambar peta hiasan dengan rute karangan justru menyesatkan;
- * yang dibutuhkan kurir cuma satu angka jujur — masih berapa jauh — beserta kapan angka
- * itu terakhir diperbarui.
+ * TIDAK ada peta di sini, dan itu keputusan yang dipertahankan: peta hiasan dengan rute
+ * karangan menyesatkan, sementara yang dibutuhkan kurir cuma satu angka jujur — masih
+ * berapa jauh — beserta kapan angka itu terakhir diperbarui.
+ *
+ * MIGRASI DUNIA, dan yang terbesar bukan warnanya:
+ *
+ * 1. BINGKAI PONSEL PALSU DIBUANG. Layar ini sebelumnya menggambar ponsel — lebar dipatok
+ *    400px, tinggi 700px, sudut 40px, bezel hitam 8px, `shadow-2xl` — lalu disajikan KEPADA
+ *    kurir yang membukanya DI ponsel. Artinya ponsel di dalam ponsel: bezel dan sudut
+ *    membulat memakan layar sungguhan milik orang yang sedang berdiri di bawah matahari
+ *    sambil menahan box. Itu artefak mockup yang lolos ke produksi, bukan pilihan desain.
+ *    Sekarang halamannya adalah layarnya.
+ *
+ * 2. LINGKARAN BERDENYUT DIBUANG. `animate-ping`, cincin putus-putus, dan piringan hijau
+ *    tidak menyampaikan satu pun angka. Dunia ini menandai keadaan dengan GROUND penuh dan
+ *    aturan tinta, dan angka jaraknya sendiri yang berubah tiap sepuluh detik adalah geraknya.
+ *
+ * 3. SINYAL BASI DINYATAKAN. Bila laporan terakhir sudah lewat `SIGNAL_LOST_AFTER_MS`,
+ *    pembeli melihat "sinyal hilang" di layarnya (BY-12). Kurir sebelumnya tidak pernah
+ *    diberi tahu bahwa dirinya terlihat begitu — sekarang layar ini mengatakannya, memakai
+ *    ambang yang sama persis dari kontrak bersama.
  */
 export default function TrackingPage() {
   const router = useRouter();
@@ -31,6 +54,10 @@ export default function TrackingPage() {
   const [tanpaGps, setTanpaGps] = useState(false);
   const [galat, setGalat] = useState("");
   const [siap, setSiap] = useState(false);
+  // Jam dinding yang berdetak sendiri. Tanpa ini, "sinyal hilang" tidak pernah muncul pada
+  // kasus yang justru paling membutuhkannya: ketika pengiriman posisi GAGAL, tidak ada
+  // state yang berubah, jadi tidak ada render ulang yang bisa menyadari waktunya lewat.
+  const [sekarang, setSekarang] = useState(() => Date.now());
 
   // Koordinat terbaru disimpan di ref, bukan state: pembaruan GPS bisa datang jauh
   // lebih sering daripada pengiriman berkala, dan tiap render ulang tidak ada gunanya.
@@ -38,13 +65,13 @@ export default function TrackingPage() {
 
   useEffect(() => {
     const mentah = sessionStorage.getItem("agrous.kurir");
-    if (!mentah) {
-      setGalat("Sesi antar tidak ditemukan. Pindai ulang QR pada box.");
-      setSiap(true);
-      return;
-    }
-    setSesi(JSON.parse(mentah) as VerifyCourierCodeResponse);
+    if (mentah) setSesi(JSON.parse(mentah) as VerifyCourierCodeResponse);
     setSiap(true);
+  }, []);
+
+  useEffect(() => {
+    const jeda = setInterval(() => setSekarang(Date.now()), 15_000);
+    return () => clearInterval(jeda);
   }, []);
 
   const laporkan = useCallback(async () => {
@@ -67,7 +94,7 @@ export default function TrackingPage() {
   useEffect(() => {
     if (!sesi || tanpaGps || tiba) return;
     if (!navigator.geolocation) {
-      setGalat("Perangkat ini tidak mendukung lokasi.");
+      setGalat("Peramban ini tidak bisa membaca lokasi. Pakai mode tanpa GPS di bawah.");
       return;
     }
 
@@ -81,8 +108,8 @@ export default function TrackingPage() {
         // disediakan untuk kasus ini (§6.3).
         setGalat(
           e.code === e.PERMISSION_DENIED
-            ? "Izin lokasi ditolak. Gunakan mode tanpa GPS di bawah."
-            : "Lokasi belum terbaca. Pastikan GPS menyala.",
+            ? "Izin lokasi ditolak. Pakai mode tanpa GPS di bawah — pengantaran tetap bisa diselesaikan."
+            : "Lokasi belum terbaca. Pastikan GPS ponsel menyala.",
         );
       },
       { enableHighAccuracy: true, maximumAge: 5_000, timeout: 15_000 },
@@ -105,132 +132,175 @@ export default function TrackingPage() {
       setTanpaGps(true);
       setGalat("");
     } catch (e) {
-      setGalat(e instanceof GalatApi ? e.message : "Gagal mengaktifkan mode tanpa GPS.");
+      setGalat(e instanceof GalatApi ? e.message : "Mode tanpa GPS gagal diaktifkan.");
     }
   }
 
-  if (!siap) return <div className="min-h-screen bg-gray-50" />;
+  /* Ground yang sama dengan halaman tujuannya, supaya perpindahan tidak berkedip putih. */
+  if (!siap) return <div className="min-h-screen bg-kertas" />;
+
+  if (!sesi) {
+    return (
+      <Halaman lebar="sempit" judul="Sesi antar tidak ditemukan" className="min-h-screen">
+        <Galat judul="Pengantaran ini belum dibuka di ponsel ini">
+          Sesi antar berumur satu perjalanan dan tersimpan hanya selama tab ini terbuka.
+          Pindai ulang QR pada box dengan kamera ponsel Anda, lalu masukkan Kode Antar dari
+          penjual.
+        </Galat>
+      </Halaman>
+    );
+  }
+
+  const basi = terakhir !== null && sekarang - terakhir.pada > SIGNAL_LOST_AFTER_MS;
+  const detik = Math.round((sesi.positionIntervalMs || POSITION_PING_INTERVAL_MS) / 1000);
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 sm:p-8 font-sans">
-      <div className="w-full max-w-[400px] min-h-[700px] bg-white shadow-2xl rounded-[40px] overflow-hidden border-[8px] border-gray-900 relative flex flex-col">
-        <div className="bg-[#0a381f] text-white px-6 py-5 flex items-center justify-between shrink-0">
-          <h1 className="font-bold text-sm tracking-wide">Pengantaran Berlangsung</h1>
-          <button
-            onClick={() => router.push("/")}
-            aria-label="Tutup"
-            className="text-white/80 hover:text-white transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
+    <Halaman
+      lebar="sempit"
+      judul="Pengantaran berlangsung"
+      className="min-h-screen"
+      aksi={
+        tiba ? (
+          <Pil nada="utama">Tiba</Pil>
+        ) : tanpaGps ? (
+          <Pil nada="awas">Tanpa GPS</Pil>
+        ) : (
+          <Pil nada="kabar" garis>
+            Mengirim tiap {detik} detik
+          </Pil>
+        )
+      }
+    >
+      {/* Keadaan yang menentukan menguasai ground penuh — hukum region-utuh dipakai apa
+          adanya di sini karena blok ini memang satu region kecil yang utuh, dan karena
+          layar yang dibaca di bawah matahari butuh bidang warna, bukan aksen. */}
+      {tiba ? (
+        <div className="bg-ungu p-6">
+          <Label className="text-kabut-ungu">Tiba di titik antar</Label>
+          <p className="mt-2 text-[22px] font-extrabold leading-tight text-kertas-terang">
+            Pembeli sudah diberi tahu
+          </p>
+          <p className="mt-2.5 text-[14px] leading-relaxed text-kabut-ungu">
+            Serahkan barang dan tunggu pembeli menekan konfirmasi penerimaan. Sesi ini tetap
+            terbuka sampai mereka melakukannya — jangan tutup layar sebelum barang berpindah
+            tangan.
+          </p>
         </div>
+      ) : tanpaGps ? (
+        <div className="bg-jambu p-6">
+          <Label className="text-kabut-jambu">Mode tanpa GPS</Label>
+          <p className="mt-2 text-[22px] font-extrabold leading-tight text-kertas-terang">
+            Posisi Anda tidak dilacak
+          </p>
+          <p className="mt-2.5 text-[14px] leading-relaxed text-kabut-jambu">
+            Pembeli sudah diberi tahu bahwa kedatangan dikonfirmasi manual. Hubungi penerima
+            saat Anda sampai di lokasi; nomornya ada pada penjual yang menyerahkan box.
+          </p>
+        </div>
+      ) : terakhir ? (
+        <div className="border-t-2 border-tinta pt-4">
+          <Label>Jarak ke titik antar</Label>
+          {/* Satu angka, sebesar yang layar izinkan. Inilah seluruh isi layar ini bagi orang
+              yang sedang menyetir motor dan berhenti sebentar untuk melihatnya.
+              Tracking negatif tipis: monospace pada 56px merenggang sampai angka dan
+              satuannya terbaca sebagai dua benda terpisah. */}
+          <p className="mt-2.5 font-mono text-[56px] leading-none tracking-[-0.03em] text-tinta">
+            {jarak(terakhir.jarakM)}
+          </p>
+          <Prosa className="mt-4 text-[14px]">
+            Dianggap tiba di bawah{" "}
+            <span className="font-mono text-tinta">{sesi.destRadiusM ?? GEOFENCE_RADIUS_M} m</span>.
+            Yang memutuskan kedatangan adalah server, bukan ponsel ini — jadi tidak ada tombol
+            &ldquo;saya sudah sampai&rdquo; yang bisa ditekan lebih awal.
+          </Prosa>
 
-        <div className="flex-1 flex flex-col">
-          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-            {tiba ? (
-              <>
-                <div className="w-20 h-20 bg-emerald-600 rounded-full flex items-center justify-center text-white mb-6">
-                  <Check className="w-10 h-10" />
-                </div>
-                <h2 className="text-xl font-black text-emerald-900 mb-2">Tiba di Lokasi</h2>
-                <p className="text-sm text-gray-600">
-                  Pembeli sudah diberi tahu. Serahkan barang dan tunggu konfirmasi
-                  penerimaan.
-                </p>
-              </>
-            ) : tanpaGps ? (
-              <>
-                <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center text-amber-700 mb-6">
-                  <AlertTriangle className="w-9 h-9" />
-                </div>
-                <h2 className="text-xl font-black text-amber-900 mb-2">Mode Tanpa GPS</h2>
-                <p className="text-sm text-gray-600">
-                  Posisi tidak dilacak. Pembeli diberi tahu bahwa kedatangan dikonfirmasi
-                  manual — hubungi penerima saat Anda sampai.
-                </p>
-              </>
-            ) : terakhir ? (
-              <>
-                {/* Cincin jarak: lingkaran luar = posisi sekarang, lingkaran dalam =
-                    radius geofence. Sederhana, tapi tiap angkanya nyata. */}
-                <div className="relative flex items-center justify-center mb-8">
-                  <div className="absolute w-36 h-36 rounded-full border-2 border-dashed border-emerald-200" />
-                  <div className="absolute w-24 h-24 rounded-full border-2 border-emerald-300" />
-                  <div className="relative w-16 h-16 bg-emerald-600 rounded-full flex items-center justify-center text-white shadow-lg">
-                    <Truck className="w-8 h-8" />
-                  </div>
-                </div>
-
-                <div className="text-4xl font-black text-[#111827] mb-1">
-                  {meter(terakhir.jarakM)}
-                </div>
-                <p className="text-sm text-gray-500 mb-4">
-                  menuju tujuan · dianggap tiba di bawah {GEOFENCE_RADIUS_M} m
-                </p>
-
-                {!terakhir.wajar && (
-                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                    Perpindahan terakhir dianggap tidak wajar dan tidak dipakai menghitung
-                    kedatangan.
-                  </p>
-                )}
-              </>
-            ) : (
-              <>
-                <div className="relative flex items-center justify-center mb-8">
-                  <div className="absolute w-32 h-32 bg-emerald-100 rounded-full animate-ping opacity-75" />
-                  <div className="relative w-16 h-16 bg-emerald-500 rounded-full flex items-center justify-center text-white shadow-lg">
-                    <Crosshair className="w-8 h-8" />
-                  </div>
-                </div>
-                <h2 className="text-xl font-black text-[#111827] mb-2">Mencari lokasi…</h2>
-                <p className="text-sm text-gray-500">
-                  Posisi dikirim tiap{" "}
-                  {Math.round((sesi?.positionIntervalMs ?? POSITION_PING_INTERVAL_MS) / 1000)}{" "}
-                  detik.
-                </p>
-              </>
-            )}
-
-            {galat && (
-              <p className="mt-5 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                {galat}
-              </p>
-            )}
-          </div>
-
-          <div className="bg-white rounded-t-3xl border-t border-gray-100 p-6">
-            <div className="border border-gray-200 rounded-2xl p-4 mb-4">
-              <div className="flex items-center gap-2 font-bold text-[#0a1c38] mb-2 text-sm">
-                <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
-                Titik Tujuan
-              </div>
-              <p className="text-xs text-gray-600 font-mono">
-                {sesi
-                  ? `${sesi.destination.lat.toFixed(5)}, ${sesi.destination.lng.toFixed(5)}`
-                  : "—"}
-              </p>
-              <p className="text-[11px] text-gray-500 mt-1">
-                Radius terima {sesi?.destRadiusM ?? GEOFENCE_RADIUS_M} m
-              </p>
-              {terakhir && (
-                <p className="text-[11px] text-gray-400 mt-2">
-                  Diperbarui {new Date(terakhir.pada).toLocaleTimeString("id-ID")}
-                </p>
-              )}
+          {!terakhir.wajar ? (
+            <div className="mt-5 border-t-2 border-jambu pt-3">
+              <Label className="text-jambu">Perpindahan terakhir ditandai</Label>
+              <Prosa className="mt-1.5 text-[14px]">
+                Lompatan posisinya di luar batas kecepatan wajar, jadi titik itu disimpan tetapi
+                tidak dipakai menghitung kedatangan. Ini biasa terjadi saat sinyal melompat di
+                antara gedung; teruskan perjalanan seperti biasa.
+              </Prosa>
             </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="border-t-2 border-biru pt-4">
+          <Label className="text-biru">Mencari lokasi</Label>
+          <p className="mt-2.5 text-[22px] font-extrabold leading-tight text-tinta">
+            Menunggu titik pertama dari GPS
+          </p>
+          <Prosa className="mt-2.5 text-[14px]">
+            Posisi dikirim tiap <span className="font-mono text-tinta">{detik} detik</span> begitu
+            GPS terbaca. Bila ponsel meminta izin lokasi, izinkan — tanpa itu kedatangan harus
+            dikonfirmasi manual.
+          </Prosa>
+        </div>
+      )}
 
-            {!tiba && !tanpaGps && (
-              <button
-                onClick={pilihTanpaGps}
-                className="w-full text-xs font-semibold text-gray-500 hover:text-gray-700 py-2"
-              >
-                Tidak bisa berbagi lokasi? Lanjut tanpa GPS
-              </button>
-            )}
-          </div>
+      {/* Stempel waktu ditampilkan apa adanya, termasuk saat sudah lama: menyembunyikannya
+          membuat posisi basi terlihat seperti posisi terkini, di layar yang justru dipakai
+          memutuskan apakah perlu menelepon penerima. */}
+      {terakhir ? (
+        <div className={basi ? "mt-6 border-t-2 border-jambu pt-3" : "mt-6 border-t border-kertas-garis pt-3"}>
+          <Label className={basi ? "text-jambu" : ""}>
+            {basi ? "Sinyal hilang" : "Posisi terakhir terkirim"}
+          </Label>
+          <p className="mt-1.5 font-mono text-[15px] text-tinta">
+            {jamWib(new Date(terakhir.pada).toISOString())} WIB
+          </p>
+          {basi ? (
+            <Prosa className="mt-1.5 text-[14px]">
+              Sudah lebih dari {Math.round(SIGNAL_LOST_AFTER_MS / 60000)} menit sejak posisi
+              terakhir sampai ke server, dan pembeli melihat pengiriman ini sebagai sinyal
+              hilang. Bila sinyal tidak kembali, telepon penerima saat Anda dekat.
+            </Prosa>
+          ) : null}
+        </div>
+      ) : null}
+
+      {galat ? (
+        <Galat judul="Lokasi belum terkirim" className="mt-6">
+          {galat}
+        </Galat>
+      ) : null}
+
+      <Panel label="Titik tujuan" judul="Koordinat yang dipakai server" className="mt-8">
+        <p className="font-mono text-[15px] text-tinta">
+          {sesi.destination.lat.toFixed(5)}, {sesi.destination.lng.toFixed(5)}
+        </p>
+        <Sunyi className="mt-2 text-[13px]">
+          Radius terima {sesi.destRadiusM ?? GEOFENCE_RADIUS_M} m. Titik ini diisi pembeli saat
+          memesan, jadi patokan alamatnya ada pada penjual bila koordinatnya meleset.
+        </Sunyi>
+      </Panel>
+
+      {/* Jalan keluar yang MENYELESAIKAN pengantaran memenuhi lebar dan setinggi ibu jari;
+          yang sekadar menutup layar tidak. Keduanya rata kiri: dokumen ini rata kiri dari
+          judul sampai catatan kaki, dan satu blok yang ditengahkan terbaca sebagai judul
+          bagian baru, bukan sebagai kendali. */}
+      <div className="mt-8">
+        {!tiba && !tanpaGps ? (
+          <>
+            {/* Pertanyaannya jadi label, bukan isi tombol. Label tombol sepanjang kalimat
+                pecah jadi dua baris di 375px dan berhenti terbaca sebagai satu tindakan. */}
+            <Label className="mb-2">Tidak bisa berbagi lokasi?</Label>
+            <Tombol rupa="kedua" penuh className="py-4 text-[15px]" onClick={pilihTanpaGps}>
+              Lanjut tanpa GPS
+            </Tombol>
+          </>
+        ) : null}
+        <div className={!tiba && !tanpaGps ? "mt-6 border-t border-kertas-garis pt-4" : "border-t border-kertas-garis pt-4"}>
+          <Tombol rupa="sunyi" className="-ml-3" onClick={() => router.push("/")}>
+            Tutup layar antar
+          </Tombol>
+          <Sunyi className="mt-1.5 text-[12px]">
+            Menutup layar menghentikan pengiriman posisi. Pengantaran sendiri tidak dibatalkan,
+            tetapi pembeli akan melihat sinyal Anda hilang.
+          </Sunyi>
         </div>
       </div>
-    </div>
+    </Halaman>
   );
 }

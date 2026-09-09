@@ -4,37 +4,11 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { GalatApi, ambilPesanan, ambilSenioritas } from "@/lib/api";
 import { rupiah, tanggalPendek } from "@/lib/format-id";
-import type { BuyerSeniority, OrderSummary, ShipmentStatus } from "@agro-os/shared";
-import {
-  Galat,
-  Halaman,
-  Kosong,
-  Label,
-  Memuat,
-  Panel,
-  Pil,
-  Prosa,
-  Sunyi,
-  type Nada,
-} from "@/ui";
+import type { BuyerSeniority, OrderSummary } from "@agro-os/shared";
+import { PilTahap } from "@/components/tahap-pengiriman";
+import { Galat, Halaman, Kosong, Label, Memuat, Panel, Pil, Prosa, Sunyi } from "@/ui";
 
-/**
- * BY-11 — Daftar pesanan pembeli.
- *
- * Enam tahap pengiriman (§5.6.1). Nadanya menyatakan APAKAH PEMBELI PERLU BERTINDAK, bukan
- * seberapa jauh prosesnya berjalan: hanya `TIBA_DI_LOKASI` yang menuntut sesuatu dari
- * pembeli, jadi hanya ia yang memakai pil terisi. Sisanya bergaris. Kalau setiap tahap
- * berkedip, tahap yang benar-benar menunggu tidak lagi menonjol.
- */
-const TAHAP: Record<ShipmentStatus, { label: string; nada: Nada; garis: boolean }> = {
-  MENUNGGU_PANEN: { label: "Menunggu panen", nada: "netral", garis: true },
-  PANEN: { label: "Panen", nada: "utama", garis: true },
-  DIKIRIM: { label: "Dikirim", nada: "kabar", garis: true },
-  TIBA_DI_LOKASI: { label: "Perlu konfirmasi", nada: "awas", garis: false },
-  DITERIMA: { label: "Diterima", nada: "utama", garis: true },
-  SELESAI: { label: "Selesai", nada: "utama", garis: false },
-  DIBATALKAN: { label: "Dibatalkan", nada: "awas", garis: true },
-};
+/** BY-11 — Daftar pesanan pembeli. Kosakata tahapnya di `@/components/tahap-pengiriman`. */
 
 export default function OrdersPage() {
   const [pesanan, setPesanan] = useState<OrderSummary[]>([]);
@@ -151,29 +125,24 @@ export default function OrdersPage() {
               {o.shipments.length} pengiriman
             </Label>
             <ul className="mt-2">
-              {o.shipments.map((s, i) => {
-                const t = TAHAP[s.status];
-                return (
-                  <li
-                    key={s.id}
-                    className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-kertas-garis py-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <span className="block truncate text-[14px] text-tinta">
-                        {s.productNames.length
-                          ? s.productNames.join(", ")
-                          : `${s.itemCount} komoditas`}
-                      </span>
-                      <Sunyi className="mt-0.5 text-[12px]">
-                        Pengiriman {i + 1} · siap {tanggalPendek(s.readyDate)}
-                      </Sunyi>
-                    </div>
-                    <Pil nada={t.nada} garis={t.garis}>
-                      {t.label}
-                    </Pil>
-                  </li>
-                );
-              })}
+              {o.shipments.map((s, i) => (
+                <li
+                  key={s.id}
+                  className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-kertas-garis py-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <span className="block truncate text-[14px] text-tinta">
+                      {s.productNames.length
+                        ? s.productNames.join(", ")
+                        : `${s.itemCount} komoditas`}
+                    </span>
+                    <Sunyi className="mt-0.5 text-[12px]">
+                      Pengiriman {i + 1} · siap {tanggalPendek(s.readyDate)}
+                    </Sunyi>
+                  </div>
+                  <PilTahap status={s.status} />
+                </li>
+              ))}
             </ul>
           </Panel>
         ))}

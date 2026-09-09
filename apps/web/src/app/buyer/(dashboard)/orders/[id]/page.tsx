@@ -2,25 +2,15 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  AlertTriangle,
-  ArrowLeft,
-  Camera,
-  CheckCircle2,
-  Clock,
-  Loader2,
-  MapPin,
-  Phone,
-  ShieldCheck,
-  Truck,
-  User,
-} from "lucide-react";
+import { Camera } from "lucide-react";
 import { CANCELLATION_FEE_PCT } from "@agro-os/shared";
 import type {
   BuyerOrderDetail,
   BuyerOrderShipment,
+  CancelOrderResponse,
+  ClaimFinalStatus,
   ClaimResponse,
-  ShipmentStatus,
+  ClaimRoute,
   TrackingSnapshot,
   UmurSimpan,
 } from "@agro-os/shared";
@@ -34,30 +24,71 @@ import {
   konfirmasiTerima,
   unggahFoto,
 } from "@/lib/api";
+import { angka, desimal, jamWib, rupiah, tanggalPanjang, tanggalPendek } from "@/lib/format-id";
+import { PilTahap } from "@/components/tahap-pengiriman";
+import { PilVerifikasi } from "@/components/tanda-verifikasi";
+import {
+  AreaTeks,
+  BarisData,
+  Berkas,
+  Deret,
+  Galat,
+  Halaman,
+  Label,
+  Masukan,
+  Medan,
+  Memuat,
+  Nilai,
+  Panel,
+  Pil,
+  Pilihan,
+  Prosa,
+  Sunyi,
+  TautanKembali,
+  Tombol,
+} from "@/ui";
 
-const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
-const tgl = (iso: string) =>
-  new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
-const jam = (iso: string) => new Date(iso).toLocaleString("id-ID");
+/**
+ * BY-12 — Rincian satu pesanan. Halaman terbesar aplikasi ini.
+ *
+ * MIGRASI DUNIA, dan tiga hal yang berubah bukan soal rupa:
+ *
+ * 1. `confirm()` DAN `alert()` DIBUANG. Pembatalan menagih 10% nilai barang, dan sebelumnya
+ *    peringatannya berupa dialog bawaan peramban berisi satu kalimat tanpa satu pun angka —
+ *    lalu akibatnya diumumkan lewat `alert()` yang hilang begitu ditutup, tanpa jejak. Di
+ *    produk ini setiap layar yang menjatuhkan akibat finansial wajib punya layar peringatan
+ *    pasangannya: sekarang dendanya dirinci SEBELUM tombolnya, dan hasilnya menetap di
+ *    halaman setelahnya. Dialog bawaan juga satu-satunya permukaan di aplikasi yang tidak
+ *    bisa dibawa ke dunia ini — ia membulat, memakai huruf sistem, dan datang dari peramban.
+ *
+ * 2. WAKTU DIPAKU KE WIB. `toLocaleString("id-ID")` bergantung pada data ICU runtime; jam
+ *    yang berbeda antara server dan peramban membuang seluruh pohon React dengan galat
+ *    hidrasi. `jamWib` menghitungnya sebagai offset tetap.
+ *
+ * 3. FOTO BUKTI BISA DIJANGKAU PAPAN KETIK. Dua input berkas di halaman ini sebelumnya
+ *    disembunyikan dengan `display:none`, yang mencabutnya dari urutan tab — dan tanpa foto,
+ *    konfirmasi penerimaan maupun klaim mutu tidak bisa dikirim sama sekali.
+ */
 
-/** Enam tahap pengiriman (§5.6.1). */
-const TAHAP: Record<ShipmentStatus, { label: string; kelas: string }> = {
-  MENUNGGU_PANEN: { label: "Menunggu Panen", kelas: "bg-gray-100 text-gray-700" },
-  PANEN: { label: "Panen", kelas: "bg-lime-100 text-lime-800" },
-  DIKIRIM: { label: "Dikirim", kelas: "bg-blue-100 text-blue-800" },
-  TIBA_DI_LOKASI: { label: "Tiba di Lokasi", kelas: "bg-amber-100 text-amber-900" },
-  DITERIMA: { label: "Diterima", kelas: "bg-emerald-100 text-emerald-800" },
-  SELESAI: { label: "Selesai", kelas: "bg-emerald-700 text-white" },
-  DIBATALKAN: { label: "Dibatalkan", kelas: "bg-red-100 text-red-800" },
+const RUTE: Record<ClaimRoute, string> = {
+  TOLAK_TOLERANSI: "Selisihnya masih di dalam toleransi susut alami, jadi klaim ditutup otomatis.",
+  AUTO_SETTLE: "Nilainya di bawah 10% nilai pesanan, jadi dipotong langsung dari escrow tanpa antre.",
+  OPERATOR: "Nilainya di atas 10% nilai pesanan, jadi diperiksa peninjau lebih dulu.",
 };
 
-const meter = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`);
+const PUTUSAN: Record<ClaimFinalStatus, { teks: string; nada: "netral" | "utama" | "kabar" | "awas" }> = {
+  DITOLAK_TOLERANSI: { teks: "Ditolak — dalam toleransi", nada: "netral" },
+  DISETUJUI_OTOMATIS: { teks: "Disetujui otomatis", nada: "utama" },
+  MENUNGGU_OPERATOR: { teks: "Menunggu peninjau", nada: "kabar" },
+  DISETUJUI_OPERATOR: { teks: "Disetujui peninjau", nada: "utama" },
+  DITOLAK_OPERATOR: { teks: "Ditolak peninjau", nada: "awas" },
+};
+
+const jarak = (m: number) => (m >= 1000 ? `${desimal(m / 1000, 1)} km` : `${Math.round(m)} m`);
 
 /** Sisa waktu jendela klaim, dihitung ulang tiap detik. */
 function useHitungMundur(sampai: string | null) {
-  const [sisa, setSisa] = useState<number>(() =>
-    sampai ? new Date(sampai).getTime() - Date.now() : 0,
-  );
+  const [sisa, setSisa] = useState<number>(() => (sampai ? new Date(sampai).getTime() - Date.now() : 0));
   useEffect(() => {
     if (!sampai) return;
     const t = setInterval(() => setSisa(new Date(sampai).getTime() - Date.now()), 1000);
@@ -75,6 +106,11 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [memuat, setMemuat] = useState(true);
   const [galat, setGalat] = useState("");
 
+  const [siapBatal, setSiapBatal] = useState(false);
+  const [prosesBatal, setProsesBatal] = useState(false);
+  const [galatBatal, setGalatBatal] = useState("");
+  const [hasilBatal, setHasilBatal] = useState<CancelOrderResponse | null>(null);
+
   const muat = useCallback(() => {
     return ambilPesananSatu(orderId)
       .then((d) => {
@@ -90,67 +126,137 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   }, [muat]);
 
   async function batalkan() {
-    if (!confirm(`Batalkan pesanan? Biaya pembatalan ${CANCELLATION_FEE_PCT}% dari nilai barang.`))
-      return;
+    setProsesBatal(true);
+    setGalatBatal("");
     try {
       const r = await batalkanPesanan(orderId);
-      alert(`Pesanan dibatalkan. Dikembalikan ${rp(r.refundedValue)}.`);
-      void muat();
+      setHasilBatal(r);
+      setSiapBatal(false);
+      await muat();
     } catch (e) {
-      alert(e instanceof GalatApi ? e.message : "Gagal membatalkan pesanan.");
+      setGalatBatal(e instanceof GalatApi ? e.message : "Pesanan gagal dibatalkan.");
+    } finally {
+      setProsesBatal(false);
     }
   }
 
-  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat pesanan…</div>;
-
-  if (galat || !pesanan) {
+  if (memuat) {
     return (
-      <div className="p-8">
-        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
-          {galat || "Pesanan tidak ditemukan"}
-        </div>
-      </div>
+      <Halaman judul="Rincian pesanan">
+        <Memuat baris={4} label="Memuat pesanan" />
+      </Halaman>
     );
   }
 
-  // Pembatalan sepihak hanya sah selama SELURUH pengiriman masih menunggu panen (FR-7.5).
+  if (galat || !pesanan) {
+    return (
+      <Halaman judul="Rincian pesanan" kembali={<TautanKembali href="/buyer/orders">Pesanan saya</TautanKembali>}>
+        <Galat judul="Pesanan tidak dapat dimuat">
+          {galat || "Pesanan tidak ditemukan."} Pesanan Anda tetap tercatat di server — muat
+          ulang halaman untuk mencoba lagi.
+        </Galat>
+      </Halaman>
+    );
+  }
+
+  // Pembatalan sepihak hanya sah selama SELURUH pengiriman masih menunggu panen (FR-7.5):
+  // sesudah itu Tenant sudah memanen untuk pesanan ini.
   const bisaBatal =
-    pesanan.orderStatus === "PAID" &&
-    pesanan.shipments.every((s) => s.status === "MENUNGGU_PANEN");
+    pesanan.orderStatus === "PAID" && pesanan.shipments.every((s) => s.status === "MENUNGGU_PANEN");
+
+  // Denda dihitung dari nilai BARANG, di luar ongkir — sama seperti perhitungan server.
+  const nilaiBarang = pesanan.shipments.reduce(
+    (jml, s) => jml + s.lines.reduce((j, l) => j + l.subtotal, 0),
+    0,
+  );
+  const perkiraanDenda = Math.round((nilaiBarang * CANCELLATION_FEE_PCT) / 100);
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <Link
-        href="/buyer/orders"
-        className="inline-flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-emerald-700 transition mb-6"
-      >
-        <ArrowLeft className="w-4 h-4" /> Kembali ke Daftar Pesanan Saya
-      </Link>
+    <Halaman
+      kembali={<TautanKembali href="/buyer/orders">Pesanan saya</TautanKembali>}
+      judul={`Pesanan ${pesanan.orderId.slice(0, 8).toUpperCase()}`}
+      pengantar={`Dipesan ${tanggalPanjang(pesanan.createdAt)}. Satu pesanan dipecah menjadi beberapa pengiriman menurut minggu panennya, jadi tiap pengiriman punya tahap dan jendela klaimnya sendiri.`}
+      aksi={
+        bisaBatal && !siapBatal && !hasilBatal ? (
+          <Tombol rupa="kedua" ukuran="sm" onClick={() => setSiapBatal(true)}>
+            Batalkan pesanan
+          </Tombol>
+        ) : null
+      }
+    >
+      <Panel label="Ringkasan" judul="Yang sudah dibayarkan" className="mb-10">
+        <Deret kolom={4} as="dl">
+          <BarisData label="Total dibayar">{rupiah(pesanan.totalAmount)}</BarisData>
+          <BarisData label="Nilai barang">{rupiah(nilaiBarang)}</BarisData>
+          {/* Selisihnya diberi barisnya sendiri, dan hanya muncul bila memang ada. Kalimat
+              "selisihnya adalah ongkir" pada pesanan yang selisihnya nol menyuruh pembeli
+              mencari angka yang tidak ada di layar. */}
+          {pesanan.totalAmount > nilaiBarang ? (
+            <BarisData label="Ongkir & laporan">
+              {rupiah(pesanan.totalAmount - nilaiBarang)}
+            </BarisData>
+          ) : null}
+          <BarisData label="Pembayaran" prosa>
+            {pesanan.payment
+              ? `${pesanan.payment.status === "PAID" ? "Lunas" : "Menunggu pembayaran"} · ${pesanan.payment.method}`
+              : "Belum ada tagihan"}
+          </BarisData>
+        </Deret>
+        <Sunyi className="mt-5 max-w-[68ch] text-[13px]">
+          Dana ditahan di escrow, bukan diteruskan ke produsen. Ia baru berpindah setelah barang
+          Anda terima dan jendela klaim mutu tiap pengiriman berakhir.
+        </Sunyi>
+      </Panel>
 
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-emerald-950">
-            Pesanan #{pesanan.orderId.slice(0, 8).toUpperCase()}
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">
-            {tgl(pesanan.createdAt)} · total {rp(pesanan.totalAmount)}
-            {pesanan.payment &&
-              ` · ${pesanan.payment.status === "PAID" ? "Lunas" : "Menunggu pembayaran"}`}
-          </p>
-        </div>
-        {bisaBatal && (
-          <button
-            onClick={batalkan}
-            className="shrink-0 text-xs font-semibold text-red-600 hover:text-red-700 border border-red-200 hover:bg-red-50 px-3 py-2 rounded-lg"
-          >
-            Batalkan Pesanan
-          </button>
-        )}
-      </div>
+      {/* Peringatan datang SEBELUM akibatnya, dengan angkanya, bukan sesudah lewat dialog. */}
+      {siapBatal ? (
+        <Panel nada="awas" label="Sebelum membatalkan" judul="Pembatalan menagih denda" className="mb-10">
+          <Prosa className="text-[14px]">
+            Denda {CANCELLATION_FEE_PCT}% diteruskan penuh ke Tenant, bukan diambil platform:
+            benih, pupuk, dan lahan untuk pesanan ini sudah dialokasikan sejak kuota dikunci.
+            Angka pasti dihitung server saat pembatalan diproses.
+          </Prosa>
+          <Deret kolom={3} as="dl" className="mt-6">
+            <BarisData label="Nilai barang">{rupiah(nilaiBarang)}</BarisData>
+            <BarisData label={`Denda ${CANCELLATION_FEE_PCT}%`}>
+              <span className="text-jambu">−{rupiah(perkiraanDenda)}</span>
+            </BarisData>
+            <BarisData label="Perkiraan kembali">{rupiah(nilaiBarang - perkiraanDenda)}</BarisData>
+          </Deret>
 
-      <div className="space-y-6">
+          {galatBatal ? (
+            <Galat judul="Pembatalan tidak diproses" className="mt-6">
+              {galatBatal}
+            </Galat>
+          ) : null}
+
+          <div className="mt-7 flex flex-wrap gap-2">
+            <Tombol rupa="bahaya" sibuk={prosesBatal} labelSibuk="Membatalkan…" onClick={batalkan}>
+              Ya, batalkan dan terima denda
+            </Tombol>
+            <Tombol rupa="sunyi" onClick={() => setSiapBatal(false)} disabled={prosesBatal}>
+              Jangan batalkan
+            </Tombol>
+          </div>
+        </Panel>
+      ) : null}
+
+      {hasilBatal ? (
+        <Panel nada="awas" label="Pesanan dibatalkan" judul="Rincian pengembalian dana" className="mb-10">
+          <Deret kolom={3} as="dl">
+            <BarisData label="Nilai barang">{rupiah(hasilBatal.goodsValue)}</BarisData>
+            <BarisData label="Denda dibayarkan">
+              <span className="text-jambu">−{rupiah(hasilBatal.cancellationFee)}</span>
+            </BarisData>
+            <BarisData label="Dikembalikan">{rupiah(hasilBatal.refundedValue)}</BarisData>
+          </Deret>
+          <Prosa className="mt-5 text-[14px]">{hasilBatal.message}</Prosa>
+        </Panel>
+      ) : null}
+
+      <div className="space-y-10">
         {pesanan.shipments.map((s, i) => (
-          <KartuPengiriman
+          <BlokPengiriman
             key={s.shipmentId}
             orderId={pesanan.orderId}
             pengiriman={s}
@@ -160,11 +266,11 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           />
         ))}
       </div>
-    </div>
+    </Halaman>
   );
 }
 
-function KartuPengiriman({
+function BlokPengiriman({
   orderId,
   pengiriman: s,
   urutan,
@@ -180,7 +286,6 @@ function KartuPengiriman({
   const [jejak, setJejak] = useState<TrackingSnapshot | null>(null);
   const [klaim, setKlaim] = useState<ClaimResponse[]>([]);
   const [bukaKlaim, setBukaKlaim] = useState(false);
-  const t = TAHAP[s.status];
   const sisaKlaim = useHitungMundur(s.claimWindowEndsAt);
 
   // Dipantau hanya saat barang benar-benar di jalan. Menjajaki pengiriman yang belum
@@ -205,84 +310,79 @@ function KartuPengiriman({
   }, [s.shipmentId, s.status]);
 
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl p-6">
-      <div className="flex items-start justify-between gap-4 mb-4">
-        <div>
-          <h2 className="font-bold text-emerald-950">
-            Pengiriman {urutan} dari {total}
-          </h2>
-          <p className="text-xs text-gray-500 mt-0.5">siap {tgl(s.readyDate)}</p>
-        </div>
-        <span className={`shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-full ${t.kelas}`}>
-          {t.label}
-        </span>
-      </div>
-
+    <Panel
+      nada={s.status === "TIBA_DI_LOKASI" ? "awas" : s.status === "DIKIRIM" ? "kabar" : "netral"}
+      label={`Pengiriman ${urutan} dari ${total}`}
+      judul={`Siap ${tanggalPanjang(s.readyDate)}`}
+      aksi={<PilTahap status={s.status} />}
+    >
       {/* ---------- Posisi kurir ---------- */}
-      {sedangJalan && (
-        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 mb-4">
+      {sedangJalan ? (
+        <div className="mb-8 border-t-2 border-biru pt-3">
+          <Label className="text-biru">Posisi kurir</Label>
           {jejak?.noGpsMode ? (
-            <p className="text-sm text-blue-900 flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              Kurir tidak berbagi lokasi. Kedatangan akan dikonfirmasi manual — pastikan
-              nomor penerima aktif.
-            </p>
+            <Prosa className="mt-2 text-[14px]">
+              Kurir tidak berbagi lokasi, jadi kedatangan dikonfirmasi manual. Pastikan nomor
+              penerima aktif — itu satu-satunya jalur pemberitahuannya.
+            </Prosa>
           ) : jejak?.distanceToDestM !== null && jejak?.distanceToDestM !== undefined ? (
             <>
-              <div className="flex items-center gap-2 text-blue-900">
-                <Truck className="w-4 h-4 shrink-0" />
-                <span className="font-bold">{meter(jejak.distanceToDestM)}</span>
-                <span className="text-sm">dari lokasi Anda</span>
+              <div className="mt-2 flex flex-wrap items-baseline gap-x-2">
+                <Nilai ukuran="lg" className="text-biru">
+                  {jarak(jejak.distanceToDestM)}
+                </Nilai>
+                <span className="text-[14px] text-tinta-lembut">dari titik antar Anda</span>
               </div>
               {/* Stempel waktu ditampilkan apa adanya, termasuk saat sudah lama —
                   menyembunyikannya membuat posisi basi terlihat seperti posisi terkini. */}
-              {jejak.positionAt && (
+              {jejak.positionAt ? (
                 <p
-                  className={`text-xs mt-1 ${jejak.signalLost ? "text-amber-800 font-semibold" : "text-blue-700"}`}
+                  className={
+                    jejak.signalLost
+                      ? "mt-2 text-[13px] font-semibold text-jambu"
+                      : "mt-2 text-[13px] text-tinta-samar"
+                  }
                 >
                   {jejak.signalLost ? "Sinyal hilang — posisi terakhir " : "Diperbarui "}
-                  {jam(jejak.positionAt)}
+                  <span className="font-mono">
+                    {tanggalPendek(jejak.positionAt)} {jamWib(jejak.positionAt)} WIB
+                  </span>
                 </p>
-              )}
+              ) : null}
             </>
           ) : (
-            <p className="text-sm text-blue-800">Menunggu posisi pertama dari kurir…</p>
+            <Sunyi className="mt-2">Menunggu posisi pertama dari kurir…</Sunyi>
           )}
         </div>
-      )}
+      ) : null}
 
       {/* ---------- Konfirmasi terima ---------- */}
-      {s.status === "TIBA_DI_LOKASI" && (
+      {s.status === "TIBA_DI_LOKASI" ? (
         <KonfirmasiTerima shipmentId={s.shipmentId} onSelesai={onBerubah} />
-      )}
+      ) : null}
 
       {/* ---------- Jendela klaim ---------- */}
-      {s.status === "DITERIMA" && sisaKlaim && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 mb-4">
-          <div className="flex items-start gap-2 mb-2">
-            <Clock className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-bold text-amber-900">
-                Jendela klaim mutu tersisa {sisaKlaim}
-              </p>
-              <p className="text-xs text-amber-800 mt-0.5">
-                Setelah lewat, dana diteruskan ke Tenant dan keluhan mutu tidak bisa
-                diajukan lagi.
-              </p>
-            </div>
+      {s.status === "DITERIMA" && sisaKlaim ? (
+        <div className="mb-8 border-t-2 border-jambu pt-3">
+          <Label className="text-jambu">Jendela klaim mutu</Label>
+          <div className="mt-2">
+            <Nilai ukuran="lg" className="text-jambu">
+              {sisaKlaim}
+            </Nilai>
           </div>
-          {!bukaKlaim && klaim.length === 0 && (
-            <button
-              onClick={() => setBukaKlaim(true)}
-              className="text-xs font-bold text-amber-900 underline"
-            >
-              Ada masalah mutu? Ajukan klaim
-            </button>
-          )}
+          <Prosa className="mt-2 text-[14px]">
+            Setelah jendela ini tertutup, dana diteruskan ke Tenant dan keluhan mutu tidak bisa
+            diajukan lagi. Timbang barangnya sekarang bila ada yang mencurigakan.
+          </Prosa>
+          {!bukaKlaim && klaim.length === 0 ? (
+            <Tombol rupa="kedua" ukuran="sm" className="mt-4" onClick={() => setBukaKlaim(true)}>
+              Ajukan klaim mutu
+            </Tombol>
+          ) : null}
         </div>
-      )}
+      ) : null}
 
-      {bukaKlaim && (
+      {bukaKlaim ? (
         <FormKlaim
           shipmentId={s.shipmentId}
           baris={s.lines}
@@ -293,86 +393,103 @@ function KartuPengiriman({
           }}
           onBatal={() => setBukaKlaim(false)}
         />
-      )}
+      ) : null}
 
-      {klaim.map((c) => (
-        <div key={c.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4 mb-4 text-sm">
-          <div className="font-bold text-gray-900 mb-1">Klaim mutu — {c.productName}</div>
-          <p className="text-xs text-gray-600">
-            Kurang {c.shortfallKg} kg, toleransi susut {c.shrinkTolerancePct}% (
-            {c.toleratedKg} kg) → bisa diklaim {c.claimableKg} kg senilai {rp(c.claimValue)}.
-          </p>
-          <p className="text-xs text-gray-500 mt-1">
-            Jalur {c.route} · status {c.finalStatus}
-            {c.settledValue > 0 && ` · dibayar ${rp(c.settledValue)}`}
-          </p>
-        </div>
-      ))}
+      {klaim.map((c) => {
+        const putusan = PUTUSAN[c.finalStatus];
+        return (
+          <div key={c.id} className="mb-8 border-t-2 border-tinta pt-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+              <Label>Klaim mutu · {c.productName}</Label>
+              <Pil nada={putusan.nada} garis={putusan.nada !== "awas"}>
+                {putusan.teks}
+              </Pil>
+            </div>
+            <Deret kolom={4} as="dl" className="mt-4">
+              <BarisData label="Seharusnya">{desimal(c.expectedKg, 1)} kg</BarisData>
+              <BarisData label="Hasil timbang">{desimal(c.actualWeightKg, 1)} kg</BarisData>
+              <BarisData label={`Toleransi ${desimal(c.shrinkTolerancePct, 0)}%`}>
+                {desimal(c.toleratedKg, 1)} kg
+              </BarisData>
+              <BarisData label="Bisa diklaim">{desimal(c.claimableKg, 1)} kg</BarisData>
+            </Deret>
+            <Prosa className="mt-4 text-[14px]">
+              {RUTE[c.route]} Nilai klaim {rupiah(c.claimValue)}
+              {c.settledValue > 0 ? `, dibayarkan ${rupiah(c.settledValue)}` : ""}.
+            </Prosa>
+            {c.reviewNote ? (
+              <Sunyi className="mt-2 text-[13px]">Catatan peninjau: {c.reviewNote}</Sunyi>
+            ) : null}
+          </div>
+        );
+      })}
 
       {/* ---------- Tujuan ---------- */}
-      <div className="rounded-xl border border-gray-200 p-4 mb-4">
-        <h3 className="font-bold text-gray-900 text-sm mb-2">Alamat Penerima</h3>
-        <div className="space-y-1.5 text-sm text-gray-700">
-          <div className="flex items-center gap-2">
-            <User className="w-4 h-4 text-gray-400 shrink-0" />
-            {s.recipient.name}
-          </div>
-          <div className="flex items-center gap-2">
-            <Phone className="w-4 h-4 text-gray-400 shrink-0" />
-            {s.recipient.phone}
-          </div>
-          <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-gray-400 shrink-0" />
-            Jam terima {s.recipient.receivingHours}
-          </div>
-          {s.recipient.landmark && (
-            <div className="flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-gray-400 shrink-0" />
-              {s.recipient.landmark}
-            </div>
-          )}
-        </div>
-      </div>
+      <Label className="mb-3">Alamat penerima</Label>
+      <Deret kolom={4} as="dl">
+        <BarisData label="Penerima" prosa>
+          {s.recipient.name}
+        </BarisData>
+        <BarisData label="Telepon">{s.recipient.phone}</BarisData>
+        <BarisData label="Jam terima">{s.recipient.receivingHours}</BarisData>
+        <BarisData label="Patokan" prosa>
+          {s.recipient.landmark || "—"}
+        </BarisData>
+      </Deret>
 
       {/* ---------- Item ---------- */}
-      <div className="space-y-3">
+      <Label className="mb-1 mt-8">
+        {s.lines.length} komoditas dalam pengiriman ini
+      </Label>
+      <ul>
         {s.lines.map((l) => {
           const kurang =
-            l.qtyBoxFulfilled !== null && l.qtyBoxFulfilled < l.qtyBox
-              ? l.qtyBox - l.qtyBoxFulfilled
-              : 0;
+            l.qtyBoxFulfilled !== null && l.qtyBoxFulfilled < l.qtyBox ? l.qtyBox - l.qtyBoxFulfilled : 0;
           return (
-            <div
+            <li
               key={l.orderItemId}
-              className="flex items-start justify-between gap-4 border-b border-gray-100 pb-3 last:border-0 last:pb-0"
+              className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-t border-kertas-garis py-4"
             >
-              <div className="min-w-0">
-                <div className="font-semibold text-sm text-gray-900">
-                  {l.productName}{" "}
-                  <span className="text-xs font-normal text-gray-500">Grade {l.grade}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <span className="text-[15px] font-bold text-tinta">{l.productName}</span>
+                  <span className="text-[13px] text-tinta-samar">Grade {l.grade}</span>
+                  <PilVerifikasi badge={l.badge} />
                 </div>
-                <div className="text-xs text-gray-500 mt-0.5">
-                  {l.tenantName} · {l.qtyBox} box × {rp(l.unitPriceLocked)}
-                </div>
-                {kurang > 0 && (
-                  <div className="mt-2 text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">
-                    Kurang {kurang} box dari yang dipesan.{" "}
-                    <Link href={`/buyer/orders/${orderId}/resolution`} className="font-bold underline">
-                      Pilih penyelesaian
-                    </Link>
+                <Sunyi className="mt-1 text-[13px]">
+                  {l.tenantName} ·{" "}
+                  <span className="font-mono">
+                    {angka(l.qtyBox)} box × {rupiah(l.unitPriceLocked)}
+                  </span>
+                </Sunyi>
+
+                {kurang > 0 ? (
+                  <div className="mt-3 border-t-2 border-jambu pt-2">
+                    <Label className="text-jambu">Kurang {angka(kurang)} box dari yang dipesan</Label>
+                    <p className="mt-1.5 max-w-[58ch] text-[13px] leading-relaxed text-tinta-lembut">
+                      Panen tidak menutupi seluruh baris ini. Nasib porsi yang kurang Anda yang
+                      memutuskan — substitusi, jadwal ulang, terima sebagian, atau tolak.{" "}
+                      <Link
+                        href={`/buyer/orders/${orderId}/resolution`}
+                        className="font-semibold text-jambu underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ungu"
+                      >
+                        Pilih penyelesaian
+                      </Link>
+                    </p>
                   </div>
-                )}
-                <UmurSimpanBaris umur={l.umurSimpan} />
+                ) : null}
+
+                <BarisUmurSimpan umur={l.umurSimpan} />
               </div>
-              <div className="text-right shrink-0">
-                <div className="font-bold text-sm text-gray-900">{rp(l.subtotal)}</div>
-                <div className="text-[10px] text-gray-400 mt-0.5">{l.badge}</div>
+
+              <div className="shrink-0 text-right">
+                <Nilai>{rupiah(l.subtotal)}</Nilai>
               </div>
-            </div>
+            </li>
           );
         })}
-      </div>
-    </div>
+      </ul>
+    </Panel>
   );
 }
 
@@ -387,17 +504,17 @@ function KartuPengiriman({
  * lalu" tetap benar tanpa perlu tahu batas simpannya. Mengarang batasnya berarti
  * menyampaikan tebakan sebagai fakta kesegaran kepada orang yang akan memakan barangnya.
  */
-function UmurSimpanBaris({ umur }: { umur: UmurSimpan }) {
+function BarisUmurSimpan({ umur }: { umur: UmurSimpan }) {
   if (umur.ageDays === null) return null;
 
   const usia = umur.settled ? `Umur saat tiba ${umur.ageDays} hari` : `Dipanen ${umur.ageDays} hari lalu`;
 
   if (umur.remainingDays === null) {
     return (
-      <p className="mt-2 text-xs text-gray-500">
+      <Sunyi className="mt-2 max-w-[58ch] text-[13px]">
         {usia}. Umur simpan komoditas ini belum ditetapkan, jadi sisa kesegarannya belum bisa
         dinyatakan.
-      </p>
+      </Sunyi>
     );
   }
 
@@ -406,17 +523,21 @@ function UmurSimpanBaris({ umur }: { umur: UmurSimpan }) {
 
   return (
     <p
-      className={`mt-2 text-xs ${
-        lewat ? "font-semibold text-red-800" : menipis ? "font-semibold text-amber-800" : "text-gray-500"
-      }`}
+      className={
+        lewat
+          ? "mt-2 text-[13px] font-semibold text-jambu"
+          : menipis
+            ? "mt-2 text-[13px] font-semibold text-tinta"
+            : "mt-2 text-[13px] text-tinta-lembut"
+      }
     >
       {usia} ·{" "}
       {lewat
         ? `melewati umur simpan ${Math.abs(umur.remainingDays)} hari`
         : `sisa umur simpan ${umur.remainingDays} hari`}
-      <span className="mt-0.5 block font-normal text-gray-400">
+      <span className="mt-0.5 block max-w-[58ch] font-normal leading-relaxed text-tinta-samar">
         Dihitung dari waktu panen yang dicatat sistem, bukan dari tanggal yang diisi penjual.
-        Angka umur simpan masih indikatif.
+        Angka umur simpannya sendiri masih indikatif.
       </span>
     </p>
   );
@@ -435,7 +556,7 @@ function KonfirmasiTerima({
   const [galat, setGalat] = useState("");
 
   async function kirim() {
-    if (!berkas) return setGalat("Foto kondisi barang wajib dilampirkan.");
+    if (!berkas) return setGalat("Lampirkan satu foto kondisi barang lebih dulu — tanpa itu klaim mutu nanti tidak punya pembanding.");
     setProses(true);
     setGalat("");
     try {
@@ -443,52 +564,42 @@ function KonfirmasiTerima({
       await konfirmasiTerima(shipmentId, url);
       await onSelesai();
     } catch (e) {
-      setGalat(e instanceof GalatApi ? e.message : "Gagal mengonfirmasi penerimaan.");
+      setGalat(e instanceof GalatApi ? e.message : "Penerimaan gagal dikonfirmasi. Coba kirim ulang.");
       setProses(false);
     }
   }
 
   return (
-    <div className="rounded-xl border border-amber-300 bg-[#fdf8e2] p-5 mb-4">
-      <h3 className="font-bold text-amber-900 mb-1">Kurir tiba — konfirmasi penerimaan</h3>
-      <p className="text-xs text-amber-800 mb-4">
-        Lampirkan foto kondisi barang saat diterima. Foto ini yang menjadi bukti bila nanti
-        Anda mengajukan klaim mutu.
-      </p>
+    <div className="mb-8 border-t-2 border-jambu pt-3">
+      <Label className="text-jambu">Kurir tiba — konfirmasi penerimaan</Label>
+      <Prosa className="mt-2 text-[14px]">
+        Foto kondisi barang saat diterima inilah yang menjadi pembanding bila Anda mengajukan
+        klaim mutu dalam dua jam ke depan. Dana tetap ditahan sampai jendela itu berakhir.
+      </Prosa>
 
-      <label className="flex items-center gap-3 px-3 py-3 bg-white border border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-50 mb-3">
-        <Camera className="w-5 h-5 text-amber-700 shrink-0" />
-        <span className="text-sm text-gray-700 truncate">
-          {berkas ? berkas.name : "Ambil foto atau pilih berkas"}
-        </span>
-        <input
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={(e) => setBerkas(e.target.files?.[0] ?? null)}
-          className="hidden"
-        />
-      </label>
-
-      {galat && (
-        <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
-          {galat}
-        </p>
-      )}
-
-      <button
-        onClick={kirim}
-        disabled={proses}
-        className="w-full bg-[#657711] hover:bg-[#52600d] text-white font-bold py-3 rounded-lg disabled:opacity-60 flex items-center justify-center gap-2"
+      <Medan
+        label="Foto kondisi barang"
+        petunjuk="Ambil dari kamera saat barang dibuka, sebelum dipindahkan."
+        galat={galat || undefined}
+        wajib
+        className="mt-5 max-w-[28rem]"
       >
-        {proses ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-        {proses ? "Mengirim…" : "Barang Diterima"}
-      </button>
+        {(alat) => (
+          <Berkas
+            {...alat}
+            ikon={Camera}
+            accept="image/*"
+            capture="environment"
+            nama={berkas?.name ?? null}
+            placeholder="Ambil foto atau pilih berkas"
+            onChange={(e) => setBerkas(e.target.files?.[0] ?? null)}
+          />
+        )}
+      </Medan>
 
-      <p className="text-[11px] text-amber-800 mt-2 flex items-start gap-1.5">
-        <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-px" />
-        Dana tetap ditahan sampai jendela klaim mutu berakhir.
-      </p>
+      <Tombol className="mt-5" sibuk={proses} labelSibuk="Mengirim…" onClick={kirim}>
+        Barang diterima
+      </Tombol>
     </div>
   );
 }
@@ -510,12 +621,17 @@ function FormKlaim({
   const [berkas, setBerkas] = useState<File | null>(null);
   const [proses, setProses] = useState(false);
   const [galat, setGalat] = useState("");
+  const [galatFoto, setGalatFoto] = useState("");
 
   async function kirim(e: React.FormEvent) {
     e.preventDefault();
-    if (!berkas) return setGalat("Foto barang wajib dilampirkan.");
+    if (!berkas) {
+      setGalatFoto("Foto barang wajib dilampirkan — peninjau memutus klaim justru dari foto dan keterangannya.");
+      return;
+    }
     setProses(true);
     setGalat("");
+    setGalatFoto("");
     try {
       const { url } = await unggahFoto(berkas);
       const c = await ajukanKlaim(shipmentId, {
@@ -526,99 +642,100 @@ function FormKlaim({
       });
       await onSelesai(c);
     } catch (err) {
-      setGalat(err instanceof GalatApi ? err.message : "Gagal mengajukan klaim.");
+      setGalat(err instanceof GalatApi ? err.message : "Klaim gagal dikirim. Coba lagi.");
       setProses(false);
     }
   }
 
   return (
-    <form onSubmit={kirim} className="rounded-xl border border-gray-200 bg-gray-50 p-5 mb-4 space-y-3">
-      <h3 className="font-bold text-gray-900 text-sm">Ajukan Klaim Mutu</h3>
+    <form onSubmit={kirim} className="mb-8 border-t-2 border-tinta pt-3">
+      <Label>Ajukan klaim mutu</Label>
+      <Prosa className="mt-2 text-[14px]">
+        Timbang barang yang bermasalah, lalu masukkan berat sebenarnya. Toleransi susut alami
+        komoditas dipotong otomatis, jadi angka yang Anda isi tidak perlu dikurangi sendiri.
+      </Prosa>
 
-      <div>
-        <label className="block text-xs font-semibold text-gray-700 mb-1">Item bermasalah</label>
-        <select
-          value={orderItemId}
-          onChange={(e) => setOrderItemId(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-        >
-          {baris.map((l) => (
-            <option key={l.orderItemId} value={l.orderItemId}>
-              {l.productName} ({l.qtyBox} box)
-            </option>
-          ))}
-        </select>
+      <div className="mt-6 grid max-w-[42rem] gap-5 sm:grid-cols-2">
+        <Medan label="Item bermasalah" wajib>
+          {(alat) => (
+            <Pilihan {...alat} value={orderItemId} onChange={(e) => setOrderItemId(e.target.value)}>
+              {baris.map((l) => (
+                <option key={l.orderItemId} value={l.orderItemId}>
+                  {l.productName} ({l.qtyBox} box)
+                </option>
+              ))}
+            </Pilihan>
+          )}
+        </Medan>
+
+        <Medan label="Berat aktual hasil timbang" petunjuk="Dalam kilogram, satu angka desimal." wajib>
+          {(alat) => (
+            <Masukan
+              {...alat}
+              type="number"
+              step="0.01"
+              min={0}
+              value={berat}
+              onChange={(e) => setBerat(e.target.value)}
+              placeholder="285.5"
+              className="font-mono"
+            />
+          )}
+        </Medan>
       </div>
 
-      <div>
-        <label className="block text-xs font-semibold text-gray-700 mb-1">
-          Berat aktual hasil timbang (kg)
-        </label>
-        <input
-          type="number"
-          step="0.01"
-          min={0}
-          required
-          value={berat}
-          onChange={(e) => setBerat(e.target.value)}
-          placeholder="mis. 285.5"
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-        />
-        <p className="text-[11px] text-gray-500 mt-1">
-          Toleransi susut alami dipotong otomatis sesuai jenis komoditas.
-        </p>
-      </div>
+      <Medan
+        label="Keluhan"
+        petunjuk="Sebutkan kondisi barang saat kotak dibuka, minimal sepuluh karakter."
+        wajib
+        className="mt-5 max-w-[42rem]"
+      >
+        {(alat) => (
+          <AreaTeks
+            {...alat}
+            minLength={10}
+            maxLength={500}
+            rows={3}
+            value={keterangan}
+            onChange={(e) => setKeterangan(e.target.value)}
+            placeholder="Sepertiga isi krat layu dan berair saat dibuka…"
+          />
+        )}
+      </Medan>
 
-      <div>
-        <label className="block text-xs font-semibold text-gray-700 mb-1">Keluhan</label>
-        <textarea
-          required
-          minLength={10}
-          maxLength={500}
-          rows={3}
-          value={keterangan}
-          onChange={(e) => setKeterangan(e.target.value)}
-          placeholder="Jelaskan kondisi barang saat diterima…"
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-        />
-      </div>
+      <Medan
+        label="Foto barang"
+        petunjuk="Satu foto yang memperlihatkan kondisi yang Anda keluhkan."
+        galat={galatFoto || undefined}
+        wajib
+        className="mt-5 max-w-[28rem]"
+      >
+        {(alat) => (
+          <Berkas
+            {...alat}
+            ikon={Camera}
+            accept="image/*"
+            capture="environment"
+            nama={berkas?.name ?? null}
+            placeholder="Ambil foto atau pilih berkas"
+            onChange={(e) => setBerkas(e.target.files?.[0] ?? null)}
+          />
+        )}
+      </Medan>
 
-      <label className="flex items-center gap-3 px-3 py-2.5 bg-white border border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
-        <Camera className="w-4 h-4 text-gray-500 shrink-0" />
-        <span className="text-sm text-gray-600 truncate">
-          {berkas ? berkas.name : "Foto barang (wajib)"}
-        </span>
-        <input
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={(e) => setBerkas(e.target.files?.[0] ?? null)}
-          className="hidden"
-        />
-      </label>
-
-      {galat && (
-        <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+      {galat ? (
+        <Galat judul="Klaim tidak terkirim" className="mt-5 max-w-[42rem]">
           {galat}
-        </p>
-      )}
+        </Galat>
+      ) : null}
 
-      <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={proses}
-          className="flex-1 bg-emerald-950 text-white text-sm font-semibold py-2.5 rounded-lg disabled:opacity-60 flex items-center justify-center gap-2"
-        >
-          {proses && <Loader2 className="w-4 h-4 animate-spin" />}
-          {proses ? "Mengirim…" : "Kirim Klaim"}
-        </button>
-        <button
-          type="button"
-          onClick={onBatal}
-          className="px-4 text-sm font-semibold text-gray-600 hover:text-gray-800"
-        >
+      <div className="mt-6 flex flex-wrap gap-2">
+        <Tombol type="submit" sibuk={proses} labelSibuk="Mengirim…">
+          Kirim klaim
+        </Tombol>
+        <Tombol type="button" rupa="sunyi" onClick={onBatal} disabled={proses}>
           Batal
-        </button>
+        </Tombol>
       </div>
     </form>
   );

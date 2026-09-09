@@ -23,7 +23,7 @@ export { JudulHalaman, JudulPanel, Label, Nilai, Prosa, Sunyi } from "./teks";
 export { Panel, Deret, Ubin, BarisData } from "./panel";
 export { Pil, Tanda } from "./status";
 export { Tombol, TombolTaut, TautanKembali } from "./kendali";
-export { Medan, Masukan, AreaTeks, Pilihan, Centang, Radio } from "./medan";
+export { Medan, Masukan, AreaTeks, Pilihan, Centang, Radio, Berkas } from "./medan";
 export { Galat, Kosong, Memuat } from "./keadaan";
 export { Ikon, type UkuranIkon } from "./ikon";
 export { NADA, type Nada } from "./nada";

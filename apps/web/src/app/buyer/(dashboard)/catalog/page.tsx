@@ -8,6 +8,7 @@ import { ambilKatalog } from "@/lib/api";
 import { tambahKeKeranjang } from "@/lib/keranjang";
 import { rupiah, tanggalPendek } from "@/lib/format-id";
 import type { CatalogItem } from "@agro-os/shared";
+import { PilVerifikasi, STATUS_VERIFIKASI } from "@/components/tanda-verifikasi";
 import {
   Galat,
   Halaman,
@@ -18,10 +19,7 @@ import {
   Memuat,
   Nilai,
   Panel,
-  Pil,
-  Tanda,
   Tombol,
-  type Nada,
 } from "@/ui";
 
 /**
@@ -39,24 +37,6 @@ import {
  * runtime, dan server serta peramban tidak selalu memuat data yang sama — selisih satu
  * karakter cukup untuk membuat React membuang seluruh pohon dengan galat hidrasi.
  */
-
-/**
- * Tiga status verifikasi (FR-2.6).
- *
- * `BELUM_TERVERIFIKASI` sengaja TIDAK disembunyikan. Menurut FR-4.6 ketidaksesuaian
- * justru harus terlihat pembeli — katalog yang semuanya bertanda hijau tidak memberi
- * informasi apa pun, karena tidak ada pembandingnya.
- *
- * Ketiganya persis tiga-keadaan yang sudah punya tanda tergambar sendiri di sistem ini:
- * penuh, sebagian, tidak. Memakai kembali tanda itu — alih-alih mengarang perisai baru —
- * berarti pembeli yang sudah membaca blok cakupan di halaman depan tidak perlu belajar
- * kosakata kedua.
- */
-const STATUS: Record<CatalogItem["badge"], { teks: string; nada: Nada; tanda: "penuh" | "sebagian" | "tidak" }> = {
-  TERVERIFIKASI_SATELIT: { teks: "Terverifikasi satelit", nada: "utama", tanda: "penuh" },
-  BUKTI_FOTO_SAJA: { teks: "Bukti foto saja", nada: "kabar", tanda: "sebagian" },
-  BELUM_TERVERIFIKASI: { teks: "Belum terverifikasi", nada: "netral", tanda: "tidak" },
-};
 
 const URUT = [
   ["default", "Semua komoditas"],
@@ -158,7 +138,7 @@ function CatalogContent() {
       ) : (
         <div className="grid gap-x-8 gap-y-10 md:grid-cols-2">
           {daftar.map((item) => (
-            <KartuKuota key={item.batchId} item={item} zoneId={zoneId!} />
+            <KartuKuota key={item.batchId} item={item} zoneId={zoneId!} kota={kota} />
           ))}
         </div>
       )}
@@ -175,9 +155,9 @@ function CatalogContent() {
  * membacakan seluruh isinya sebagai nama tautan. Sekarang judulnya yang jadi tautan, dan
  * tombolnya berdiri sendiri — dua target, masing-masing menamai tujuannya.
  */
-function KartuKuota({ item, zoneId }: { item: CatalogItem; zoneId: string }) {
+function KartuKuota({ item, zoneId, kota }: { item: CatalogItem; zoneId: string; kota: string }) {
   const router = useRouter();
-  const status = STATUS[item.badge];
+  const status = STATUS_VERIFIKASI[item.badge];
 
   return (
     <Panel
@@ -185,18 +165,15 @@ function KartuKuota({ item, zoneId }: { item: CatalogItem; zoneId: string }) {
       label={`Grade ${item.grade} · ${item.commodity.name}`}
       judul={
         <Link
-          href={`/buyer/product/${item.batchId}`}
+          /* Zona ikut dibawa: halaman rincian butuh tahu wilayah antarnya sebelum batch
+             bisa masuk keranjang, karena ongkir dan minimum pesanan berlaku per zona. */
+          href={`/buyer/product/${item.batchId}?zoneId=${zoneId}${kota ? `&city=${encodeURIComponent(kota)}` : ""}`}
           className="underline-offset-4 transition-colors duration-150 hover:text-ungu hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ungu"
         >
           {item.productName}
         </Link>
       }
-      aksi={
-        <Pil nada={status.nada} garis={status.nada === "netral"}>
-          <Tanda jenis={status.tanda} />
-          {status.teks}
-        </Pil>
-      }
+      aksi={<PilVerifikasi badge={item.badge} />}
     >
       <Deret kolom={3} as="dl">
         <div className="border-t border-kertas-garis pt-2.5">

@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useId } from "react";
+import { Paperclip, type LucideIcon } from "lucide-react";
 import { Label } from "./teks";
+import { Ikon } from "./ikon";
 import { cn } from "./cn";
 
 /**
@@ -103,6 +105,46 @@ export function AreaTeks({
 }
 
 /**
+ * Berkas — pemilih berkas yang memakai kendali yang sama, bukan tombol lain.
+ *
+ * Yang diperbaiki di sini bukan rupanya melainkan JANGKAUAN PAPAN KETIK. Pola lama
+ * menyembunyikan `<input type="file">` dengan `className="hidden"`, dan `display:none`
+ * mencabut elemen dari urutan tab — jadi satu-satunya cara melampirkan foto bukti adalah
+ * dengan tetikus. Di produk ini foto bukan lampiran opsional: tanpanya konfirmasi
+ * penerimaan dan klaim mutu tidak bisa dikirim sama sekali. `sr-only` menyembunyikannya
+ * secara visual sambil tetap membiarkannya difokuskan, dan cincin fokusnya dipinjamkan
+ * ke label lewat `focus-within`.
+ */
+export function Berkas({
+  ikon: Glif = Paperclip,
+  nama,
+  placeholder = "Pilih berkas",
+  className = "",
+  ...sisa
+}: Omit<React.InputHTMLAttributes<HTMLInputElement>, "type"> & {
+  ikon?: LucideIcon;
+  /** Nama berkas yang sudah dipilih. `null` menampilkan placeholder. */
+  nama?: string | null;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex cursor-pointer items-center gap-3 border border-kertas-garis bg-kertas-terang px-3 py-2.5",
+        "transition-colors duration-150 hover:border-tinta-samar",
+        "focus-within:border-tinta focus-within:outline focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-ungu",
+        className,
+      )}
+    >
+      <Ikon dari={Glif} className="text-tinta-samar" />
+      <span className={cn("min-w-0 flex-1 truncate text-[14px]", nama ? "text-tinta" : "text-tinta-samar")}>
+        {nama || placeholder}
+      </span>
+      <input {...sisa} type="file" className="sr-only" />
+    </label>
+  );
+}
+
+/**
  * Centang — kotak, judul, dan penjelasannya sebagai satu sasaran klik.
  *
  * `appearance-none` mencabut kotak bawaan sistem, yang membulat di sebagian peramban.
@@ -171,6 +213,7 @@ export function Radio({
   onPilih,
   judul,
   children,
+  nonaktif,
 }: {
   nama: string;
   nilai: string;
@@ -178,13 +221,29 @@ export function Radio({
   onPilih: (nilai: string) => void;
   judul: React.ReactNode;
   children?: React.ReactNode;
+  /**
+   * ALASAN pilihan ini tidak tersedia — bukan sekadar `true`.
+   *
+   * Pilihan yang dikelabukan tanpa sebab adalah cara tercepat membuat orang menyimpulkan
+   * aplikasinya rusak, lalu berhenti. Di produk ini opsi yang tertutup hampir selalu
+   * tertutup karena aturan yang bisa dijelaskan dalam satu kalimat, dan menyembunyikan
+   * kalimat itu justru menyembunyikan mekanismenya. Karena alasannya wajib, opsi mati
+   * tidak bisa dibuat tanpa menjelaskan dirinya.
+   */
+  nonaktif?: string;
 }) {
+  const mati = Boolean(nonaktif);
+  const rupa = mati
+    ? "cursor-not-allowed border-kertas-garis"
+    : terpilih
+      ? "cursor-pointer border-ungu bg-kertas-terang"
+      : "cursor-pointer border-kertas-garis hover:bg-kertas-terang";
   return (
     <label
       className={cn(
-        "flex cursor-pointer items-start gap-3 border-t-2 px-4 py-3 transition-colors duration-150",
+        "flex items-start gap-3 border-t-2 px-4 py-3 transition-colors duration-150",
         "focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ungu",
-        terpilih ? "border-ungu bg-kertas-terang" : "border-kertas-garis hover:bg-kertas-terang",
+        rupa,
       )}
     >
       <span className="relative mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
@@ -193,18 +252,33 @@ export function Radio({
           name={nama}
           value={nilai}
           checked={terpilih}
+          disabled={mati}
           onChange={() => onPilih(nilai)}
-          className="peer h-4 w-4 appearance-none border border-tinta bg-kertas-terang checked:border-ungu focus:outline-none"
+          className={cn(
+            "peer h-4 w-4 appearance-none border bg-kertas-terang checked:border-ungu focus:outline-none",
+            mati ? "border-kertas-garis" : "border-tinta",
+          )}
         />
         {/* Penanda terpilih persegi, bukan titik bulat: radius nol berlaku sampai ke sini. */}
         <span className="pointer-events-none absolute h-2 w-2 bg-ungu opacity-0 peer-checked:opacity-100" />
       </span>
       <span className="min-w-0">
-        <span className={cn("block text-[14px] font-semibold", terpilih ? "text-ungu" : "text-tinta")}>
+        {/* Yang meredup adalah WARNANYA, bukan `opacity` blok. Menurunkan alfa seluruh baris
+            menyeret teks penjelasnya ke bawah 4,5:1 — opsi mati tetap harus terbaca, karena
+            justru alasannya yang perlu dibaca. */}
+        <span
+          className={cn(
+            "block text-[14px] font-semibold",
+            mati ? "text-tinta-samar" : terpilih ? "text-ungu" : "text-tinta",
+          )}
+        >
           {judul}
         </span>
         {children ? (
           <span className="mt-1 block text-[12px] leading-snug text-tinta-lembut">{children}</span>
+        ) : null}
+        {nonaktif ? (
+          <span className="mt-1.5 block text-[12px] font-semibold leading-snug text-jambu">{nonaktif}</span>
         ) : null}
       </span>
     </label>
