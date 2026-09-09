@@ -1,15 +1,38 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { Search, Edit2, ImageIcon, PackageSearch } from "lucide-react";
 import { GalatApi, ambilBatchTenant, ambilProdukTenant } from "@/lib/api";
+import { angka, desimal, rupiah, tanggalPanjang } from "@/lib/format-id";
 import type { BatchResponse, ProductResponse } from "@agro-os/shared";
+import {
+  Deret,
+  Galat,
+  Halaman,
+  Kosong,
+  Masukan,
+  Memuat,
+  Panel,
+  Pil,
+  Sunyi,
+  TombolTaut,
+  Ubin,
+} from "@/ui";
 
-const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
-const tgl = (iso: string) =>
-  new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
-
+/**
+ * TN-13 — Katalog produk Tenant.
+ *
+ * MIGRASI DUNIA, dan yang terbesar adalah membuang GAMBAR YANG TIDAK ADA. Tiap kartu
+ * sebelumnya dipuncaki blok abu-abu setinggi 192px berisi ikon gambar dan nama komoditas —
+ * tempat foto produk yang tidak pernah ada isinya. Itu separuh tinggi kartu yang dihabiskan
+ * untuk mengumumkan ketiadaan, sementara harga, isi box, dan sisa kuota berdesakan di
+ * bawahnya. Penggantinya bukan gambar lain melainkan ISI: yang dicari Tenant di layar ini
+ * adalah produk mana yang sedang bisa dipesan dan berapa harganya, dan keduanya kini
+ * terbaca tanpa menggulir.
+ *
+ * Tombol ubah juga berhenti jadi glif tanpa nama — dulu hanya ikon pensil di kotak hijau,
+ * tanpa teks maupun `aria-label`, jadi bagi pembaca layar ia tombol tanpa nama pada satu-
+ * satunya jalan menuju perubahan produk.
+ */
 export default function TenantCatalogPage() {
   const [produk, setProduk] = useState<ProductResponse[]>([]);
   const [batch, setBatch] = useState<BatchResponse[]>([]);
@@ -24,7 +47,7 @@ export default function TenantCatalogPage() {
         setBatch(b);
         setGalat("");
       })
-      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat produk"))
+      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Produk gagal dimuat"))
       .finally(() => setMemuat(false));
   }, []);
 
@@ -54,111 +77,108 @@ export default function TenantCatalogPage() {
     );
   }, [produk, cari]);
 
-  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat produk…</div>;
+  if (memuat) {
+    return (
+      <Halaman judul="Katalog produk">
+        <Memuat baris={4} label="Memuat produk" />
+      </Halaman>
+    );
+  }
 
   if (galat) {
     return (
-      <div className="p-8">
-        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
-          {galat}
-        </div>
-      </div>
+      <Halaman judul="Katalog produk">
+        <Galat judul="Produk gagal dimuat">
+          {galat} Produk Anda tetap tersimpan di server — muat ulang halaman untuk mencoba
+          lagi.
+        </Galat>
+      </Halaman>
     );
   }
 
   return (
-    <div className="p-8 pb-20 relative min-h-full max-w-5xl mx-auto">
-      <div className="flex justify-between items-center mb-8 gap-4">
-        <div className="relative flex-1 max-w-xl">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-4 w-4 text-gray-400" />
-          </div>
-          <input
-            type="text"
+    <Halaman
+      judul="Katalog produk"
+      pengantar="Produk adalah apa yang Anda tawarkan; kuota Pre-Order adalah yang membuatnya bisa dipesan. Selama belum ada kuota terbuka, produk di sini tidak tampil di katalog pembeli."
+      aksi={
+        <>
+          <Masukan
+            type="search"
             value={cari}
             onChange={(e) => setCari(e.target.value)}
-            placeholder="Cari Sawi, Tomat, Cabe..."
-            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 text-sm"
+            placeholder="Cari sawi, tomat, cabai…"
+            aria-label="Cari produk"
+            className="w-full sm:w-64"
           />
-        </div>
-        <Link
-          href="/tenant/catalog/edit"
-          className="bg-[#dcfce7] text-[#166534] border border-[#bbf7d0] font-bold text-sm px-6 py-2 rounded-lg hover:bg-[#bbf7d0] transition shadow-sm shrink-0"
-        >
-          Tambah Produk
-        </Link>
-      </div>
-
+          <TombolTaut href="/tenant/catalog/edit" ukuran="sm">
+            Tambah produk
+          </TombolTaut>
+        </>
+      }
+    >
       {tampil.length === 0 ? (
-        <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center">
-          <PackageSearch className="w-10 h-10 text-gray-300 mx-auto mb-4" />
-          <h2 className="font-bold text-gray-800 mb-1">
-            {produk.length === 0 ? "Belum ada produk" : "Tidak ada yang cocok"}
-          </h2>
-          <p className="text-sm text-gray-500">
-            {produk.length === 0
-              ? "Tambahkan produk dulu, lalu buka kuota Pre-Order dari Manajemen Batch."
-              : `Tidak ada produk yang cocok dengan "${cari}".`}
-          </p>
-        </div>
+        <Kosong
+          judul={produk.length === 0 ? "Belum ada produk" : "Tidak ada yang cocok"}
+          aksi={
+            produk.length === 0 ? (
+              <TombolTaut href="/tenant/catalog/edit" ukuran="sm">
+                Tambah produk pertama
+              </TombolTaut>
+            ) : null
+          }
+        >
+          {produk.length === 0
+            ? "Produk memuat nama, grade, harga, dan isi per box — dasar yang dipakai tiap kuota Pre-Order yang Anda buka nanti. Buat satu dulu, lalu buka kuotanya dari halaman Batch."
+            : `Tidak ada produk yang namanya maupun komoditasnya memuat “${cari}”. Coba kata yang lebih pendek, atau nama komoditasnya.`}
+        </Kosong>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-8">
           {tampil.map((p) => (
-            <div
-              key={p.id}
-              className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm flex flex-col hover:shadow-md transition"
-            >
-              <div className="h-48 bg-gray-100 flex flex-col items-center justify-center relative border-b border-gray-100">
-                <ImageIcon className="w-10 h-10 text-gray-300 mb-2" />
-                <span className="text-xs text-gray-400">{p.commodity.name}</span>
-                <div className="absolute top-4 left-4 bg-[#1e5033] text-white text-[10px] font-bold px-2 py-1 rounded-full tracking-wide">
-                  GRADE {p.grade}
-                </div>
-                {(() => {
-                  const sisa = sisaKuota.get(p.id) ?? 0;
-                  return (
-                    <div
-                      className={`absolute top-4 right-4 text-[10px] font-bold px-2 py-1 rounded-full border ${
-                        sisa > 0
-                          ? "bg-white/90 text-gray-700 border-gray-200"
-                          : "bg-gray-200/90 text-gray-500 border-gray-300"
-                      }`}
-                    >
-                      {sisa > 0 ? `sisa ${sisa} box` : "tidak dijual"}
-                    </div>
-                  );
-                })()}
-              </div>
-
-              <div className="p-5 flex justify-between items-end">
-                <div className="min-w-0">
-                  <h3 className="font-black text-gray-900 text-lg mb-1 truncate">{p.name}</h3>
-                  <div className="text-xs text-gray-500 mb-3">
-                    perkiraan panen {tgl(p.estHarvestDate)}
-                  </div>
-
-                  <div className="text-[10px] font-bold text-gray-500 mb-1 tracking-widest uppercase">
-                    Harga Unit
-                  </div>
-                  <div className="flex items-baseline gap-1">
-                    <span className="font-black text-xl text-gray-900">{rp(p.pricePerBox)}</span>
-                    <span className="text-xs text-gray-500 font-medium">
-                      / Box ({p.qtyKgPerBox}kg)
-                    </span>
-                  </div>
-                </div>
-
-                <Link
-                  href={`/tenant/catalog/edit?id=${p.id}`}
-                  className="w-10 h-10 bg-[#0a381f] text-white rounded-xl flex items-center justify-center hover:bg-[#114b2d] transition shadow-sm shrink-0"
-                >
-                  <Edit2 className="w-4 h-4" />
-                </Link>
-              </div>
-            </div>
+            <KartuProduk key={p.id} p={p} sisa={sisaKuota.get(p.id) ?? 0} />
           ))}
         </div>
       )}
-    </div>
+    </Halaman>
+  );
+}
+
+function KartuProduk({ p, sisa }: { p: ProductResponse; sisa: number }) {
+  const dijual = sisa > 0;
+
+  return (
+    <Panel
+      nada={dijual ? "utama" : "netral"}
+      label={`${p.commodity.name} · Grade ${p.grade}`}
+      judul={p.name}
+      aksi={
+        <>
+          <Pil nada={dijual ? "utama" : "netral"} garis={!dijual}>
+            {dijual ? `Sisa ${angka(sisa)} box` : "Belum ada kuota terbuka"}
+          </Pil>
+          <TombolTaut href={`/tenant/catalog/edit?id=${p.id}`} rupa="kedua" ukuran="sm">
+            Ubah produk
+          </TombolTaut>
+        </>
+      }
+    >
+      <Deret kolom={3} as="dl">
+        <Ubin label="Harga per box" nilai={rupiah(p.pricePerBox)} />
+        <Ubin label="Isi per box" nilai={desimal(p.qtyKgPerBox, 0)} satuan="kg" />
+        <Ubin label="Perkiraan panen" nilai={tanggalPanjang(p.estHarvestDate)} />
+      </Deret>
+
+      {p.description ? (
+        <Sunyi className="mt-6 max-w-[68ch] text-[13px]">{p.description}</Sunyi>
+      ) : null}
+
+      {/* Dinyatakan sekali per kartu yang memang belum terjual, bukan sebagai peringatan:
+          produk tanpa kuota bukan kesalahan, ia baru separuh jalan. */}
+      {!dijual ? (
+        <Sunyi className="mt-4 max-w-[68ch] text-[13px]">
+          Produk ini belum tampil di katalog pembeli. Ia muncul begitu ada kuota Pre-Order
+          yang terbuka untuknya.
+        </Sunyi>
+      ) : null}
+    </Panel>
   );
 }

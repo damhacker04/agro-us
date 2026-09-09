@@ -1,19 +1,23 @@
 "use client";
 
 import React, { useState } from "react";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Crosshair,
-  Loader2,
-  PersonStanding,
-  Plus,
-  Trash2,
-  Undo2,
-} from "lucide-react";
+import { MapPin, Trash2, Undo2 } from "lucide-react";
 import { MIN_LAND_PLOT_HA } from "@agro-os/shared";
-import type { CaptureMethod } from "@agro-os/shared";
+import type { CaptureMethod, LandPlotResponse } from "@agro-os/shared";
 import { GalatApi, buatLahan } from "@/lib/api";
+import { desimal } from "@/lib/format-id";
+import {
+  Galat,
+  Ikon,
+  Label,
+  Masukan,
+  Medan,
+  Panel,
+  Prosa,
+  Radio,
+  Sunyi,
+  Tombol,
+} from "@/ui";
 
 type Titik = { lat: number; lng: number };
 
@@ -42,6 +46,13 @@ function luasPerkiraanHa(titik: Titik[]): number {
   return Math.abs(luas / 2) / 10_000;
 }
 
+/**
+ * Bentuk petak yang sedang dibangun — poligon sungguhan, bukan hiasan.
+ *
+ * Warnanya `ungu`, warna mekanisme verifikasi, dan itu bukan pilihan sembarang: poligon
+ * inilah yang nanti diadu dengan citra satelit. Digambar di atas panel `kertas-terang`
+ * tanpa latar peta, jadi tidak ada yang bisa disalahartikan sebagai lokasi presisi.
+ */
 function Pratinjau({ titik }: { titik: Titik[] }) {
   if (titik.length < 2) return null;
   const xs = titik.map((t) => t.lng);
@@ -55,25 +66,32 @@ function Pratinjau({ titik }: { titik: Titik[] }) {
   const isi = 100 - TEPI * 2;
   const gx = (isi - ((maxX - minX) / rentang) * isi) / 2;
   const gy = (isi - ((maxY - minY) / rentang) * isi) / 2;
+  const xy = (t: Titik) => ({
+    x: TEPI + ((t.lng - minX) / rentang) * isi + gx,
+    y: 100 - (TEPI + ((t.lat - minY) / rentang) * isi + gy),
+  });
   const p = titik
     .map((t) => {
-      const x = TEPI + ((t.lng - minX) / rentang) * isi + gx;
-      const y = 100 - (TEPI + ((t.lat - minY) / rentang) * isi + gy);
+      const { x, y } = xy(t);
       return `${x.toFixed(2)},${y.toFixed(2)}`;
     })
     .join(" ");
   return (
-    <svg viewBox="0 0 100 100" className="w-full max-w-xs mx-auto" role="img" aria-label="Bentuk petak">
+    <svg
+      viewBox="0 0 100 100"
+      className="mx-auto w-full max-w-[16rem]"
+      role="img"
+      aria-label={`Bentuk petak dari ${titik.length} titik sudut`}
+    >
       <polygon
         points={p}
-        className="fill-emerald-400/40 stroke-emerald-600"
+        className="fill-ungu/15 stroke-ungu"
         strokeWidth={1.5}
-        strokeLinejoin="round"
+        strokeLinejoin="miter"
       />
       {titik.map((t, i) => {
-        const x = TEPI + ((t.lng - minX) / rentang) * isi + gx;
-        const y = 100 - (TEPI + ((t.lat - minY) / rentang) * isi + gy);
-        return <circle key={i} cx={x} cy={y} r={1.6} className="fill-emerald-800" />;
+        const { x, y } = xy(t);
+        return <circle key={i} cx={x} cy={y} r={1.6} className="fill-ungu" />;
       })}
     </svg>
   );
@@ -89,8 +107,26 @@ function Pratinjau({ titik }: { titik: Titik[] }) {
  *
  * Dipakai dua tempat — Manajemen Lahan dan onboarding Tenant — yang hanya berbeda pada
  * ke mana perginya setelah tersimpan.
+ *
+ * MIGRASI DUNIA, dan konteks pakainya yang menentukan bentuknya: mode "kelilingi lahan"
+ * dijalankan SAMBIL BERJALAN DI PEMATANG, berhenti di tiap sudut, satu tangan memegang
+ * ponsel. Tombol tandai titiknya karena itu memakai langkah `field-action` — sasaran
+ * setinggi ibu jari yang bisa ditekan tanpa membidik, bukan tombol 13px yang menuntut
+ * orang berhenti dan menunduk.
  */
-export function PetaLahan({ setelahSimpan }: { setelahSimpan: () => void }) {
+export function PetaLahan({
+  setelahSimpan,
+}: {
+  /**
+   * Menerima petak yang BARU DIBUAT, bukan sekadar isyarat "sudah selesai".
+   *
+   * Tanpa itu, layar ringkasan setelahnya harus menebak petak mana yang barusan tersimpan
+   * dengan menebak dari daftar — dan daftar lahan diurutkan server `ORDER BY area_ha DESC`,
+   * bukan menurut waktu buat. Menebak "yang terakhir di daftar" berarti menampilkan petak
+   * TERKECIL sambil menyebutnya petak terbaru.
+   */
+  setelahSimpan: (lahan: LandPlotResponse) => void;
+}) {
   const [metode, setMetode] = useState<CaptureMethod>("WALK_AROUND");
   const [titik, setTitik] = useState<Titik[]>([]);
   const [latManual, setLatManual] = useState("");
@@ -100,14 +136,16 @@ export function PetaLahan({ setelahSimpan }: { setelahSimpan: () => void }) {
 
   function ambilGps() {
     setGalat("");
-    if (!navigator.geolocation) return setGalat("Perangkat ini tidak mendukung lokasi.");
+    if (!navigator.geolocation) {
+      return setGalat("Peramban ini tidak bisa membaca lokasi. Pakai mode ketik koordinat.");
+    }
     navigator.geolocation.getCurrentPosition(
       (p) => setTitik((t) => [...t, { lat: p.coords.latitude, lng: p.coords.longitude }]),
       (e) =>
         setGalat(
           e.code === e.PERMISSION_DENIED
-            ? "Izin lokasi ditolak. Gunakan mode ketik koordinat."
-            : "Lokasi belum terbaca. Pastikan GPS menyala dan Anda di luar ruangan.",
+            ? "Izin lokasi ditolak. Pakai mode ketik koordinat di atas."
+            : "Lokasi belum terbaca. Pastikan GPS menyala dan Anda berada di luar ruangan.",
         ),
       { enableHighAccuracy: true, timeout: 15_000 },
     );
@@ -116,7 +154,9 @@ export function PetaLahan({ setelahSimpan }: { setelahSimpan: () => void }) {
   function tambahManual() {
     const lat = Number(latManual);
     const lng = Number(lngManual);
-    if (Number.isNaN(lat) || Number.isNaN(lng)) return setGalat("Koordinat tidak sah.");
+    if (!latManual || !lngManual || Number.isNaN(lat) || Number.isNaN(lng)) {
+      return setGalat("Koordinat tidak sah. Isi lintang dan bujur sebagai angka desimal.");
+    }
     setTitik((t) => [...t, { lat, lng }]);
     setLatManual("");
     setLngManual("");
@@ -130,13 +170,13 @@ export function PetaLahan({ setelahSimpan }: { setelahSimpan: () => void }) {
     try {
       // Cincin GeoJSON WAJIB tertutup: titik terakhir sama persis dengan titik pertama.
       const ring: [number, number][] = [...titik, titik[0]!].map((t) => [t.lng, t.lat]);
-      await buatLahan({
+      const dibuat = await buatLahan({
         polygon: { type: "Polygon", coordinates: [ring] },
         captureMethod: metode,
       });
-      setelahSimpan();
+      setelahSimpan(dibuat);
     } catch (e) {
-      setGalat(e instanceof GalatApi ? e.message : "Gagal menyimpan lahan.");
+      setGalat(e instanceof GalatApi ? e.message : "Petak gagal disimpan.");
       setProses(false);
     }
   }
@@ -146,156 +186,165 @@ export function PetaLahan({ setelahSimpan }: { setelahSimpan: () => void }) {
 
   return (
     <div>
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        {(
-          [
-            {
-              nilai: "WALK_AROUND" as const,
-              Ikon: PersonStanding,
-              judul: "Kelilingi Lahan",
-              teks: "Berjalan ke tiap sudut, tekan tombol di setiap titik.",
-            },
-            {
-              nilai: "GAMBAR_PETA" as const,
-              Ikon: Crosshair,
-              judul: "Ketik Koordinat",
-              teks: "Bila Anda sudah punya titik sudutnya.",
-            },
-          ]
-        ).map((m) => (
-          <button
-            key={m.nilai}
-            onClick={() => setMetode(m.nilai)}
-            className={`flex items-start gap-3 p-4 rounded-xl border text-left transition ${
-              metode === m.nilai
-                ? "border-emerald-600 ring-1 ring-emerald-600 bg-emerald-50/40"
-                : "border-gray-200 hover:border-emerald-300 bg-white"
-            }`}
+      <fieldset>
+        <legend className="mb-3">
+          <Label>Cara menandai sudut</Label>
+        </legend>
+        <div className="space-y-2">
+          <Radio
+            nama="metode-petak"
+            nilai="WALK_AROUND"
+            terpilih={metode === "WALK_AROUND"}
+            onPilih={(v) => setMetode(v as CaptureMethod)}
+            judul="Kelilingi lahan"
           >
-            <m.Ikon
-              className={`w-5 h-5 shrink-0 mt-0.5 ${metode === m.nilai ? "text-emerald-700" : "text-gray-400"}`}
-            />
-            <div>
-              <div className="font-bold text-sm text-gray-900">{m.judul}</div>
-              <div className="text-xs text-gray-500 mt-0.5">{m.teks}</div>
-            </div>
-          </button>
-        ))}
-      </div>
+            Berjalan ke tiap sudut petak, lalu tekan tombol di setiap titik. Koordinatnya
+            diambil dari GPS ponsel Anda saat itu juga.
+          </Radio>
+          <Radio
+            nama="metode-petak"
+            nilai="GAMBAR_PETA"
+            terpilih={metode === "GAMBAR_PETA"}
+            onPilih={(v) => setMetode(v as CaptureMethod)}
+            judul="Ketik koordinat"
+          >
+            Bila Anda sudah memegang titik sudutnya dari sumber lain — sertifikat, pengukuran
+            sebelumnya, atau aplikasi peta.
+          </Radio>
+        </div>
+      </fieldset>
 
-      <div className="bg-white border border-gray-200 rounded-xl p-5 mb-5">
+      <Panel label="Menandai" judul="Tambahkan titik sudut" className="mt-8">
         {metode === "WALK_AROUND" ? (
-          <button
-            onClick={ambilGps}
-            className="w-full flex items-center justify-center gap-2 bg-emerald-950 text-white text-sm font-semibold py-3 rounded-lg hover:bg-emerald-800"
-          >
-            <Plus className="w-4 h-4" /> Tandai Titik Sudut di Sini
-          </button>
+          <>
+            <Tombol penuh className="py-4 text-[16px]" onClick={ambilGps}>
+              <Ikon dari={MapPin} />
+              Tandai sudut di titik ini
+            </Tombol>
+            <Sunyi className="mt-2.5 max-w-[68ch] text-[13px]">
+              Berdiri sedekat mungkin dengan patok sudutnya sebelum menekan. Ketelitian GPS
+              ponsel biasanya beberapa meter, dan itu sudah cukup untuk petak seluas hektar.
+            </Sunyi>
+          </>
         ) : (
-          <div className="flex gap-2">
-            <input
-              value={latManual}
-              onChange={(e) => setLatManual(e.target.value)}
-              placeholder="lintang (mis. -7.8412)"
-              className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
-            />
-            <input
-              value={lngManual}
-              onChange={(e) => setLngManual(e.target.value)}
-              placeholder="bujur (mis. 112.4701)"
-              className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
-            />
-            <button
-              onClick={tambahManual}
-              className="shrink-0 px-4 bg-emerald-950 text-white text-sm font-semibold rounded-lg hover:bg-emerald-800"
-            >
-              Tambah
-            </button>
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
+            <Medan label="Lintang">
+              {(alat) => (
+                <Masukan
+                  {...alat}
+                  inputMode="decimal"
+                  value={latManual}
+                  onChange={(e) => setLatManual(e.target.value)}
+                  placeholder="-7.8412"
+                  className="font-mono"
+                />
+              )}
+            </Medan>
+            <Medan label="Bujur">
+              {(alat) => (
+                <Masukan
+                  {...alat}
+                  inputMode="decimal"
+                  value={lngManual}
+                  onChange={(e) => setLngManual(e.target.value)}
+                  placeholder="112.4701"
+                  className="font-mono"
+                />
+              )}
+            </Medan>
+            <Tombol type="button" onClick={tambahManual} className="py-3">
+              Tambah titik
+            </Tombol>
           </div>
         )}
-      </div>
+      </Panel>
 
-      <div className="bg-white border border-gray-200 rounded-xl p-5 mb-5">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-bold text-emerald-950 text-sm">
-            Titik Sudut ({titik.length})
-          </h2>
-          {titik.length > 0 && (
-            <div className="flex gap-3">
-              <button
-                onClick={() => setTitik((t) => t.slice(0, -1))}
-                className="text-xs font-semibold text-gray-600 hover:text-gray-800 flex items-center gap-1"
-              >
-                <Undo2 className="w-3 h-3" /> Batal satu
-              </button>
-              <button
-                onClick={() => setTitik([])}
-                className="text-xs font-semibold text-red-600 hover:text-red-700 flex items-center gap-1"
-              >
-                <Trash2 className="w-3 h-3" /> Hapus semua
-              </button>
-            </div>
-          )}
-        </div>
-
+      <Panel
+        label={`${titik.length} titik sudut`}
+        judul="Bentuk petak Anda"
+        className="mt-8"
+        aksi={
+          titik.length > 0 ? (
+            <>
+              <Tombol rupa="sunyi" ukuran="sm" onClick={() => setTitik((t) => t.slice(0, -1))}>
+                <Ikon dari={Undo2} ukuran="sm" />
+                Batal satu
+              </Tombol>
+              <Tombol rupa="sunyi" ukuran="sm" onClick={() => setTitik([])} className="text-jambu">
+                <Ikon dari={Trash2} ukuran="sm" />
+                Hapus semua
+              </Tombol>
+            </>
+          ) : null
+        }
+      >
         {titik.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            Belum ada titik. Butuh minimal 3 untuk membentuk petak.
-          </p>
+          <Prosa className="text-[14px]">
+            Belum ada titik. Sebuah petak butuh minimal tiga sudut — mulai dari sudut mana pun,
+            lalu lanjutkan searah keliling lahan.
+          </Prosa>
         ) : (
           <>
             <Pratinjau titik={titik} />
-            <ol className="mt-4 space-y-1 text-xs font-mono text-gray-600 max-h-40 overflow-y-auto">
+            <ol className="mt-6 max-h-44 overflow-y-auto">
               {titik.map((t, i) => (
-                <li key={i}>
-                  {i + 1}. {t.lat.toFixed(6)}, {t.lng.toFixed(6)}
+                <li
+                  key={i}
+                  className="flex items-baseline gap-4 border-t border-kertas-garis py-2 font-mono text-[13px] text-tinta"
+                >
+                  <span className="text-tinta-samar">{String(i + 1).padStart(2, "0")}</span>
+                  <span>
+                    {t.lat.toFixed(6)}, {t.lng.toFixed(6)}
+                  </span>
                 </li>
               ))}
             </ol>
           </>
         )}
-      </div>
 
-      {titik.length >= 3 && (
-        <div
-          className={`rounded-xl border p-4 mb-5 text-sm ${
-            terlaluKecil
-              ? "border-amber-200 bg-amber-50 text-amber-900"
-              : "border-emerald-200 bg-emerald-50 text-emerald-900"
-          }`}
-        >
-          <div className="flex items-start gap-2">
-            {terlaluKecil ? (
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-            ) : (
-              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-            )}
-            <div>
-              <p className="font-bold">Luas perkiraan {luas.toFixed(2)} ha</p>
-              <p className="text-xs mt-0.5">
-                {terlaluKecil
-                  ? `Di bawah ${MIN_LAND_PLOT_HA} ha — terlalu kecil untuk dipisahkan dari petak tetangga oleh citra satelit. Batch di lahan ini hanya bisa mencapai badge bukti foto.`
-                  : "Angka pastinya dihitung ulang server dengan PostGIS saat disimpan."}
-              </p>
+        {/* Luas perkiraan berdiri SEBELUM tombol simpan, bukan sesudah penolakan server:
+            Tenant yang petaknya kekecilan berhak tahu sekarang, sambil masih berdiri di
+            lahannya dan masih bisa memperluas keliling yang ia tandai. */}
+        {titik.length >= 3 ? (
+          <div
+            className={
+              terlaluKecil
+                ? "mt-8 border-t-2 border-jambu pt-3"
+                : "mt-8 border-t-2 border-tinta pt-3"
+            }
+          >
+            <Label className={terlaluKecil ? "text-jambu" : ""}>Luas perkiraan</Label>
+            <div className="mt-2 flex flex-wrap items-baseline gap-x-2">
+              <span className="font-mono text-[26px] leading-none text-tinta">
+                {desimal(luas, 2)}
+              </span>
+              <span className="text-[13px] text-tinta-samar">hektar</span>
             </div>
+            <Prosa className="mt-2.5 text-[14px]">
+              {terlaluKecil
+                ? `Di bawah ${desimal(MIN_LAND_PLOT_HA, 1)} ha — terlalu kecil untuk dipisahkan dari petak tetangga oleh citra satelit. Petak ini tetap bisa disimpan dan tetap bisa dipakai membuka kuota; yang tidak bisa dicapai batch di sini hanyalah badge Terverifikasi Satelit, jadi ia bersandar pada bukti foto.`
+                : "Angka pastinya dihitung ulang server dengan PostGIS saat disimpan, dari poligon yang sama. Yang di layar ini perkiraan supaya Anda tahu lebih awal."}
+            </Prosa>
           </div>
-        </div>
-      )}
+        ) : null}
+      </Panel>
 
-      {galat && (
-        <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-4">
+      {galat ? (
+        <Galat judul="Petak belum tersimpan" className="mt-8">
           {galat}
-        </p>
-      )}
+        </Galat>
+      ) : null}
 
-      <button
+      <Tombol
+        penuh
+        className="mt-8 py-4 text-[16px]"
         onClick={simpan}
-        disabled={proses || titik.length < 3}
-        className="w-full bg-emerald-950 text-white text-sm font-semibold py-3 rounded-lg hover:bg-emerald-800 disabled:opacity-50 flex items-center justify-center gap-2"
+        sibuk={proses}
+        labelSibuk="Menyimpan…"
+        disabled={titik.length < 3}
       >
-        {proses && <Loader2 className="w-4 h-4 animate-spin" />}
-        {proses ? "Menyimpan…" : "Simpan Petak Lahan"}
-      </button>
+        Simpan petak lahan
+      </Tombol>
     </div>
   );
 }

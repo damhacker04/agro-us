@@ -1,11 +1,26 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, CheckCircle2, CircleSlash, Info, TriangleAlert } from "lucide-react";
-import type { YieldAssessmentHistoryItem, YieldPlausibility } from "@agro-os/shared";
+import type { AssessmentBasis, YieldAssessmentHistoryItem, YieldPlausibility } from "@agro-os/shared";
 import { GalatApi, ambilRiwayatKewajaran } from "@/lib/api";
+import { angka, desimal, jamWib, tanggalPanjang } from "@/lib/format-id";
+import {
+  Deret,
+  Galat,
+  Halaman,
+  Kosong,
+  Label,
+  Memuat,
+  Panel,
+  Pil,
+  Prosa,
+  Sunyi,
+  Tanda,
+  TautanKembali,
+  Ubin,
+  type Nada,
+} from "@/ui";
 
 /**
  * TN-35 — Riwayat Penilaian Kewajaran Hasil per Batch (FR-4.10).
@@ -19,59 +34,28 @@ import { GalatApi, ambilRiwayatKewajaran } from "@/lib/api";
  * seberapa jauh ia boleh menyimpang sebelum dihukum. Ambang penalti sebaliknya: tetap,
  * dan begitu terlihat ia berubah menjadi target.
  *
- * Nada: menjelaskan, bukan menuduh (aturan desain v2.3 butir 4).
+ * Konsekuensi bentuknya di dunia ini: TIDAK ADA satu pun elemen proporsional di halaman —
+ * tidak ada bilah, tidak ada sumbu, tidak ada penanda posisi di dalam rentang. Angka
+ * dilaporkan dan rentang perkiraan berdiri berdampingan sebagai dua nilai terukur, dan
+ * pembacanya sendiri yang membandingkan. Menggambar posisi laporan di dalam pita akan
+ * menjawab persis pertanyaan yang tidak boleh dijawab: "seberapa jauh lagi sampai kena?"
+ *
+ * `TIDAK_DAPAT_DINILAI` sengaja NETRAL, bukan merah — sama seperti TN-19c. Ini keterbatasan
+ * cuaca, bukan kecurigaan.
  */
 
-const GAYA: Record<
-  YieldPlausibility,
-  { label: string; Ikon: typeof CheckCircle2; teks: string; latar: string; garis: string }
-> = {
-  WAJAR: {
-    label: "Wajar",
-    Ikon: CheckCircle2,
-    teks: "text-emerald-800",
-    latar: "bg-emerald-50",
-    garis: "border-emerald-200",
-  },
-  PERLU_DITINJAU: {
-    label: "Perlu ditinjau",
-    Ikon: Info,
-    teks: "text-amber-800",
-    latar: "bg-amber-50",
-    garis: "border-amber-200",
-  },
-  TIDAK_WAJAR: {
-    label: "Di luar pita",
-    Ikon: TriangleAlert,
-    teks: "text-red-800",
-    latar: "bg-red-50",
-    garis: "border-red-200",
-  },
-  // Sengaja NETRAL — bukan merah. Ini keterbatasan cuaca, bukan kecurigaan
-  // (aturan desain v2.3 butir 2, sama seperti TN-19c).
-  TIDAK_DAPAT_DINILAI: {
-    label: "Tidak dapat dinilai",
-    Ikon: CircleSlash,
-    teks: "text-slate-700",
-    latar: "bg-slate-50",
-    garis: "border-slate-200",
-  },
+const VONIS: Record<YieldPlausibility, { label: string; nada: Nada; tanda: "penuh" | "sebagian" | "tidak" }> = {
+  WAJAR: { label: "Wajar", nada: "utama", tanda: "penuh" },
+  PERLU_DITINJAU: { label: "Perlu ditinjau", nada: "kabar", tanda: "sebagian" },
+  TIDAK_WAJAR: { label: "Di luar pita", nada: "awas", tanda: "tidak" },
+  TIDAK_DAPAT_DINILAI: { label: "Tidak dapat dinilai", nada: "netral", tanda: "tidak" },
 };
 
-const DASAR: Record<string, string> = {
+const DASAR: Record<AssessmentBasis, string> = {
   PITA_SAJA: "Pita dari lahan Anda sendiri",
   PITA_PLUS_BENCHMARK: "Pita + rata-rata Tenant sezona",
   TIDAK_ADA_DASAR: "Tidak ada dasar penilaian",
 };
-
-const waktu = (iso: string) =>
-  new Date(iso).toLocaleString("id-ID", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 
 export default function RiwayatKewajaranPage() {
   const { id } = useParams<{ id: string }>();
@@ -86,105 +70,120 @@ export default function RiwayatKewajaranPage() {
         setRiwayat(r);
         setGalat("");
       })
-      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat riwayat penilaian"))
+      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Riwayat penilaian gagal dimuat"))
       .finally(() => setMemuat(false));
   }, [id]);
 
+  const kembali = <TautanKembali href={`/tenant/batch/${id}`}>Batch</TautanKembali>;
+
+  if (memuat) {
+    return (
+      <Halaman lebar="sempit" judul="Penilaian kewajaran hasil" kembali={kembali}>
+        <Memuat baris={3} label="Memuat riwayat penilaian" />
+      </Halaman>
+    );
+  }
+
   return (
-    <div className="mx-auto max-w-3xl p-6">
-      <Link
-        href={`/tenant/batch/${id}`}
-        className="mb-5 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
-      >
-        <ArrowLeft className="h-4 w-4" /> Kembali ke batch
-      </Link>
+    <Halaman
+      lebar="sempit"
+      kembali={kembali}
+      judul="Penilaian kewajaran hasil"
+      pengantar="Perkiraan hasil dihitung dari luas efektif lahan Anda dan seberapa hijau tanamannya terlihat dari satelit sampai hari panen. Rentangnya sengaja lebar: tujuannya menandai laporan yang tidak masuk akal, bukan mengaudit selisih kecil."
+    >
+      {galat ? (
+        <Galat judul="Riwayat penilaian gagal dimuat">
+          {galat} Penilaian yang sudah dibuat tetap tersimpan — muat ulang halaman untuk
+          mencoba lagi.
+        </Galat>
+      ) : riwayat.length === 0 ? (
+        <Kosong judul="Batch ini belum pernah dinilai">
+          Penilaian dibuat saat Anda mengisi jumlah box hasil panen, dan hasilnya ditampilkan
+          sebelum apa pun tercatat. Sampai itu terjadi, tidak ada perhitungan yang perlu
+          ditelusuri di sini.
+        </Kosong>
+      ) : (
+        <>
+          <ol className="space-y-8">
+            {riwayat.map((r) => (
+              <BarisPenilaian key={r.assessmentId} r={r} />
+            ))}
+          </ol>
 
-      <h1 className="text-2xl font-bold text-[#0a381f]">Penilaian Kewajaran Hasil</h1>
-      <p className="mt-1 mb-6 text-sm text-gray-500">
-        Perkiraan hasil dihitung dari luas efektif lahan Anda dan seberapa hijau tanamannya
-        terlihat dari satelit sampai hari panen. Rentangnya sengaja lebar — tujuannya menandai
-        laporan yang tidak masuk akal, bukan mengaudit selisih kecil.
-      </p>
-
-      {memuat && <p className="text-sm text-gray-500">Memuat riwayat…</p>}
-
-      {!memuat && galat && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
-          {galat}
-        </div>
+          {riwayat.length > 1 ? (
+            <Sunyi className="mt-8 max-w-[68ch]">
+              Batch ini dinilai lebih dari sekali. Itu wajar bila Anda memperbaiki angka
+              sebelum mengonfirmasi, atau bila citra satelit baru datang setelah awan lewat.
+              Seluruh percobaan disimpan supaya perhitungannya bisa ditelusuri — bukan sebagai
+              catatan pelanggaran.
+            </Sunyi>
+          ) : null}
+        </>
       )}
-
-      {!memuat && !galat && riwayat.length === 0 && (
-        <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 text-sm text-gray-600">
-          Batch ini belum pernah dinilai. Penilaian dibuat saat Anda mengisi jumlah box hasil
-          panen.
-        </div>
-      )}
-
-      <ol className="space-y-3">
-        {riwayat.map((r) => {
-          const g = GAYA[r.finalVerdict ?? r.verdict];
-          const adaPita = r.expectedMinBox !== null && r.expectedMaxBox !== null;
-          return (
-            <li key={r.assessmentId} className={`rounded-xl border p-5 ${g.garis} ${g.latar}`}>
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <span className={`inline-flex items-center gap-1.5 font-bold ${g.teks}`}>
-                  <g.Ikon className="h-4 w-4" />
-                  {g.label}
-                </span>
-                <div className="flex items-center gap-2">
-                  {/* Penilaian yang benar-benar menjadi panen — bukan sekadar yang terakhir. */}
-                  {r.confirmed && (
-                    <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-600">
-                      dikonfirmasi
-                    </span>
-                  )}
-                  <span className="text-xs text-gray-500">{waktu(r.assessedAt)}</span>
-                </div>
-              </div>
-
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
-                <div>
-                  <dt className="text-[11px] text-gray-500">Anda laporkan</dt>
-                  <dd className="font-bold text-gray-900">{r.reportedBox} box</dd>
-                </div>
-                <div>
-                  <dt className="text-[11px] text-gray-500">Perkiraan dari lahan Anda</dt>
-                  <dd className="font-bold text-gray-900">
-                    {adaPita ? `${r.expectedMinBox}–${r.expectedMaxBox} box` : "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-[11px] text-gray-500">Puncak kehijauan (NDVI)</dt>
-                  <dd className="font-bold text-gray-900">
-                    {r.peakNdvi === null ? "—" : r.peakNdvi.toFixed(2)}
-                  </dd>
-                </div>
-              </dl>
-
-              <p className="mt-3 text-[11px] text-gray-500">
-                Dasar penilaian: {DASAR[r.basis] ?? r.basis}
-                {r.finalVerdict && (
-                  <>
-                    {" · "}
-                    <b className="text-gray-700">
-                      Ditinjau Operator — putusannya menggantikan penilaian otomatis
-                    </b>
-                  </>
-                )}
-              </p>
-            </li>
-          );
-        })}
-      </ol>
-
-      {riwayat.length > 1 && (
-        <p className="mt-5 text-xs leading-relaxed text-gray-500">
-          Batch ini dinilai lebih dari sekali. Itu wajar bila Anda memperbaiki angka sebelum
-          mengonfirmasi, atau bila citra satelit baru datang setelah awan lewat. Seluruh
-          percobaan disimpan supaya perhitungannya bisa ditelusuri.
-        </p>
-      )}
-    </div>
+    </Halaman>
   );
 }
+
+function BarisPenilaian({ r }: { r: YieldAssessmentHistoryItem }) {
+  // Putusan Operator MENGGANTIKAN penilaian otomatis, jadi ia yang menentukan rupa barisnya.
+  const berlaku = r.finalVerdict ?? r.verdict;
+  const v = VONIS[berlaku];
+  const adaPita = r.expectedMinBox !== null && r.expectedMaxBox !== null;
+
+  return (
+    <li>
+      <Panel
+        nada={v.nada}
+        label={`${tanggalPanjang(r.assessedAt)} · ${jamWib(r.assessedAt)} WIB`}
+        /* Vonisnya jadi JUDUL, bukan judul plus pil berisi kata yang sama: aturan tebal
+           panel sudah membawa nadanya, dan menyebut "Di luar pita" dua kali berdampingan
+           membuat yang kedua terbaca sebagai keterangan tambahan yang ternyata bukan. */
+        judul={
+          <span className="flex items-center gap-2">
+            <Tanda jenis={v.tanda} className={v.nada === "netral" ? "text-tinta-samar" : ""} />
+            {v.label}
+          </span>
+        }
+        /* Penilaian yang benar-benar menjadi panen — bukan sekadar yang terakhir. */
+        aksi={r.confirmed ? <Pil nada="utama">Dikonfirmasi</Pil> : null}
+      >
+        {/* Dua nilai berdampingan, tanpa satu pun elemen proporsional di antaranya. */}
+        <Deret kolom={3} as="dl">
+          <Ubin label="Anda laporkan" nilai={angka(r.reportedBox)} satuan="box" nada={v.nada} />
+          <Ubin
+            label="Perkiraan dari lahan Anda"
+            nilai={
+              adaPita
+                ? `${angka(r.expectedMinBox as number)}–${angka(r.expectedMaxBox as number)}`
+                : "—"
+            }
+            satuan={adaPita ? "box" : undefined}
+            catatan={adaPita ? undefined : "Pita tidak dihitung, bukan dihitung nol"}
+          />
+          <Ubin
+            label="Puncak kehijauan"
+            nilai={r.peakNdvi === null ? "—" : desimal(r.peakNdvi)}
+            catatan={r.peakNdvi === null ? "Citra tidak tersedia" : "NDVI tertinggi musim ini"}
+          />
+        </Deret>
+
+        <div className="mt-6 border-t border-kertas-garis pt-3">
+          <Label>Dasar penilaian</Label>
+          <Prosa className="mt-1.5 text-[14px]">{DASAR[r.basis]}</Prosa>
+        </div>
+
+        {r.finalVerdict ? (
+          <div className="mt-5 border-t-2 border-biru pt-3">
+            <Label className="text-biru">Ditinjau operator</Label>
+            <Prosa className="mt-1.5 text-[14px]">
+              Seorang peninjau memeriksa penilaian ini, dan putusannya menggantikan penilaian
+              otomatis. Yang berlaku untuk batch ini adalah{" "}
+              <span className="font-semibold text-tinta">{VONIS[r.finalVerdict].label}</span>.
+            </Prosa>
+          </div>
+        ) : null}
+      </Panel>
+    </li>
+  );
+}
+

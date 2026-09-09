@@ -2,24 +2,32 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { Package, QrCode } from "lucide-react";
 import { GalatApi, ambilPesananTenant } from "@/lib/api";
-import type { ShipmentStatus, TenantOrderSummary } from "@agro-os/shared";
+import { angka, rupiah, tanggalPanjang } from "@/lib/format-id";
+import type { TenantOrderSummary } from "@agro-os/shared";
+import { PilTahap, nadaTahap } from "@/components/tahap-pengiriman";
+import {
+  Galat,
+  Halaman,
+  Kosong,
+  Label,
+  Memuat,
+  Panel,
+  Pil,
+  Sunyi,
+  TombolTaut,
+} from "@/ui";
 
-const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
-const tgl = (iso: string) =>
-  new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
-
-const TAHAP: Record<ShipmentStatus, { label: string; kelas: string }> = {
-  MENUNGGU_PANEN: { label: "Menunggu Panen", kelas: "bg-gray-100 text-gray-700" },
-  PANEN: { label: "Siap Kirim", kelas: "bg-lime-100 text-lime-800" },
-  DIKIRIM: { label: "Dikirim", kelas: "bg-blue-100 text-blue-800" },
-  TIBA_DI_LOKASI: { label: "Tiba di Lokasi", kelas: "bg-amber-100 text-amber-900" },
-  DITERIMA: { label: "Diterima", kelas: "bg-emerald-100 text-emerald-800" },
-  SELESAI: { label: "Selesai", kelas: "bg-emerald-700 text-white" },
-  DIBATALKAN: { label: "Dibatalkan", kelas: "bg-red-100 text-red-800" },
-};
-
+/**
+ * TN-21 — Pesanan masuk.
+ *
+ * MIGRASI DUNIA. Yang berubah selain rupa: tahap pengiriman berhenti punya kosakatanya
+ * sendiri. Halaman ini menyebut `PANEN` sebagai "Siap Kirim" sementara halaman rincian yang
+ * dibuka DARI SINI menyebutnya "Panen" — dua nama untuk satu keadaan pada dua layar
+ * berurutan. Keduanya kini membaca `TAHAP` bersama, dengan nada peran `tenant`: yang
+ * menyala bagi Tenant adalah `PANEN`, saat QR dan Kode Antar menunggu diterbitkan, bukan
+ * `TIBA_DI_LOKASI` yang merupakan giliran pembeli.
+ */
 export default function TenantOrdersPage() {
   const [pesanan, setPesanan] = useState<TenantOrderSummary[]>([]);
   const [memuat, setMemuat] = useState(true);
@@ -27,85 +35,107 @@ export default function TenantOrdersPage() {
 
   useEffect(() => {
     ambilPesananTenant()
-      .then((d) => { setPesanan(d); setGalat(""); })
-      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat pesanan"))
+      .then((d) => {
+        setPesanan(d);
+        setGalat("");
+      })
+      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Pesanan gagal dimuat"))
       .finally(() => setMemuat(false));
   }, []);
 
-  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat pesanan…</div>;
-  if (galat)
+  if (memuat) {
     return (
-      <div className="p-8">
-        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">{galat}</div>
-      </div>
+      <Halaman judul="Pesanan masuk">
+        <Memuat baris={3} label="Memuat pesanan" />
+      </Halaman>
     );
+  }
 
-  if (!pesanan.length)
+  if (galat) {
     return (
-      <div className="p-8">
-        <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center">
-          <Package className="w-10 h-10 text-gray-300 mx-auto mb-4" />
-          <h2 className="font-bold text-gray-800 mb-1">Belum ada pesanan masuk</h2>
-          <p className="text-sm text-gray-500">
-            Pesanan muncul setelah pembeli membayar kuota yang Anda buka.
-          </p>
-        </div>
-      </div>
+      <Halaman judul="Pesanan masuk">
+        <Galat judul="Pesanan gagal dimuat">
+          {galat} Pesanan yang masuk tetap tercatat di server — muat ulang halaman untuk
+          mencoba lagi.
+        </Galat>
+      </Halaman>
     );
+  }
+
+  if (!pesanan.length) {
+    return (
+      <Halaman judul="Pesanan masuk">
+        <Kosong
+          judul="Belum ada pesanan masuk"
+          aksi={
+            <TombolTaut href="/tenant/batch" ukuran="sm">
+              Lihat batch Anda
+            </TombolTaut>
+          }
+        >
+          Pesanan muncul di sini setelah pembeli membayar kuota yang Anda buka. Kosong berarti
+          kuotanya belum terjual — bukan bahwa ada yang salah dengan batch Anda.
+        </Kosong>
+      </Halaman>
+    );
+  }
 
   return (
-    <div className="p-8 max-w-4xl">
-      <h1 className="text-2xl font-bold text-emerald-950 mb-6">Pesanan Masuk</h1>
+    <Halaman
+      judul="Pesanan masuk"
+      pengantar="Satu baris adalah satu pengiriman, dan nilainya adalah bagian Anda saja — satu pengiriman bisa memuat item beberapa Tenant sekaligus."
+    >
+      <div className="space-y-8">
+        {pesanan.map((o) => (
+          <Panel
+            key={o.shipmentId}
+            nada={nadaTahap(o.status, "tenant")}
+            label={`${o.zoneName} · siap ${tanggalPanjang(o.readyDate)}`}
+            judul={
+              <Link
+                href={`/tenant/orders/${o.shipmentId}`}
+                className="underline-offset-4 transition-colors duration-150 hover:text-ungu hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ungu"
+              >
+                {o.buyerName}
+              </Link>
+            }
+            aksi={
+              <>
+                <PilTahap status={o.status} peran="tenant" />
+                {/* QR baru bisa diterbitkan setelah batch berstatus Panen — penanda ini
+                    mencegah Tenant menekan tombolnya lalu kena penolakan tanpa tahu sebabnya. */}
+                {o.qrIssued ? <Pil nada="utama" garis>QR terbit</Pil> : null}
+              </>
+            }
+          >
+            <Sunyi className="-mt-3 text-[12px]">Dipesan {tanggalPanjang(o.createdAt)}</Sunyi>
 
-      <div className="space-y-3">
-        {pesanan.map((o) => {
-          const t = TAHAP[o.status];
-          return (
-            <Link
-              key={o.shipmentId}
-              href={`/tenant/orders/${o.shipmentId}`}
-              className="block bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition"
-            >
-              <div className="flex items-start justify-between gap-4 mb-2">
-                <div className="min-w-0">
-                  <h3 className="font-bold text-gray-900">{o.buyerName}</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    {o.zoneName} · dipesan {tgl(o.createdAt)} · siap {tgl(o.readyDate)}
-                  </p>
-                </div>
-                <div className="flex flex-col items-end gap-1.5 shrink-0">
-                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${t.kelas}`}>
-                    {t.label}
+            <ul className="mt-5">
+              {o.lines.map((l) => (
+                <li
+                  key={l.batchId}
+                  className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-t border-kertas-garis py-3"
+                >
+                  <span className="min-w-0 flex-1 truncate text-[15px] text-tinta">
+                    {l.productName}
                   </span>
-                  {/* QR baru bisa dicetak setelah seluruh batch berstatus Panen — penanda ini
-                      mencegah Tenant menekan tombolnya lalu kena penolakan tanpa tahu sebabnya. */}
-                  {o.qrIssued && (
-                    <span className="text-[10px] text-emerald-700 flex items-center gap-1">
-                      <QrCode className="w-3 h-3" /> QR sudah terbit
-                    </span>
-                  )}
-                </div>
-              </div>
+                  <span className="font-mono text-[13px] text-tinta-samar">
+                    {angka(l.qtyBox)} box
+                  </span>
+                  <span className="font-mono text-[15px] text-tinta">{rupiah(l.subtotal)}</span>
+                </li>
+              ))}
+            </ul>
 
-              <div className="text-sm text-gray-700">
-                {o.lines.map((l) => (
-                  <div key={l.batchId} className="flex justify-between py-0.5">
-                    <span>
-                      {l.productName} × {l.qtyBox} box
-                    </span>
-                    <span className="text-gray-500">{rp(l.subtotal)}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex justify-between font-bold text-gray-900 pt-2 mt-2 border-t border-gray-100">
-                <span className="text-sm">Total</span>
-                <span>{rp(o.subtotal)}</span>
-              </div>
-            </Link>
-          );
-        })}
+            <div className="mt-4 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-t border-tinta pt-3">
+              <Label>Nilai bagian Anda</Label>
+              <span className="font-mono text-[22px] leading-none text-tinta">
+                {rupiah(o.subtotal)}
+              </span>
+            </div>
+          </Panel>
+        ))}
       </div>
-    </div>
+    </Halaman>
   );
 }

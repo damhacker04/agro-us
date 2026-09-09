@@ -1,85 +1,160 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Wallet } from "lucide-react";
 import { GalatApi, ambilEscrow } from "@/lib/api";
+import { rupiah } from "@/lib/format-id";
+import { entriEscrow } from "@/components/entri-escrow";
+import {
+  Deret,
+  Galat,
+  Halaman,
+  Label,
+  Memuat,
+  Panel,
+  Prosa,
+  Sunyi,
+  Ubin,
+} from "@/ui";
 
-const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
-
+/**
+ * TN-24 — Escrow & pencairan.
+ *
+ * MIGRASI DUNIA. Dua hal yang berubah selain rupa:
+ *
+ * 1. NAMA KOLOM BASIS DATA BERHENTI BOCOR KE LAYAR. Rincian per jenis entri ditampilkan
+ *    lewat `jenis.replace(/_/g, " ")`, jadi Tenant membaca "BIAYA BATAL10" dan "RELEASE30"
+ *    di halaman yang menjelaskan uangnya sendiri. Sekarang ketujuh jenis punya nama dan
+ *    keterangan manusia di `@/components/entri-escrow`, berikut ARAH uangnya — buku besar
+ *    ini append-only, jadi entri yang saling meniadakan memang tampil berdampingan dan
+ *    harus bisa dibedakan.
+ *
+ * 2. "MENUNGGU PENYALURAN" NAIK KE GROUND PENUH. Ia keadaan yang paling mudah disalahpahami
+ *    di seluruh produk — dana sudah jadi hak Tenant tetapi instruksi ke mitra pembayaran
+ *    belum tersambung (§5.7.1) — dan kotak amber pucat di antara kotak lain tidak cukup
+ *    untuk memisahkannya dari "sudah cair". Orang yang menunggu uangnya berhak melihat
+ *    bedanya tanpa membaca teliti.
+ */
 export default function FinancePage() {
   const [data, setData] = useState<Awaited<ReturnType<typeof ambilEscrow>> | null>(null);
+  const [memuat, setMemuat] = useState(true);
   const [galat, setGalat] = useState("");
 
   useEffect(() => {
     ambilEscrow()
-      .then((d) => { setData(d); setGalat(""); })
-      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat escrow"));
+      .then((d) => {
+        setData(d);
+        setGalat("");
+      })
+      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Data escrow gagal dimuat"))
+      .finally(() => setMemuat(false));
   }, []);
 
-  if (galat) return <div className="p-8"><div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">{galat}</div></div>;
-  if (!data) return <div className="p-8 text-sm text-gray-500">Memuat keuangan…</div>;
+  if (memuat) {
+    return (
+      <Halaman judul="Escrow & pencairan">
+        <Memuat baris={4} label="Memuat data escrow" />
+      </Halaman>
+    );
+  }
+
+  if (galat || !data) {
+    return (
+      <Halaman judul="Escrow & pencairan">
+        <Galat judul="Data escrow gagal dimuat">
+          {galat || "Data tidak ditemukan."} Buku besar escrow tetap utuh di server — muat
+          ulang halaman untuk mencoba lagi.
+        </Galat>
+      </Halaman>
+    );
+  }
+
+  const rincian = Object.entries(data.rincian).filter(([, n]) => n !== 0);
 
   return (
-    <div className="p-8 max-w-3xl">
-      <h1 className="text-2xl font-bold text-emerald-950 mb-1">Escrow &amp; Pencairan</h1>
-      <p className="text-sm text-gray-500 mb-6">
-        Dana pembeli ditahan sampai pengiriman selesai dan jendela klaim mutu berakhir.
-        Pencairan berjalan otomatis, tidak perlu diajukan.
-      </p>
-
-      <div className="bg-emerald-950 text-white rounded-2xl p-6 mb-4">
-        <div className="flex items-center gap-2 text-emerald-200 text-xs font-bold tracking-wider mb-2">
-          <Wallet className="w-4 h-4" /> MASIH TERTAHAN
-        </div>
-        <div className="text-3xl font-bold">{rp(data.tertahan)}</div>
-      </div>
+    <Halaman
+      judul="Escrow & pencairan"
+      pengantar="Dana pembeli ditahan sampai pengiriman selesai dan jendela klaim mutu berakhir. Pencairan berjalan otomatis — tidak ada yang perlu Anda ajukan."
+    >
+      <Panel nada="utama" label="Posisi sekarang" judul="Masih tertahan di escrow">
+        {/* 26px = `data-display`, langkah Operate untuk nilai yang memimpin. BUKAN 34px:
+            itu langkah lapangan, dan halaman keuangan dibaca di meja, bukan sambil berdiri
+            di kebun. Permukaannya yang menentukan ramp-nya. */}
+        <p className="font-mono text-[26px] leading-none text-tinta">{rupiah(data.tertahan)}</p>
+        <Prosa className="mt-4 text-[14px]">
+          Seluruh pembayaran pembeli yang belum dilepas. Ia berpindah menjadi hak Anda setelah
+          barang diterima dan jendela klaim mutu tiap pengiriman berakhir.
+        </Prosa>
+      </Panel>
 
       {/* Dana yang sudah lepas dari escrow tetapi belum sampai ke rekening. Ditampilkan
           terpisah, bukan digabung ke "sudah dicairkan": instruksi ke mitra pembayaran
           berizin belum tersambung (§5.7.1), dan menyembunyikannya berarti Tenant menunggu
           uang yang ia kira sudah dikirim. */}
-      {data.menungguPenyaluran > 0 && (
-        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
-          <div className="mb-1 text-xs font-bold text-amber-900">
-            Menunggu penyaluran ke rekening
-          </div>
-          <div className="text-xl font-bold text-amber-900">{rp(data.menungguPenyaluran)}</div>
-          <p className="mt-1 text-[11px] leading-relaxed text-amber-800">
+      {data.menungguPenyaluran > 0 ? (
+        <div className="mt-8 bg-jambu p-6">
+          <Label className="text-kabut-jambu">Menunggu penyaluran ke rekening</Label>
+          <p className="mt-2.5 font-mono text-[26px] leading-none text-kertas-terang">
+            {rupiah(data.menungguPenyaluran)}
+          </p>
+          <p className="mt-4 max-w-[58ch] text-[14px] leading-relaxed text-kabut-jambu">
             Dana ini sudah lepas dari escrow dan menjadi hak Anda, tetapi instruksi transfer ke
-            rekening belum berhasil dikirim. Kami menampilkannya apa adanya alih-alih
-            menyatakannya sudah cair.
+            rekening belum berhasil dikirim — mitra pembayaran berizin belum tersambung. Kami
+            menampilkannya apa adanya alih-alih menyatakannya sudah cair.
           </p>
         </div>
-      )}
+      ) : null}
 
-      <div className="grid grid-cols-2 gap-3">
-        {[
-          ["Total pernah ditahan", data.totalDitahan],
-          ["Sudah dicairkan", data.totalDicairkan],
-          ["Potongan klaim mutu", data.totalPotonganKlaim],
-          ["Dikembalikan ke pembeli", data.totalRefund],
-        ].map(([label, nilai]) => (
-          <div key={label as string} className="bg-white border border-gray-200 rounded-xl p-4">
-            <div className="text-xs text-gray-500 mb-1">{label as string}</div>
-            <div className="font-bold text-gray-900">{rp(nilai as number)}</div>
-          </div>
-        ))}
-      </div>
+      <Deret kolom={4} as="dl" className="mt-8">
+        <Ubin label="Total pernah ditahan" nilai={rupiah(data.totalDitahan)} />
+        <Ubin label="Sudah dicairkan" nilai={rupiah(data.totalDicairkan)} nada="utama" />
+        <Ubin label="Potongan klaim mutu" nilai={rupiah(data.totalPotonganKlaim)} nada="awas" />
+        <Ubin label="Dikembalikan ke pembeli" nilai={rupiah(data.totalRefund)} nada="awas" />
+      </Deret>
 
       {/* Ledger bersifat append-only (§6.1): koreksi selalu berupa entri baru, tidak pernah
           menimpa yang lama. Rinciannya ditampilkan apa adanya supaya Tenant bisa menelusuri
           sendiri dari mana angkanya berasal. */}
-      <div className="bg-white border border-gray-200 rounded-xl p-5 mt-4">
-        <h2 className="font-bold text-sm text-gray-900 mb-3">Rincian per jenis entri</h2>
-        <div className="space-y-2">
-          {Object.entries(data.rincian).map(([jenis, nilai]) => (
-            <div key={jenis} className="flex justify-between text-sm">
-              <span className="text-gray-600">{jenis.replace(/_/g, " ")}</span>
-              <span className="font-semibold text-gray-900">{rp(nilai)}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
+      <Panel label="Buku besar" judul="Rincian per jenis entri" className="mt-10">
+        {rincian.length === 0 ? (
+          <Prosa className="text-[14px]">
+            Belum ada entri. Buku besar terisi begitu pembayaran pertama masuk escrow.
+          </Prosa>
+        ) : (
+          <dl>
+            {rincian.map(([jenis, nilai]) => {
+              const e = entriEscrow(jenis);
+              return (
+                <div
+                  key={jenis}
+                  className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-t border-kertas-garis py-4"
+                >
+                  <div className="min-w-0 flex-1">
+                    <dt className="text-[15px] text-tinta">{e.label}</dt>
+                    <p className="mt-1 max-w-[58ch] text-[13px] leading-relaxed text-tinta-samar">
+                      {e.jelas}
+                    </p>
+                  </div>
+                  <dd
+                    className={
+                      e.arah === "masuk"
+                        ? "shrink-0 font-mono text-[15px] text-tinta"
+                        : "shrink-0 font-mono text-[15px] text-jambu"
+                    }
+                  >
+                    {e.arah === "masuk" ? "+" : "−"}
+                    {rupiah(nilai)}
+                  </dd>
+                </div>
+              );
+            })}
+          </dl>
+        )}
+        <Sunyi className="mt-6 max-w-[68ch] text-[13px]">
+          Buku besar ini append-only: koreksi selalu berupa entri baru, tidak pernah menimpa
+          yang lama. Itu sebabnya angka yang saling meniadakan bisa tampil berdampingan —
+          jejaknya sengaja tidak dihapus.
+        </Sunyi>
+      </Panel>
+    </Halaman>
   );
 }

@@ -1,26 +1,50 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Link from "next/link";
-import { Check, Clock, MapPin, ShieldCheck } from "lucide-react";
 import type { LegalityStatus, TenantProfileResponse } from "@agro-os/shared";
 import { GalatApi, ambilProfilTenant } from "@/lib/api";
+import { angka } from "@/lib/format-id";
+import {
+  Deret,
+  Galat,
+  Halaman,
+  Label,
+  Memuat,
+  Panel,
+  Prosa,
+  Sunyi,
+  Tanda,
+  TombolTaut,
+  Ubin,
+  type Nada,
+} from "@/ui";
 
-const PESAN: Record<LegalityStatus, { judul: string; teks: string; kelas: string }> = {
+/**
+ * Akhir onboarding — dan sengaja BUKAN layar perayaan.
+ *
+ * Yang menentukan apa yang bisa Tenant kerjakan berikutnya adalah status legalitasnya,
+ * bukan fakta bahwa formulirnya sudah diisi. Karena itu status yang memimpin halaman, dan
+ * tiap status membawa langkah berikutnya yang berbeda — `PENDING` bukan kegagalan dan tidak
+ * boleh terbaca begitu, `REJECTED` harus menyebut jalan keluarnya.
+ */
+const PESAN: Record<LegalityStatus, { judul: string; teks: string; nada: Nada; tanda: "penuh" | "sebagian" | "tidak" }> = {
   PENDING: {
-    judul: "Menunggu Tinjauan Operator",
-    teks: "Anda sudah bisa menyiapkan produk. Kuota Pre-Order terbuka setelah legalitas disetujui.",
-    kelas: "bg-amber-100 text-amber-900",
+    judul: "Menunggu tinjauan operator",
+    teks: "Anda sudah bisa masuk dan menyiapkan produk sekarang. Yang menunggu tinjauan hanyalah pembukaan kuota Pre-Order — begitu legalitas disetujui, kuota bisa langsung dibuka.",
+    nada: "kabar",
+    tanda: "sebagian",
   },
   APPROVED: {
-    judul: "Legalitas Disetujui",
-    teks: "Anda sudah bisa membuka kuota Pre-Order.",
-    kelas: "bg-emerald-100 text-emerald-800",
+    judul: "Legalitas disetujui",
+    teks: "Tidak ada lagi yang menahan. Anda sudah bisa membuka kuota Pre-Order dan mulai menerima pesanan.",
+    nada: "utama",
+    tanda: "penuh",
   },
   REJECTED: {
-    judul: "Legalitas Ditolak",
-    teks: "Perbaiki dokumen sesuai catatan operator, lalu ajukan kembali.",
-    kelas: "bg-red-100 text-red-800",
+    judul: "Legalitas ditolak",
+    teks: "Perbaiki dokumen sesuai catatan operator, lalu ajukan kembali. Penolakan tidak menghapus profil maupun lahan yang sudah Anda daftarkan.",
+    nada: "awas",
+    tanda: "tidak",
   },
 };
 
@@ -35,69 +59,76 @@ export default function TenantOnboardingSuccessPage() {
         setProfil(p);
         setGalat("");
       })
-      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat profil"))
+      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Profil gagal dimuat"))
       .finally(() => setMemuat(false));
   }, []);
 
-  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat…</div>;
+  if (memuat) {
+    return (
+      <Halaman lebar="sempit" judul="Pendaftaran selesai">
+        <Memuat baris={3} label="Memuat profil" />
+      </Halaman>
+    );
+  }
 
   const status = profil ? PESAN[profil.legalityStatus] : null;
 
   return (
-    <main className="min-h-screen bg-[#f5f8ff] p-6 flex items-center justify-center">
-      <div className="w-full max-w-lg">
-        <div className="bg-white border border-gray-200 rounded-2xl p-8 flex flex-col items-center text-center">
-          <div className="w-16 h-16 bg-emerald-900 rounded-full flex items-center justify-center mb-6">
-            <Check className="w-8 h-8 text-white" strokeWidth={3} />
-          </div>
+    <Halaman
+      lebar="sempit"
+      judul="Pendaftaran selesai"
+      pengantar={
+        profil
+          ? `${profil.companyName} terdaftar dan siap dipakai. Yang menentukan langkah berikutnya adalah status legalitas di bawah.`
+          : "Pendaftaran Anda tersimpan."
+      }
+    >
+      {galat ? (
+        <Galat judul="Profil gagal dimuat" className="mb-8">
+          {galat} Pendaftaran Anda tetap tersimpan — muat ulang halaman untuk melihat statusnya.
+        </Galat>
+      ) : null}
 
-          <h1 className="text-2xl font-black text-emerald-900 mb-2">Pendaftaran Selesai</h1>
-          {profil && (
-            <p className="text-sm text-gray-600 mb-6">
-              <b>{profil.companyName}</b> terdaftar di{" "}
-              {profil.zones.map((z) => z.name).join(", ")} dengan {profil.landPlotCount} petak
-              lahan.
-            </p>
-          )}
+      {profil ? (
+        <Deret kolom={2} as="dl" className="mb-8">
+          <Ubin label="Zona layanan" nilai={String(profil.zones.length)} satuan="zona" catatan={profil.zones.map((z) => z.name).join(", ")} />
+          <Ubin label="Petak lahan" nilai={angka(profil.landPlotCount)} satuan="petak" />
+        </Deret>
+      ) : null}
 
-          {galat && (
-            <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-4 w-full">
-              {galat}
-            </p>
-          )}
+      {status ? (
+        <Panel
+          nada={status.nada}
+          label="Status legalitas"
+          /* Tandanya menyatu dengan judul, bukan berdiri lagi sebagai pil berisi kata yang
+             sama persis di sebelahnya. */
+          judul={
+            <span className="flex items-center gap-2">
+              <Tanda jenis={status.tanda} className={status.nada === "kabar" ? "text-biru" : ""} />
+              {status.judul}
+            </span>
+          }
+        >
+          <Prosa className="text-[15px]">{status.teks}</Prosa>
+        </Panel>
+      ) : null}
 
-          {status && profil && (
-            <div className="w-full rounded-xl border border-gray-200 p-5 mb-6 text-left">
-              <div className="flex items-center gap-2 mb-2">
-                {profil.legalityStatus === "APPROVED" ? (
-                  <ShieldCheck className="w-4 h-4 text-emerald-700" />
-                ) : (
-                  <Clock className="w-4 h-4 text-amber-700" />
-                )}
-                <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${status.kelas}`}>
-                  {status.judul}
-                </span>
-              </div>
-              <p className="text-xs text-gray-600">{status.teks}</p>
-            </div>
-          )}
-
-          <div className="w-full space-y-2">
-            <Link
-              href="/tenant"
-              className="w-full flex items-center justify-center py-3 rounded-lg font-semibold bg-emerald-950 text-white hover:bg-emerald-800 transition text-sm"
-            >
-              Masuk ke Dashboard
-            </Link>
-            <Link
-              href="/tenant/land"
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-lg font-semibold border border-gray-300 text-gray-700 hover:bg-gray-50 transition text-sm"
-            >
-              <MapPin className="w-4 h-4" /> Kelola Lahan
-            </Link>
-          </div>
+      <div className="mt-10">
+        <Label className="mb-3">Langkah berikutnya</Label>
+        <div className="flex flex-wrap gap-2">
+          <TombolTaut href="/tenant" className="py-3.5">
+            Masuk ke beranda Tenant
+          </TombolTaut>
+          <TombolTaut href="/tenant/catalog/edit" rupa="kedua" className="py-3.5">
+            Tambah produk pertama
+          </TombolTaut>
         </div>
+        <Sunyi className="mt-3 max-w-[68ch] text-[13px]">
+          Menambah produk tidak menunggu tinjauan legalitas. Yang menunggu hanya kuota
+          Pre-Order, jadi menyiapkan produk sekarang berarti kuota bisa dibuka di hari
+          persetujuannya.
+        </Sunyi>
       </div>
-    </main>
+    </Halaman>
   );
 }

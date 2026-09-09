@@ -1,23 +1,67 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Camera, Loader2, MapPin } from "lucide-react";
-import Link from "next/link";
+import { Camera, Images, MapPin } from "lucide-react";
 import { GalatApi, deklarasiPanen, konfirmasiPanen, tambahNodeTimeline } from "@/lib/api";
-import { TimelineActivity, type HarvestPreviewResponse } from "@agro-os/shared";
+import { CaptureSource, TimelineActivity, type HarvestPreviewResponse } from "@agro-os/shared";
+import {
+  AreaTeks,
+  Berkas,
+  Galat,
+  Halaman,
+  Ikon,
+  Label,
+  Masukan,
+  Medan,
+  Panel,
+  Prosa,
+  Sunyi,
+  TautanKembali,
+  Tombol,
+} from "@/ui";
 import { PenilaianPanen } from "./PenilaianPanen";
+
+/**
+ * TN-18 — Catat kegiatan lapangan.
+ *
+ * Layar ini dibuka SAMBIL BERDIRI DI KEBUN, satu tangan, pada Android kelas menengah-bawah
+ * dengan sinyal seadanya. Batasannya mengikat: paling banyak tiga ketukan plus kamera.
+ * Itu yang menentukan bentuknya, bukan selera — jenis kegiatan berupa petak besar yang
+ * bisa ditekan tanpa membidik, koordinat diminta SENDIRI saat layar dibuka alih-alih
+ * menunggu satu ketukan tambahan, dan tombol kirimnya setinggi ibu jari.
+ *
+ * MIGRASI DUNIA, dengan tiga perubahan yang bukan soal rupa:
+ *
+ * 1. ASAL FOTO TIDAK LAGI DIPALSUKAN. Versi sebelumnya selalu mengirim
+ *    `captureSource: "IN_APP_CAMERA"` — dipaku di kode — meskipun berkasnya dipilih dari
+ *    galeri. Kontraknya punya `GALLERY`, server menyimpannya apa adanya, dan halaman
+ *    rincian batch milik pembeli menampilkan pil "Dari galeri" dari field itu; artinya pil
+ *    itu tidak pernah bisa muncul, dan rantai bukti memuat klaim asal-usul yang tidak
+ *    ditopang apa pun. Di produk yang menjual bukti yang bisa diperiksa, itu bukan detail.
+ *    Sekarang ada DUA kendali, dan yang tercatat adalah kendali yang benar-benar dipakai.
+ *
+ * 2. "GAGAL PANEN" TIDAK LAGI DIWARNAI BAHAYA. Tombolnya dulu bergaris merah di antara
+ *    enam tombol netral. Deklarasi gagal panen justru yang PALING dibutuhkan sistem ini
+ *    tepat waktu dan jujur; mewarnainya seperti tindakan terlarang menghukum kejujuran
+ *    sebelum orangnya sempat jujur. Konsekuensinya tetap dinyatakan — tetapi setelah
+ *    dipilih, sebagai kalimat, bukan sebagai warna yang menghakimi dari kejauhan.
+ *
+ * 3. TOMBOL AMBIL LOKASI PUNYA NAMA. Dulu ia hanya glif peta tanpa teks maupun
+ *    `aria-label`: bagi pembaca layar ia tombol tanpa nama, dan tanpa koordinat catatan
+ *    tidak bisa dikirim sama sekali.
+ */
 
 /** Tujuh jenis kegiatan terstruktur, bukan teks bebas (§5.4.1) — supaya bisa dibandingkan
  *  antar batch dan antar Tenant, dan supaya satelit punya acuan yang jelas. */
 const JENIS: { nilai: keyof typeof TimelineActivity; label: string }[] = [
-  { nilai: "PENYIAPAN_LAHAN", label: "Penyiapan Lahan" },
+  { nilai: "PENYIAPAN_LAHAN", label: "Penyiapan lahan" },
   { nilai: "PENANAMAN", label: "Penanaman" },
   { nilai: "PEMUPUKAN", label: "Pemupukan" },
-  { nilai: "PENGENDALIAN_HAMA", label: "Pengendalian Hama" },
+  { nilai: "PENGENDALIAN_HAMA", label: "Pengendalian hama" },
   { nilai: "PENGAIRAN", label: "Pengairan" },
   { nilai: "PANEN", label: "Panen" },
-  { nilai: "GAGAL_PANEN", label: "Gagal Panen" },
+  { nilai: "GAGAL_PANEN", label: "Gagal panen" },
 ];
 
 export default function TambahNodePage({ params }: { params: Promise<{ id: string }> }) {
@@ -27,28 +71,40 @@ export default function TambahNodePage({ params }: { params: Promise<{ id: strin
   const [jenis, setJenis] = useState<string>("PEMUPUKAN");
   const [deskripsi, setDeskripsi] = useState("");
   const [berkas, setBerkas] = useState<File | null>(null);
+  const [sumber, setSumber] = useState<CaptureSource>("IN_APP_CAMERA");
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
   const [alasanLuar, setAlasanLuar] = useState("");
   const [fulfilledBox, setFulfilledBox] = useState("");
   const [proses, setProses] = useState(false);
   const [galat, setGalat] = useState("");
+  const [galatFoto, setGalatFoto] = useState("");
+  const [galatLokasi, setGalatLokasi] = useState("");
 
   // Alur panen dua langkah (sequence 04b). Selama `pratinjau` terisi, layar berpindah ke
   // TN-19b/19c/19a dan BELUM ada apa pun yang tertulis — itu seluruh gunanya.
   const [pratinjau, setPratinjau] = useState<HarvestPreviewResponse | null>(null);
 
   const perluJumlahPanen = jenis === "PANEN";
+  const menutupBatch = jenis === "PANEN" || jenis === "GAGAL_PANEN";
 
   function ambilLokasi() {
+    setGalatLokasi("");
     navigator.geolocation?.getCurrentPosition(
       (pos) => {
         setLat(String(pos.coords.latitude));
         setLng(String(pos.coords.longitude));
       },
-      () => setGalat("Izin lokasi ditolak. Isi koordinat secara manual."),
+      () => setGalatLokasi("Izin lokasi ditolak. Isi koordinatnya sendiri di bawah."),
     );
   }
+
+  // Diminta sendiri saat layar dibuka. Satu ketukan lebih sedikit di kebun, dan koordinat
+  // yang terisi lebih awal punya waktu lebih panjang untuk mengunci titik yang akurat.
+  useEffect(() => {
+    ambilLokasi();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** Susun badan multipart node timeline. Sama untuk jalur biasa maupun konfirmasi panen. */
   function susunForm(): FormData {
@@ -60,16 +116,26 @@ export default function TambahNodePage({ params }: { params: Promise<{ id: strin
     // Waktu perangkat direkam otomatis, tidak diketik pengguna (§5.4.1). Server menolak
     // stempel waktu yang lebih maju dari waktunya sendiri.
     form.append("deviceTs", new Date().toISOString());
-    form.append("captureSource", "IN_APP_CAMERA");
+    // Asal foto MENGIKUTI kendali yang dipakai, tidak dipaku.
+    form.append("captureSource", sumber);
     if (alasanLuar) form.append("outsidePolygonReason", alasanLuar);
     if (perluJumlahPanen && fulfilledBox) form.append("fulfilledBox", fulfilledBox);
     if (berkas) form.append("photos", berkas);
     return form;
   }
 
+  function pilihFoto(f: File | null, asal: CaptureSource) {
+    setBerkas(f);
+    setSumber(asal);
+    if (f) setGalatFoto("");
+  }
+
   async function simpan(e: React.FormEvent) {
     e.preventDefault();
-    if (!berkas) return setGalat("Foto bukti wajib dilampirkan.");
+    if (!berkas) {
+      setGalatFoto("Lampirkan satu foto kegiatan — tanpa foto, catatan ini tidak membuktikan apa pun.");
+      return;
+    }
     setGalat("");
     setProses(true);
     try {
@@ -83,7 +149,7 @@ export default function TambahNodePage({ params }: { params: Promise<{ id: strin
       await tambahNodeTimeline(batchId, susunForm());
       router.push(`/tenant/batch/${batchId}`);
     } catch (err) {
-      setGalat(err instanceof GalatApi ? err.message : "Gagal menyimpan catatan.");
+      setGalat(err instanceof GalatApi ? err.message : "Catatan gagal disimpan. Coba kirim lagi.");
       setProses(false);
     }
   }
@@ -99,203 +165,247 @@ export default function TambahNodePage({ params }: { params: Promise<{ id: strin
       await konfirmasiPanen(batchId, form);
       router.push(`/tenant/batch/${batchId}`);
     } catch (err) {
-      setGalat(err instanceof GalatApi ? err.message : "Gagal mengonfirmasi panen.");
+      setGalat(err instanceof GalatApi ? err.message : "Panen gagal dikonfirmasi. Coba lagi.");
       setProses(false);
     }
   }
 
-  return (
-    <div className="p-8 max-w-2xl">
-      <Link
-        href={`/tenant/batch/${batchId}`}
-        className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 hover:text-emerald-600 mb-6"
+  const kembali = <TautanKembali href={`/tenant/batch/${batchId}`}>Batch</TautanKembali>;
+
+  if (pratinjau) {
+    return (
+      <Halaman
+        lebar="sempit"
+        kembali={kembali}
+        judul="Periksa dampaknya"
+        pengantar="Belum ada yang tercatat. Anda masih bisa kembali dan mengubah angkanya."
       >
-        <ArrowLeft className="w-4 h-4" /> Kembali ke Batch
-      </Link>
+        <PenilaianPanen
+          data={pratinjau}
+          memproses={proses}
+          onBatal={() => setPratinjau(null)}
+          onLanjut={konfirmasi}
+        />
+        {galat ? (
+          <Galat judul="Panen belum tercatat" className="mt-8">
+            {galat}
+          </Galat>
+        ) : null}
+      </Halaman>
+    );
+  }
 
-      <h1 className="text-2xl font-bold text-emerald-950 mb-1">
-        {pratinjau ? "Periksa dampaknya" : "Catat Kegiatan"}
-      </h1>
-      <p className="text-sm text-gray-500 mb-6">
-        {pratinjau
-          ? "Belum ada yang tercatat. Anda masih bisa kembali dan mengubah angkanya."
-          : "Catatan bersifat permanen. Tidak bisa diubah atau dihapus — koreksi dilakukan dengan menambah catatan Ralat yang menunjuk catatan lama, dan keduanya tetap terlihat pembeli."}
-      </p>
-
-      {pratinjau ? (
-        <div className="space-y-4">
-          <PenilaianPanen
-            data={pratinjau}
-            memproses={proses}
-            onBatal={() => setPratinjau(null)}
-            onLanjut={konfirmasi}
-          />
-          {galat && (
-            <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-              {galat}
-            </p>
-          )}
-        </div>
-      ) : (
-      <form onSubmit={simpan} className="space-y-4">
-        <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Jenis kegiatan</label>
+  return (
+    <Halaman
+      lebar="sempit"
+      kembali={kembali}
+      judul="Catat kegiatan"
+      pengantar="Catatan ini permanen: tidak bisa diubah maupun dihapus. Koreksi dilakukan dengan menambah catatan Ralat yang menunjuk catatan lama, dan keduanya tetap terlihat pembeli."
+    >
+      <form onSubmit={simpan}>
+        <Panel label="Kegiatan" judul="Apa yang dikerjakan hari ini">
+          <fieldset>
+            <legend className="mb-3">
+              <Label>Jenis kegiatan</Label>
+            </legend>
+            {/* Petak besar, dua kolom, semuanya serupa. Tidak ada satu pun yang diwarnai
+                bahaya — lihat catatan 2 di kepala berkas. */}
             <div className="grid grid-cols-2 gap-2">
               {JENIS.map((j) => (
-                <button
+                <Tombol
                   key={j.nilai}
                   type="button"
+                  rupa={jenis === j.nilai ? "utama" : "kedua"}
+                  aria-pressed={jenis === j.nilai}
+                  className="py-3.5"
                   onClick={() => setJenis(j.nilai)}
-                  className={`px-3 py-2.5 rounded-lg text-sm font-medium border transition ${
-                    jenis === j.nilai
-                      ? "bg-emerald-950 text-white border-emerald-950"
-                      : j.nilai === "GAGAL_PANEN"
-                        ? "border-red-200 text-red-700 hover:bg-red-50"
-                        : "border-gray-200 text-gray-700 hover:bg-gray-50"
-                  }`}
                 >
                   {j.label}
-                </button>
+                </Tombol>
               ))}
             </div>
-          </div>
+          </fieldset>
 
-          {(jenis === "PANEN" || jenis === "GAGAL_PANEN") && (
-            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900">
-              Catatan ini <b>menutup batch</b>. Shortfall tercatat permanen, memengaruhi rasio
-              publik Anda dan kuota siklus berikutnya. Pembeli yang pesanannya tidak terpenuhi
-              langsung ditawari substitusi, penjadwalan ulang, atau pengembalian dana.
+          {/* Peringatan datang sebelum konsekuensi. Nadanya menjelaskan mekanisme, bukan
+              memperingatkan orangnya — yang keras adalah mekanismenya, bukan kalimatnya. */}
+          {menutupBatch ? (
+            <div className="mt-6 border-t-2 border-jambu pt-3">
+              <Label className="text-jambu">Catatan ini menutup batch</Label>
+              <Prosa className="mt-1.5 text-[14px]">
+                Setelah tercatat, timeline batch ini ditutup dan tidak menerima catatan baru.
+                Bila hasilnya tidak menutupi seluruh pesanan, pembeli yang kurang langsung
+                ditawari substitusi, jadwal ulang, atau pengembalian dana, dan selisihnya
+                tercatat pada siklus ini.
+              </Prosa>
             </div>
-          )}
+          ) : null}
 
-          {perluJumlahPanen && (
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                Total box hasil panen
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={fulfilledBox}
-                onChange={(e) => setFulfilledBox(e.target.value)}
-                placeholder="mis. 150"
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+          {perluJumlahPanen ? (
+            <Medan
+              label="Total box hasil panen"
+              /* Wajib TOTAL, bukan "porsi untuk pesanan". Pita kewajaran membandingkannya
+                 dengan kapasitas lahan; kalau yang diisi hanya porsi terjual, Tenant yang
+                 jujur pun akan tampak kekurangan hasil. */
+              petunjuk="Seluruh hasil panen dari lahan ini, termasuk yang tidak terjual lewat AgroUs. Porsi yang masuk ke pesanan dihitung otomatis."
+              wajib
+              className="mt-6"
+            >
+              {(alat) => (
+                <Masukan
+                  {...alat}
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={fulfilledBox}
+                  onChange={(e) => setFulfilledBox(e.target.value)}
+                  placeholder="150"
+                  className="py-3.5 font-mono text-[22px]"
+                />
+              )}
+            </Medan>
+          ) : null}
+
+          <Medan
+            label="Deskripsi"
+            petunjuk="Satu atau dua kalimat tentang yang dikerjakan. Pembeli membacanya apa adanya."
+            wajib
+            className="mt-6"
+          >
+            {(alat) => (
+              <AreaTeks
+                {...alat}
+                minLength={3}
+                maxLength={280}
+                rows={3}
+                value={deskripsi}
+                onChange={(e) => setDeskripsi(e.target.value)}
+                placeholder="Pemupukan susulan NPK, seluruh bedeng sisi utara."
               />
-              {/* Wajib TOTAL, bukan "porsi untuk pesanan". Pita kewajaran membandingkannya
-                  dengan kapasitas lahan; kalau yang diisi hanya porsi terjual, Tenant yang
-                  jujur pun akan tampak kekurangan hasil. */}
-              <p className="text-xs text-gray-400 mt-1">
-                Seluruh hasil panen dari lahan ini, termasuk yang tidak terjual lewat AgroUs.
-                Yang masuk ke pesanan dihitung otomatis.
-              </p>
-            </div>
-          )}
+            )}
+          </Medan>
+          <Sunyi className="mt-1.5 text-right font-mono text-[12px]">{deskripsi.length}/280</Sunyi>
+        </Panel>
 
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Deskripsi</label>
-            <textarea
-              required
-              minLength={3}
-              maxLength={280}
-              rows={3}
-              value={deskripsi}
-              onChange={(e) => setDeskripsi(e.target.value)}
-              placeholder="Apa yang dikerjakan hari ini?"
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
-            />
-            <p className="text-xs text-gray-400 mt-1">{deskripsi.length}/280 karakter</p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Foto bukti</label>
-            <label className="flex items-center gap-3 px-3 py-3 border border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
-              <Camera className="w-5 h-5 text-emerald-700" />
-              <span className="text-sm text-gray-600">
-                {berkas ? berkas.name : "Ambil foto atau pilih berkas"}
-              </span>
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={(e) => setBerkas(e.target.files?.[0] ?? null)}
-                className="hidden"
-              />
-            </label>
-            <p className="text-xs text-gray-400 mt-1">
+        <Panel label="Bukti" judul="Yang membuat catatan ini bisa diperiksa" className="mt-8">
+          <fieldset>
+            <legend className="mb-1.5">
+              <Label>
+                Foto kegiatan<span className="ml-1 text-jambu">*</span>
+              </Label>
+            </legend>
+            <p className="mb-3 text-[12px] leading-snug text-tinta-samar">
               Foto ikut di-hash ke dalam rantai bukti, jadi tidak bisa ditukar belakangan.
             </p>
-          </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Berkas
+                ikon={Camera}
+                accept="image/*"
+                capture="environment"
+                nama={berkas && sumber === "IN_APP_CAMERA" ? berkas.name : null}
+                placeholder="Ambil foto sekarang"
+                className="py-3.5"
+                onChange={(e) => pilihFoto(e.target.files?.[0] ?? null, "IN_APP_CAMERA")}
+              />
+              <Berkas
+                ikon={Images}
+                accept="image/*"
+                nama={berkas && sumber === "GALLERY" ? berkas.name : null}
+                placeholder="Pilih dari galeri"
+                className="py-3.5"
+                onChange={(e) => pilihFoto(e.target.files?.[0] ?? null, "GALLERY")}
+              />
+            </div>
 
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Koordinat lokasi
-            </label>
-            <div className="flex gap-2">
-              <input
+            {/* Dinyatakan, bukan dicegah. Foto galeri tetap sah; yang berbeda hanya derajat
+                buktinya, dan pembeli melihat penandanya. Nadanya menjelaskan, tidak menuduh. */}
+            {berkas && sumber === "GALLERY" ? (
+              <div className="mt-3 border-t-2 border-biru pt-3">
+                <Label className="text-biru">Tercatat bersumber galeri</Label>
+                <Prosa className="mt-1.5 text-[14px]">
+                  Foto dari galeri tetap sah dan tetap masuk rantai bukti. Bedanya, pembeli
+                  melihat penanda sumbernya — foto yang diambil langsung di lokasi menopang
+                  klaim lebih kuat karena waktu dan tempatnya ikut terekam.
+                </Prosa>
+              </div>
+            ) : null}
+
+            {galatFoto ? (
+              <p className="mt-2 text-[12px] font-semibold leading-snug text-jambu">{galatFoto}</p>
+            ) : null}
+          </fieldset>
+
+          <fieldset className="mt-7">
+            <legend className="mb-1.5">
+              <Label>
+                Koordinat lokasi<span className="ml-1 text-jambu">*</span>
+              </Label>
+            </legend>
+            <p className="mb-3 text-[12px] leading-snug text-tinta-samar">
+              Harus di dalam batas lahan terdaftar. Bila di luar, alasannya wajib diisi dan
+              ditampilkan kepada pembeli.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+              <Masukan
                 required
+                inputMode="decimal"
                 value={lat}
                 onChange={(e) => setLat(e.target.value)}
                 placeholder="lintang"
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+                aria-label="Lintang"
+                className="font-mono"
               />
-              <input
+              <Masukan
                 required
+                inputMode="decimal"
                 value={lng}
                 onChange={(e) => setLng(e.target.value)}
                 placeholder="bujur"
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+                aria-label="Bujur"
+                className="font-mono"
               />
-              <button
-                type="button"
-                onClick={ambilLokasi}
-                className="shrink-0 px-3 rounded-lg border border-gray-300 hover:bg-gray-50"
-              >
-                <MapPin className="w-4 h-4 text-gray-600" />
-              </button>
+              {/* Bernama, bukan sekadar glif — lihat catatan 3 di kepala berkas. */}
+              <Tombol type="button" rupa="kedua" onClick={ambilLokasi} className="shrink-0">
+                <Ikon dari={MapPin} />
+                Ambil lokasi
+              </Tombol>
             </div>
-            <p className="text-xs text-gray-400 mt-1">
-              Harus di dalam batas lahan terdaftar. Bila di luar, alasannya wajib diisi dan{" "}
-              <b>akan ditampilkan kepada pembeli</b>.
-            </p>
-          </div>
+            {galatLokasi ? (
+              <p className="mt-2 text-[12px] font-semibold leading-snug text-jambu">{galatLokasi}</p>
+            ) : null}
+          </fieldset>
 
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Alasan bila di luar lahan{" "}
-              <span className="font-normal text-gray-400">(opsional)</span>
-            </label>
-            <input
-              value={alasanLuar}
-              onChange={(e) => setAlasanLuar(e.target.value)}
-              placeholder="mis. sinyal GPS meleset, foto diambil dari tepi jalan"
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
-            />
-          </div>
-        </div>
+          <Medan
+            label="Alasan bila di luar lahan"
+            petunjuk="Opsional. Diisi hanya bila koordinat di atas jatuh di luar batas lahan terdaftar."
+            className="mt-7"
+          >
+            {(alat) => (
+              <Masukan
+                {...alat}
+                value={alasanLuar}
+                onChange={(e) => setAlasanLuar(e.target.value)}
+                placeholder="Sinyal GPS meleset, foto diambil dari tepi jalan"
+              />
+            )}
+          </Medan>
+        </Panel>
 
-        {galat && (
-          <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+        {galat ? (
+          <Galat judul="Catatan belum tersimpan" className="mt-8">
             {galat}
-          </p>
-        )}
+          </Galat>
+        ) : null}
 
-        <button
+        <Tombol
           type="submit"
-          disabled={proses}
-          className="w-full bg-emerald-950 text-white text-sm font-semibold py-3 rounded-lg hover:bg-emerald-800 disabled:opacity-60 flex items-center justify-center gap-2"
+          penuh
+          className="mt-8 py-4 text-[16px]"
+          sibuk={proses}
+          labelSibuk={perluJumlahPanen ? "Memeriksa…" : "Menyimpan…"}
         >
-          {proses && <Loader2 className="w-4 h-4 animate-spin" />}
-          {proses
-            ? perluJumlahPanen
-              ? "Memeriksa…"
-              : "Menyimpan…"
-            : perluJumlahPanen
-              ? "Lihat dampaknya sebelum mencatat"
-              : "Simpan Catatan Permanen"}
-        </button>
+          {perluJumlahPanen ? "Lihat dampaknya sebelum mencatat" : "Simpan catatan permanen"}
+        </Tombol>
       </form>
-      )}
-    </div>
+    </Halaman>
   );
 }

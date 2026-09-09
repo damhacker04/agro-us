@@ -78,6 +78,45 @@ typography:
     fontWeight: 400
     letterSpacing: "0.26em"
     textTransform: "uppercase"
+  # ---- Langkah mode OPERATE. Berasal dari kit `src/ui` sejak Fase B dan sudah berjalan di
+  #      seluruh halaman kerja; blok di atas menggambarkan ramp halaman depan saja, dan
+  #      ketiganya tidak pernah ikut tercatat. Didokumentasikan di sini supaya kontraknya
+  #      menggambarkan sistem yang benar-benar dipakai, bukan separuhnya.
+  body-panel:
+    fontFamily: "Archivo, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "14px"
+    fontWeight: 400
+    lineHeight: 1.625
+  hint:
+    fontFamily: "Archivo, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "12px"
+    fontWeight: 400
+    lineHeight: 1.375
+  data-tile:
+    fontFamily: "Chivo Mono, ui-monospace, monospace"
+    fontSize: "22px"
+    fontWeight: 400
+    lineHeight: 1
+  # ---- Langkah LAPANGAN. Bukan pilihan estetis melainkan syarat pakai: dibaca sambil
+  #      berdiri di kebun atau di tepi jalan, satu tangan, di bawah matahari, pada Android
+  #      kelas menengah-bawah. Dipakai layar kurir dan pencatatan lapangan Tenant.
+  field-action:
+    fontFamily: "Archivo, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "16px"
+    fontWeight: 600
+    lineHeight: 1
+  field-code:
+    fontFamily: "Chivo Mono, ui-monospace, monospace"
+    fontSize: "34px"
+    fontWeight: 400
+    lineHeight: 1
+    letterSpacing: "0.35em"
+  field-figure:
+    fontFamily: "Chivo Mono, ui-monospace, monospace"
+    fontSize: "56px"
+    fontWeight: 400
+    lineHeight: 1
+    letterSpacing: "-0.03em"
 rounded:
   none: "0px"
 spacing:
@@ -305,6 +344,41 @@ against the 68px heading — recorded in the code after it broke the `h1` into n
 **The Tracking-Cap Rule.** Uppercase in this system is always small (10–12px), always
 semibold, and always at `tracking-cap` (0.26em). Uppercase at body size or at normal
 tracking does not exist here.
+
+### Two more ramps, and where each one belongs
+
+The hierarchy above is the **Persuade** ramp — the landing page's voice. Two more sets of
+steps exist, and they were running in the code long before they appeared here. That gap was
+the bug: a contract that documents half a system reports correct pages as violations, and
+the people reading it as law infer a scale nobody actually uses.
+
+**Operate steps**, living in `src/ui` since the kit was built:
+
+- **body-panel** (14px, `leading-relaxed`): prose set inside a `Panel`, a `Galat`, or a
+  state block. One notch under `body` because a working page carries far more of it, and
+  15px everywhere turns a queue into a wall.
+- **hint** (12px): the rule that applies *before* someone types — `Medan`'s `petunjuk`,
+  `Ubin`'s `catatan`, the fine print under a control. Never used for errors; those are
+  `jambu` and semibold at the same size.
+- **data-tile** (22px, Chivo Mono): the measured value that leads a tile — `Ubin`'s value
+  and `Nilai ukuran="lg"`. It is `data-display` (26px) brought down to a size that survives
+  four tiles across a working page.
+
+**Field steps**, for screens read while standing:
+
+- **field-action** (16px semibold), **field-code** (34px mono, `0.35em`), **field-figure**
+  (56px mono, `-0.03em`).
+
+These are not a louder mood. They are a use scene: the courier's distance and the Kode Antar
+are read one-handed, in sunlight, on a mid-to-low Android, often at arm's length while the
+other hand holds a box. `field-figure` is deliberately larger than anything on the landing
+page, because the landing page is read at a desk and this is not. Monospace at that size
+needs the negative tracking or the number and its unit separate into two objects.
+
+**Which ramp applies is decided by the surface, not by taste.** Persuade steps on `/`;
+Operate steps on the 57 working pages; field steps only where the reader is standing in a
+field or on a roadside. Mixing them is how a working page ends up shouting and a field
+screen ends up unreadable.
 
 ## Layout
 

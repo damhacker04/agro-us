@@ -1,160 +1,229 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, CheckCircle2, AlertTriangle, Plus, Scale } from "lucide-react";
-import { ambilBatchSatu, ambilTimelineTenant, ambilVerifikasi, GalatApi, urlBerkas } from "@/lib/api";
+import { ambilBatchSatu, ambilTimelineTenant, ambilVerifikasi, GalatApi } from "@/lib/api";
+import { angka, jamWib, rupiah, tanggalPanjang, tanggalPendek } from "@/lib/format-id";
 import type { BatchResponse, TimelineNodeResponse, TimelineVerifyResponse } from "@agro-os/shared";
+import { KEGIATAN } from "@/components/kegiatan";
+import { FotoBukti } from "@/components/foto-bukti";
+import {
+  BarisData,
+  Deret,
+  Galat,
+  Halaman,
+  Kosong,
+  Label,
+  Memuat,
+  Panel,
+  Pil,
+  Prosa,
+  Tanda,
+  TautanKembali,
+  TombolTaut,
+} from "@/ui";
 
-const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
-const tgl = (iso: string) =>
-  new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
-
+/**
+ * TN-17 — Rincian batch dan Verified Timeline miliknya sendiri.
+ *
+ * Layar ini dibaca Tenant, bukan pembeli, dan itu menentukan nadanya. Isinya persis sama
+ * dengan yang dilihat pembeli — memang begitu maksudnya, Tenant berhak tahu apa yang
+ * terlihat dari seberang — tetapi kalimatnya berbicara kepada pemilik catatan, bukan
+ * kepada orang yang sedang menimbang apakah akan mempercayainya.
+ *
+ * Penanda "Dari galeri" ikut ditampilkan di sini, bukan hanya di layar pembeli. Sejak
+ * halaman pencatatan berhenti memaku `captureSource`, penanda itu jadi punya arti — dan
+ * menyembunyikannya dari Tenant berarti membiarkan mereka terkejut oleh sesuatu yang
+ * dilihat pembelinya sendiri.
+ */
 export default function BatchDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = React.use(params);
   const [batch, setBatch] = useState<BatchResponse | null>(null);
   const [nodes, setNodes] = useState<TimelineNodeResponse[]>([]);
   const [verify, setVerify] = useState<TimelineVerifyResponse | null>(null);
+  const [memuat, setMemuat] = useState(true);
   const [galat, setGalat] = useState("");
 
   useEffect(() => {
     ambilBatchSatu(id)
       .then(setBatch)
-      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Batch tidak ditemukan"));
-    ambilTimelineTenant(id).then(setNodes).catch(() => setNodes([]));
-    ambilVerifikasi(id).then(setVerify).catch(() => setVerify(null));
+      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Batch tidak ditemukan"))
+      .finally(() => setMemuat(false));
+    ambilTimelineTenant(id)
+      .then(setNodes)
+      .catch(() => setNodes([]));
+    ambilVerifikasi(id)
+      .then(setVerify)
+      .catch(() => setVerify(null));
   }, [id]);
 
-  if (galat) {
+  const kembali = <TautanKembali href="/tenant/batch">Daftar batch</TautanKembali>;
+
+  if (memuat) {
     return (
-      <div className="p-8">
-        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
-          {galat}
-        </div>
-      </div>
+      <Halaman judul="Rincian batch" kembali={kembali}>
+        <Memuat baris={4} label="Memuat batch" />
+      </Halaman>
     );
   }
-  if (!batch) return <div className="p-8 text-sm text-gray-500">Memuat batch…</div>;
+
+  if (galat || !batch) {
+    return (
+      <Halaman judul="Rincian batch" kembali={kembali}>
+        <Galat judul="Batch tidak dapat dimuat">
+          {galat || "Batch tidak ditemukan."} Catatan batch Anda tetap tersimpan di server —
+          muat ulang halaman untuk mencoba lagi.
+        </Galat>
+      </Halaman>
+    );
+  }
 
   const tertutup = batch.productionStatus === "HARVESTED" || batch.productionStatus === "FAILED";
 
   return (
-    <div className="p-8 max-w-3xl">
-      <Link
-        href="/tenant/batch"
-        className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 hover:text-emerald-600 mb-6"
-      >
-        <ArrowLeft className="w-4 h-4" /> Kembali ke Daftar Batch
-      </Link>
-
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-emerald-950">{batch.productName ?? "Batch"}</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Panen {tgl(batch.claimedHarvestDate)} · kuota terjual {batch.quotaBoxSold}/
-            {batch.quotaBoxTotal} box · {rp(batch.lockedPrice)}/box
-          </p>
-        </div>
-        <div className="shrink-0 flex items-center gap-2">
+    <Halaman
+      kembali={kembali}
+      judul={batch.productName ?? "Batch"}
+      pengantar="Yang tercatat di sini adalah yang dilihat pembeli. Catatan tidak bisa diubah maupun dihapus — koreksi dilakukan dengan menambah catatan Ralat, dan keduanya tetap terlihat."
+      aksi={
+        <>
           {/* TN-35 — tautan riwayat penilaian kewajaran. Sengaja selalu ada, termasuk
               setelah batch tertutup: justru saat itulah Tenant ingin tahu dasar
               perhitungannya. */}
-          <Link
-            href={`/tenant/batch/${id}/kewajaran`}
-            className="flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-          >
-            <Scale className="w-4 h-4" /> Penilaian Hasil
-          </Link>
-          {!tertutup && (
-            <Link
-              href={`/tenant/batch/${id}/progress/new`}
-              className="flex items-center gap-2 bg-emerald-950 text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-emerald-800"
-            >
-              <Plus className="w-4 h-4" /> Catat Kegiatan
-            </Link>
-          )}
-        </div>
-      </div>
+          <TombolTaut href={`/tenant/batch/${id}/kewajaran`} rupa="kedua" ukuran="sm">
+            Penilaian hasil
+          </TombolTaut>
+          {!tertutup ? (
+            <TombolTaut href={`/tenant/batch/${id}/progress/new`} ukuran="sm">
+              Catat kegiatan
+            </TombolTaut>
+          ) : null}
+        </>
+      }
+    >
+      <Panel label="Batch" judul="Kuota yang Anda buka" className="mb-10">
+        <Deret kolom={4} as="dl">
+          <BarisData label="Panen diklaim">{tanggalPanjang(batch.claimedHarvestDate)}</BarisData>
+          <BarisData label="Kuota terjual">
+            {angka(batch.quotaBoxSold)}/{angka(batch.quotaBoxTotal)} box
+          </BarisData>
+          <BarisData label="Harga terkunci">{rupiah(batch.lockedPrice)}</BarisData>
+          <BarisData label="Tanam diklaim">
+            {batch.claimedPlantDate ? tanggalPanjang(batch.claimedPlantDate) : "Belum dicatat"}
+          </BarisData>
+        </Deret>
 
-      {tertutup && (
-        <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 mb-6 text-sm text-gray-600">
-          Batch sudah {batch.productionStatus === "HARVESTED" ? "dipanen" : "dinyatakan gagal"} —
-          timeline ditutup dan tidak menerima catatan baru.
-        </div>
-      )}
+        {tertutup ? (
+          <div className="mt-7 border-t-2 border-tinta pt-3">
+            <Label>
+              Batch {batch.productionStatus === "HARVESTED" ? "sudah dipanen" : "dinyatakan gagal"}
+            </Label>
+            <Prosa className="mt-1.5 text-[14px]">
+              Timeline batch ini ditutup dan tidak menerima catatan baru. Riwayatnya tetap
+              terbuka untuk diperiksa siapa pun, dan penilaian hasilnya tetap bisa Anda buka.
+            </Prosa>
+          </div>
+        ) : null}
+      </Panel>
 
-      <div className="flex items-center justify-between mb-5">
-        <h2 className="font-bold text-emerald-950">Verified Timeline</h2>
-        {verify && (
-          <span
-            className={`text-[10px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 ${
-              verify.intact ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"
-            }`}
+      <Panel
+        nada={verify && !verify.intact ? "awas" : "netral"}
+        label="Verified Timeline"
+        judul="Catatan lapangan Anda, berantai hash"
+        aksi={
+          verify && nodes.length > 0 ? (
+            <Pil nada={verify.intact ? "utama" : "awas"} garis={verify.intact}>
+              <Tanda jenis={verify.intact ? "penuh" : "tidak"} />
+              {verify.intact ? `Rantai utuh · ${angka(verify.nodeCount)} catatan` : "Rantai tidak utuh"}
+            </Pil>
+          ) : null
+        }
+      >
+        {nodes.length === 0 ? (
+          <Kosong
+            judul="Belum ada catatan"
+            aksi={
+              !tertutup ? (
+                <TombolTaut href={`/tenant/batch/${id}/progress/new`} ukuran="sm">
+                  Catat kegiatan pertama
+                </TombolTaut>
+              ) : null
+            }
           >
-            {verify.intact ? (
-              <>
-                <CheckCircle2 className="w-3.5 h-3.5" /> Rantai utuh ({verify.nodeCount})
-              </>
-            ) : (
-              <>
-                <AlertTriangle className="w-3.5 h-3.5" /> Rantai TIDAK utuh
-              </>
-            )}
-          </span>
+            Rantai bukti batch ini mulai terbentuk sejak catatan pertama — biasanya penyiapan
+            lahan atau penanaman. Sampai itu ada, pembeli hanya melihat kuota tanpa riwayat.
+          </Kosong>
+        ) : (
+          <>
+            <Prosa className="text-[14px]">
+              {verify && !verify.intact
+                ? "Hitung ulang rantai SHA-256 dari isi catatan tidak cocok dengan hash tersimpan. Hubungi tim kami — temuan ini tampil juga di layar pembeli, jadi sebaiknya ditelusuri sekarang."
+                : "Tiap catatan mengunci catatan sebelumnya lewat hash isinya, jadi urutan dan isinya tidak bisa diubah belakangan tanpa ketahuan. Inilah yang membuat pembeli bersedia membayar di muka."}
+            </Prosa>
+            <ol className="mt-7">
+              {nodes.map((n) => (
+                <BarisNode key={n.id} n={n} />
+              ))}
+            </ol>
+          </>
         )}
+      </Panel>
+    </Halaman>
+  );
+}
+
+/** Satu catatan sebagai baris sertifikat bernomor — urutannya bagian dari buktinya. */
+function BarisNode({ n }: { n: TimelineNodeResponse }) {
+  const ralat = n.ralatOfId !== null;
+  return (
+    <li className="grid gap-x-6 gap-y-3 border-t border-kertas-garis py-6 md:grid-cols-[3.5rem_minmax(0,1fr)]">
+      <div className="font-mono text-[13px] leading-none text-tinta-samar">
+        {String(n.seq).padStart(2, "0")}
       </div>
-
-      {nodes.length === 0 ? (
-        <div className="rounded-xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-500">
-          Belum ada catatan. Mulai dari penyiapan lahan atau penanaman.
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1.5">
+          <h3 className="text-[15px] font-bold text-tinta">
+            {KEGIATAN[n.activityType]}
+            {ralat ? (
+              <Pil nada="awas" className="ml-2.5 align-[0.15em]">
+                Ralat
+              </Pil>
+            ) : null}
+          </h3>
+          <span className="font-mono text-[12px] text-tinta-samar">
+            {tanggalPendek(n.deviceTs)} · {jamWib(n.deviceTs)} WIB
+          </span>
         </div>
-      ) : (
-        <div className="space-y-3">
-          {nodes.map((n) => (
-            <div
-              key={n.id}
-              className={`rounded-xl border p-4 ${
-                n.ralatOfId ? "bg-amber-50 border-amber-200" : "bg-white border-gray-200"
-              }`}
-            >
-              <div className="flex items-center justify-between gap-3 mb-1.5">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-gray-400">#{n.seq}</span>
-                  <h3 className="font-bold text-gray-900 text-sm">
-                    {n.activityType.replace(/_/g, " ")}
-                  </h3>
-                  {n.ralatOfId && (
-                    <span className="bg-amber-200 text-amber-800 text-[9px] font-bold px-2 py-0.5 rounded">
-                      RALAT
-                    </span>
-                  )}
-                </div>
-                <span className="text-xs text-gray-500 shrink-0">{tgl(n.deviceTs)}</span>
-              </div>
 
-              <p className="text-sm text-gray-600 mb-2">{n.description}</p>
+        <p className="mt-1.5 max-w-[58ch] text-[14px] leading-relaxed text-tinta-lembut">
+          {n.description}
+        </p>
 
-              {n.outsidePolygonReason && (
-                <p className="text-xs text-amber-800 bg-amber-100 border border-amber-200 rounded px-2.5 py-1.5 mb-2">
-                  Di luar batas lahan — {n.outsidePolygonReason}
-                </p>
-              )}
+        {n.outsidePolygonReason ? (
+          <div className="mt-3 border-t-2 border-jambu pt-2">
+            <Label className="text-jambu">Titik di luar batas lahan</Label>
+            <p className="mt-1 max-w-[58ch] text-[13px] leading-relaxed text-tinta-lembut">
+              Alasan yang Anda tulis ikut tampil ke pembeli: {n.outsidePolygonReason}
+            </p>
+          </div>
+        ) : null}
 
-              {n.photos.length > 0 && (
-                <div className="flex gap-2 flex-wrap">
-                  {n.photos.map((f) => (
-                    <div
-                      key={f.sha256}
-                      className="h-24 w-32 rounded-lg bg-gray-100 bg-cover bg-center border border-gray-200"
-                      style={{ backgroundImage: `url(${urlBerkas(f.url)})` }}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
+        {n.photos.length ? (
+          <ul className="mt-4 flex flex-wrap gap-3">
+            {n.photos.map((f) => (
+              <li key={f.sha256}>
+                <FotoBukti foto={f} alt={`Foto bukti ${KEGIATAN[n.activityType].toLowerCase()}`} />
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 font-mono text-[11px] text-tinta-samar">
+          <span>
+            {n.gps.lat.toFixed(5)}, {n.gps.lng.toFixed(5)}
+          </span>
+          <span className="break-all">hash {n.nodeHash.slice(0, 32)}</span>
         </div>
-      )}
-    </div>
+      </div>
+    </li>
   );
 }

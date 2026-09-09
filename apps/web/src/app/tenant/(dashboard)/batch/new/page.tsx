@@ -1,9 +1,7 @@
 "use client";
 
 import React, { Suspense, useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, ArrowLeft, Lightbulb, Loader2, MapPin, PackagePlus } from "lucide-react";
 import type {
   LandPlotCapacityResponse,
   LandPlotResponse,
@@ -18,16 +16,43 @@ import {
   ambilProdukTenant,
   bukaKuota,
 } from "@/lib/api";
-
-const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
+import { angka, desimal, rupiah } from "@/lib/format-id";
+import {
+  Galat,
+  Halaman,
+  Kosong,
+  Label,
+  Masukan,
+  Medan,
+  Memuat,
+  Panel,
+  Pilihan,
+  Prosa,
+  Sunyi,
+  TautanKembali,
+  Tombol,
+  TombolTaut,
+} from "@/ui";
 
 /**
- * Buka Kuota Pre-Order (TN-16, FR-3.3/3.4).
+ * TN-16 — Buka Kuota Pre-Order (FR-3.3/3.4).
  *
  * Batas kuota dihitung server dari luas lahan × rendemen komoditas × pengali reputasi,
- * dan diambil SEBELUM Tenant mengetik jumlahnya. Menampilkannya lebih dulu membuat
- * batas itu terbaca sebagai informasi; kalau baru muncul setelah formulir dikirim,
- * yang sama persis terbaca sebagai penolakan.
+ * dan diambil SEBELUM Tenant mengetik jumlahnya. Menampilkannya lebih dulu membuat batas
+ * itu terbaca sebagai informasi; kalau baru muncul setelah formulir dikirim, yang sama
+ * persis terbaca sebagai penolakan.
+ *
+ * MIGRASI DUNIA. Dua hal yang berubah selain rupa:
+ *
+ * 1. ANGKA RUMUS KAPASITAS LEWAT `format-id`. Rumusnya sebelumnya memakai
+ *    `toLocaleString("id-ID")` dan `toFixed(2)` — yang pertama bergantung pada data ICU
+ *    runtime dan berbeda antara server dan peramban, yang kedua mencetak titik desimal
+ *    pada angka Indonesia. Keduanya persis kegagalan yang sudah dicatat di MIGRASI.md.
+ *
+ * 2. KEADAAN KOSONG BERHENTI JADI PERINGATAN. "Belum ada produk" dan "belum ada lahan"
+ *    dulu tampil sebagai kotak amber — rupa yang sama dengan kesalahan. Keduanya bukan
+ *    kesalahan: itu urutan kerja yang wajar bagi Tenant yang baru mulai, dan yang mereka
+ *    butuhkan adalah pintu menuju langkah sebelumnya, bukan tanda seru.
  */
 function FormBukaKuota() {
   const router = useRouter();
@@ -54,6 +79,7 @@ function FormBukaKuota() {
   const [tanam, setTanam] = useState("");
 
   const [kapasitas, setKapasitas] = useState<LandPlotCapacityResponse | null>(null);
+  const [galatKapasitas, setGalatKapasitas] = useState("");
   /** Petak yang sudah pernah dicoba otomatis — penjaga agar pemindahan tidak berputar. */
   const dicoba = useRef<Set<string>>(new Set());
   const [memuat, setMemuat] = useState(true);
@@ -94,7 +120,7 @@ function FormBukaKuota() {
         if (l[0]) setLandPlotId(l[0].id);
         setGalat("");
       })
-      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat data"))
+      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Data gagal dimuat"))
       .finally(() => setMemuat(false));
   }, [dariRekomendasi, zonaRek, komoditasRek, mingguRek]);
 
@@ -102,24 +128,40 @@ function FormBukaKuota() {
 
   useEffect(() => {
     if (!landPlotId || !p) return setKapasitas(null);
+    setGalatKapasitas("");
     ambilKapasitasLahan(landPlotId, p.commodity.id, p.qtyKgPerBox)
       .then((k) => {
         // Ketersediaan petak baru diketahui SETELAH ditanyakan ke server, jadi petak
         // bawaan bisa saja yang sudah terpakai — dan Tenant mendarat di form dengan
-        // tombol simpan mati tanpa melakukan apa pun yang salah. Pindah sekali ke
-        // petak berikutnya yang belum dicoba; `dicoba` mencegahnya berputar terus
-        // saat SEMUA petak memang terpakai, sehingga pesannya tetap terbaca.
+        // tombol simpan mati tanpa melakukan apa pun yang salah. Pindah ke petak
+        // berikutnya yang belum dicoba; `dicoba` mencegahnya berputar terus saat SEMUA
+        // petak memang terpakai, sehingga pesannya tetap terbaca.
+        //
+        // YANG DITANDAI ADALAH PETAK YANG BARUSAN DICOBA, bukan petak tujuannya. Versi
+        // sebelumnya menandai tujuannya, dan `lahan.find` tidak mengecualikan petak yang
+        // sedang dipilih — jadi pada pemanggilan pertama ia menemukan petak itu sendiri,
+        // memanggil `setLandPlotId` dengan nilai yang sama, dan React membatalkan render.
+        // Efeknya tidak pernah berjalan lagi: `kapasitas` tetap null, batas kuota tidak
+        // pernah tampil, peringatan "petak terpakai" tidak pernah muncul, dan tombol
+        // simpannya tetap hidup. Tenant baru tahu petaknya terpakai dari penolakan server
+        // setelah formulir dikirim — persis kebalikan dari alasan layar ini mengambil
+        // kapasitas lebih dulu. Terlihat pada Tenant yang SEMUA petaknya sedang dipakai.
         if (!k.available) {
+          dicoba.current.add(landPlotId);
           const berikut = lahan.find((l) => !dicoba.current.has(l.id));
           if (berikut) {
-            dicoba.current.add(berikut.id);
             setLandPlotId(berikut.id);
             return;
           }
         }
         setKapasitas(k);
       })
-      .catch(() => setKapasitas(null));
+      .catch(() => {
+        setKapasitas(null);
+        setGalatKapasitas(
+          "Batas kuota petak ini belum bisa diambil. Anda tetap bisa mengisi formulirnya — server memeriksa batasnya sekali lagi saat disimpan.",
+        );
+      });
   }, [landPlotId, p, lahan]);
 
   async function simpan(e: React.FormEvent) {
@@ -136,254 +178,324 @@ function FormBukaKuota() {
       });
       router.push(`/tenant/batch/${b.id}`);
     } catch (err) {
-      setGalat(err instanceof GalatApi ? err.message : "Gagal membuka kuota.");
+      setGalat(err instanceof GalatApi ? err.message : "Kuota gagal dibuka.");
       setProses(false);
     }
   }
 
-  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat…</div>;
+  const kembali = <TautanKembali href="/tenant/batch">Daftar batch</TautanKembali>;
 
-  if (produk.length === 0 || lahan.length === 0) {
+  if (memuat) {
     return (
-      <div className="p-8 max-w-2xl">
-        <Link
-          href="/tenant/batch"
-          className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 mb-6"
+      <Halaman lebar="sempit" judul="Buka kuota Pre-Order" kembali={kembali}>
+        <Memuat baris={4} label="Memuat produk dan lahan" />
+      </Halaman>
+    );
+  }
+
+  // Bukan kesalahan, melainkan langkah sebelumnya yang belum dikerjakan.
+  if (produk.length === 0 || lahan.length === 0) {
+    const perluProduk = produk.length === 0;
+    return (
+      <Halaman lebar="sempit" judul="Buka kuota Pre-Order" kembali={kembali}>
+        <Kosong
+          judul={perluProduk ? "Belum ada produk" : "Belum ada lahan terpetakan"}
+          aksi={
+            <TombolTaut href={perluProduk ? "/tenant/catalog/edit" : "/tenant/land/mapping"} ukuran="sm">
+              {perluProduk ? "Tambah produk" : "Petakan lahan"}
+            </TombolTaut>
+          }
         >
-          <ArrowLeft className="w-4 h-4" /> Kembali
-        </Link>
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-          {produk.length === 0
-            ? "Belum ada produk. Tambahkan produk dulu di Katalog Produk."
-            : "Belum ada lahan terpetakan. Petakan lahan dulu di Manajemen Lahan."}
-        </div>
-      </div>
+          {perluProduk
+            ? "Kuota dibuka atas sebuah produk — nama, grade, dan isi per box-nya berasal dari sana. Buat produknya dulu, lalu kembali ke layar ini."
+            : "Batas kuota dihitung dari luas petak yang poligonnya sudah tersimpan, jadi petaknya harus ada lebih dulu. Petakan lahan Anda, lalu ia muncul sebagai pilihan di sini."}
+        </Kosong>
+      </Halaman>
     );
   }
 
   const melebihi = kapasitas && Number(kuota) > kapasitas.maxQuotaBox;
   const lahanTerpakai = kapasitas && !kapasitas.available;
+  const adaProdukRekomendasi =
+    !prefill || produk.some((x) => x.commodity.id === prefill.commodityId);
 
   return (
-    <div className="p-8 max-w-2xl">
-      <Link
-        href="/tenant/batch"
-        className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 hover:text-emerald-600 mb-6"
-      >
-        <ArrowLeft className="w-4 h-4" /> Kembali ke Daftar Batch
-      </Link>
-
-      <h1 className="text-2xl font-bold text-emerald-950 mb-1">Buka Kuota Pre-Order</h1>
-      <p className="text-sm text-gray-500 mb-6">
-        Harga yang Anda kunci di sini berlaku sampai panen — tidak bisa diubah setelah ada
-        yang memesan.
-      </p>
-
-      {galatPrefill && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 mb-5 text-sm text-amber-900 flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-          <div>
-            {galatPrefill} Formulir tetap bisa diisi manual — angkanya saja yang tidak
-            terisi otomatis.
-          </div>
+    <Halaman
+      lebar="sempit"
+      kembali={kembali}
+      judul="Buka kuota Pre-Order"
+      pengantar="Harga yang Anda kunci di sini berlaku sampai panen dan tidak bisa diubah setelah ada yang memesan. Itulah yang membuat pembeli bersedia membayar di muka."
+    >
+      {galatPrefill ? (
+        <div className="mb-8 border-t-2 border-biru pt-3">
+          <Label className="text-biru">Rekomendasi tidak termuat</Label>
+          <Prosa className="mt-1.5 text-[14px]">
+            {galatPrefill} Formulir tetap bisa diisi manual — angkanya saja yang tidak terisi
+            sendiri.
+          </Prosa>
         </div>
-      )}
+      ) : null}
 
-      {prefill && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 mb-5">
-          <div className="flex items-start gap-2">
-            <Lightbulb className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-emerald-900">
-                Terisi dari Rekomendasi Tanam — {prefill.commodityName}
-              </p>
-              <p className="text-xs text-emerald-800 mt-0.5">
-                Angka di bawah adalah saran, bukan kunci. Ubah sesukanya sebelum menyimpan.
-                {prefill.coveragePct !== null &&
-                  ` Pasokan zona kini ${prefill.coveragePct}% dari perkiraan permintaan.`}
-              </p>
+      {prefill ? (
+        <Panel
+          nada="utama"
+          label={`Dari rekomendasi tanam · ${prefill.commodityName}`}
+          judul="Angka di bawah adalah saran, bukan kunci"
+          className="mb-8"
+        >
+          <Prosa className="text-[14px]">
+            Ubah sesukanya sebelum menyimpan.
+            {prefill.coveragePct !== null ? (
+              <>
+                {" "}
+                Pasokan zona kini{" "}
+                <span className="font-mono text-tinta">{prefill.coveragePct}%</span> dari
+                perkiraan permintaan.
+              </>
+            ) : null}
+          </Prosa>
 
-              {/* Peringatan ini dihitung ULANG server saat form dibuka, bukan disalin dari
-                  kartu. Justru di sinilah gunanya: Tenant yang menunda beberapa hari
-                  sebelum menekan tombol perlu tahu pasarnya sudah berubah. */}
-              {prefill.warning && (
-                <p className="text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-2 flex items-start gap-1.5">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
-                  {prefill.warning}
-                </p>
-              )}
+          {/* Peringatan ini dihitung ULANG server saat form dibuka, bukan disalin dari
+              kartu. Justru di sinilah gunanya: Tenant yang menunda beberapa hari sebelum
+              menekan tombol perlu tahu pasarnya sudah berubah. */}
+          {prefill.warning ? (
+            <div className="mt-5 border-t-2 border-jambu pt-3">
+              <Label className="text-jambu">Pasar berubah sejak kartu itu tampil</Label>
+              <Prosa className="mt-1.5 text-[14px]">{prefill.warning}</Prosa>
             </div>
-          </div>
-        </div>
-      )}
+          ) : null}
+        </Panel>
+      ) : null}
 
       {/* Rekomendasi menyebut KOMODITAS, sedangkan kuota dibuka atas sebuah PRODUK.
           Kalau Tenant belum punya produk untuk komoditas itu, jalannya buntu di sini —
           jadi ditunjukkan jalan keluarnya, bukan sekadar dropdown berisi komoditas lain. */}
-      {prefill && !produk.some((x) => x.commodity.id === prefill.commodityId) && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 mb-5">
-          <p className="text-sm font-bold text-amber-900 mb-1">
-            Anda belum punya produk {prefill.commodityName}
-          </p>
-          <p className="text-xs text-amber-800 mb-3">
-            Kuota dibuka atas sebuah produk. Buat produknya dulu — isi box{" "}
-            {prefill.suggestedQtyKgPerBox} kg dan harga {rp(prefill.suggestedLockedPrice)}
-            /box mengikuti kebiasaan zona ini.
-          </p>
-          <Link
-            href={`/tenant/catalog/edit?komoditas=${prefill.commodityId}&kgBox=${prefill.suggestedQtyKgPerBox}&harga=${prefill.suggestedLockedPrice}&panen=${prefill.suggestedHarvestDate}`}
-            className="inline-flex items-center gap-2 bg-emerald-950 text-white text-xs font-semibold px-4 py-2.5 rounded-lg hover:bg-emerald-800"
-          >
-            <PackagePlus className="w-3.5 h-3.5" /> Buat Produk {prefill.commodityName}
-          </Link>
-        </div>
-      )}
-
-      <form onSubmit={simpan} className="space-y-4">
-        <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Produk</label>
-            <select
-              value={productId}
-              onChange={(e) => {
-                setProductId(e.target.value);
-                const baru = produk.find((x) => x.id === e.target.value);
-                if (baru) {
-                  setHarga(String(baru.pricePerBox));
-                  setPanen(baru.estHarvestDate.slice(0, 10));
-                }
-              }}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white"
-            >
-              {produk.map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.name} — Grade {x.grade} ({x.qtyKgPerBox} kg/box)
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Petak lahan</label>
-            <select
-              value={landPlotId}
-              onChange={(e) => setLandPlotId(e.target.value)}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white"
-            >
-              {lahan.map((l, i) => (
-                <option key={l.id} value={l.id}>
-                  Petak {i + 1} — {l.areaHa.toFixed(2)} ha
-                  {l.verificationTier === "TERBATAS" ? " (verifikasi terbatas)" : ""}
-                </option>
-              ))}
-            </select>
-
-            {lahanTerpakai && (
-              <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
-                Lahan ini masih dipakai batch yang belum selesai. Satu petak hanya boleh
-                menampung satu batch aktif — pilih petak lain atau tutup batch lamanya dulu.
-              </p>
-            )}
-          </div>
-
-          {kapasitas && !lahanTerpakai && (
-            <div className="rounded-lg bg-gray-50 border border-gray-200 p-3 text-xs text-gray-600">
-              Batas kuota petak ini <b className="text-gray-900">{kapasitas.maxQuotaBox} box</b> —
-              dari {kapasitas.areaHa.toFixed(2)} ha ×{" "}
-              {kapasitas.avgYieldKgPerHa.toLocaleString("id-ID")} kg/ha ÷ {kapasitas.qtyKgPerBox}{" "}
-              kg/box × pengali {kapasitas.quotaMultiplier}.
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Jumlah kuota (box)
-            </label>
-            <input
-              required
-              type="number"
-              min={1}
-              max={kapasitas?.maxQuotaBox}
-              value={kuota}
-              onChange={(e) => setKuota(e.target.value)}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
-            />
-            {melebihi && (
-              <p className="text-xs text-red-700 mt-1">
-                Melebihi batas {kapasitas!.maxQuotaBox} box — server akan menolaknya.
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Harga terkunci per box (Rp)
-            </label>
-            <input
-              required
-              type="number"
-              min={1}
-              value={harga}
-              onChange={(e) => setHarga(e.target.value)}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
-            />
-            {p && Number(harga) > 0 && Number(kuota) > 0 && (
-              <p className="text-xs text-gray-500 mt-1">
-                Nilai kuota penuh {rp(Number(harga) * Number(kuota))}
-              </p>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                Tanggal panen
-              </label>
-              <input
-                required
-                type="date"
-                value={panen}
-                onChange={(e) => setPanen(e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                Tanggal tanam <span className="font-normal text-gray-400">(opsional)</span>
-              </label>
-              <input
-                type="date"
-                value={tanam}
-                onChange={(e) => setTanam(e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
-              />
-            </div>
-          </div>
-        </div>
-
-        {galat && (
-          <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-            {galat}
-          </p>
-        )}
-
-        <button
-          type="submit"
-          disabled={proses || Boolean(lahanTerpakai)}
-          className="w-full bg-emerald-950 text-white text-sm font-semibold py-3 rounded-lg hover:bg-emerald-800 disabled:opacity-50 flex items-center justify-center gap-2"
+      {prefill && !adaProdukRekomendasi ? (
+        <Panel
+          nada="kabar"
+          label="Satu langkah lagi"
+          judul={`Anda belum punya produk ${prefill.commodityName}`}
+          className="mb-8"
         >
-          {proses ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
-          {proses ? "Membuka…" : "Buka Kuota"}
-        </button>
+          <Prosa className="text-[14px]">
+            Kuota dibuka atas sebuah produk, jadi produknya dibuat lebih dulu. Isi box{" "}
+            <span className="font-mono text-tinta">{prefill.suggestedQtyKgPerBox} kg</span> dan
+            harga <span className="font-mono text-tinta">{rupiah(prefill.suggestedLockedPrice)}</span>
+            /box mengikuti kebiasaan zona ini.
+          </Prosa>
+          <TombolTaut
+            href={`/tenant/catalog/edit?komoditas=${prefill.commodityId}&kgBox=${prefill.suggestedQtyKgPerBox}&harga=${prefill.suggestedLockedPrice}&panen=${prefill.suggestedHarvestDate}`}
+            ukuran="sm"
+            className="mt-5"
+          >
+            Buat produk {prefill.commodityName}
+          </TombolTaut>
+        </Panel>
+      ) : null}
+
+      <form onSubmit={simpan}>
+        <Panel label="Dasar kuota" judul="Produk dan petak lahannya">
+          <div className="grid gap-5 sm:grid-cols-2">
+            <Medan label="Produk" wajib>
+              {(alat) => (
+                <Pilihan
+                  {...alat}
+                  value={productId}
+                  onChange={(e) => {
+                    setProductId(e.target.value);
+                    const baru = produk.find((x) => x.id === e.target.value);
+                    if (baru) {
+                      setHarga(String(baru.pricePerBox));
+                      setPanen(baru.estHarvestDate.slice(0, 10));
+                    }
+                  }}
+                >
+                  {produk.map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.name} — Grade {x.grade} ({x.qtyKgPerBox} kg/box)
+                    </option>
+                  ))}
+                </Pilihan>
+              )}
+            </Medan>
+
+            <Medan label="Petak lahan" wajib>
+              {(alat) => (
+                <Pilihan {...alat} value={landPlotId} onChange={(e) => setLandPlotId(e.target.value)}>
+                  {lahan.map((l, i) => (
+                    <option key={l.id} value={l.id}>
+                      Petak {i + 1} — {desimal(l.areaHa, 2)} ha
+                      {l.verificationTier === "TERBATAS" ? " (verifikasi terbatas)" : ""}
+                    </option>
+                  ))}
+                </Pilihan>
+              )}
+            </Medan>
+          </div>
+
+          {lahanTerpakai ? (
+            <div className="mt-6 border-t-2 border-jambu pt-3">
+              <Label className="text-jambu">Petak ini masih terpakai</Label>
+              <Prosa className="mt-1.5 text-[14px]">
+                Satu petak hanya boleh menampung satu batch aktif, supaya kuota yang dijanjikan
+                ke pembeli tidak dihitung dua kali dari lahan yang sama. Pilih petak lain, atau
+                tutup batch lamanya dulu.
+              </Prosa>
+            </div>
+          ) : null}
+
+          {/* Batas kuota ditampilkan SEBELUM angkanya diketik, berikut seluruh aritmetikanya:
+              batas yang muncul tanpa cara memeriksanya terbaca sebagai keputusan sepihak. */}
+          {kapasitas && !lahanTerpakai ? (
+            <div className="mt-6 border-t-2 border-tinta pt-3">
+              <Label>Batas kuota petak ini</Label>
+              <div className="mt-2 flex flex-wrap items-baseline gap-x-2">
+                <span className="font-mono text-[26px] leading-none text-tinta">
+                  {angka(kapasitas.maxQuotaBox)}
+                </span>
+                <span className="text-[13px] text-tinta-samar">box</span>
+              </div>
+              <p className="mt-2.5 max-w-[58ch] font-mono text-[12px] leading-relaxed text-tinta-samar">
+                {desimal(kapasitas.areaHa, 2)} ha × {angka(kapasitas.avgYieldKgPerHa)} kg/ha ÷{" "}
+                {angka(kapasitas.qtyKgPerBox)} kg/box × pengali{" "}
+                {desimal(kapasitas.quotaMultiplier, 2)}
+              </p>
+              {/* Luas di rumus ini adalah luas EFEKTIF, dan hampir selalu lebih kecil dari
+                  luas petak di daftar pilihan sebelahnya. Tanpa keterangan ini, dua angka
+                  luas berbeda untuk petak yang sama terbaca sebagai salah hitung. */}
+              {Math.abs(kapasitas.areaHa - (lahan.find((l) => l.id === landPlotId)?.areaHa ?? kapasitas.areaHa)) > 0.005 ? (
+                <Sunyi className="mt-2 max-w-[58ch] text-[12px]">
+                  Luas yang dipakai adalah luas efektif tanam — lebih kecil dari luas petak
+                  karena batas, jalan kerja, dan saluran air tidak ikut dihitung.
+                </Sunyi>
+              ) : null}
+            </div>
+          ) : null}
+
+          {galatKapasitas ? (
+            <div className="mt-6 border-t-2 border-biru pt-3">
+              <Label className="text-biru">Batas kuota belum termuat</Label>
+              <Prosa className="mt-1.5 text-[14px]">{galatKapasitas}</Prosa>
+            </div>
+          ) : null}
+        </Panel>
+
+        <Panel label="Ketentuan" judul="Yang dikunci sampai panen" className="mt-8">
+          <div className="grid gap-5 sm:grid-cols-2">
+            <Medan
+              label="Jumlah kuota"
+              petunjuk={
+                kapasitas ? `Paling banyak ${angka(kapasitas.maxQuotaBox)} box untuk petak ini.` : undefined
+              }
+              galat={
+                melebihi
+                  ? `Melebihi batas ${angka(kapasitas!.maxQuotaBox)} box — server akan menolaknya. Turunkan jumlahnya, atau pilih petak yang lebih luas.`
+                  : undefined
+              }
+              wajib
+            >
+              {(alat) => (
+                <Masukan
+                  {...alat}
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={kapasitas?.maxQuotaBox}
+                  value={kuota}
+                  onChange={(e) => setKuota(e.target.value)}
+                  placeholder="150"
+                  className="font-mono"
+                />
+              )}
+            </Medan>
+
+            <Medan label="Harga terkunci per box" petunjuk="Dalam rupiah, tanpa titik." wajib>
+              {(alat) => (
+                <Masukan
+                  {...alat}
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  value={harga}
+                  onChange={(e) => setHarga(e.target.value)}
+                  placeholder="145000"
+                  className="font-mono"
+                />
+              )}
+            </Medan>
+
+            <Medan label="Tanggal panen" petunjuk="Yang dijanjikan ke pembeli." wajib>
+              {(alat) => (
+                <Masukan
+                  {...alat}
+                  type="date"
+                  value={panen}
+                  onChange={(e) => setPanen(e.target.value)}
+                  className="font-mono"
+                />
+              )}
+            </Medan>
+
+            <Medan
+              label="Tanggal tanam"
+              petunjuk="Opsional. Mengisinya memberi satelit titik awal untuk membandingkan kurva vegetasi."
+            >
+              {(alat) => (
+                <Masukan
+                  {...alat}
+                  type="date"
+                  value={tanam}
+                  onChange={(e) => setTanam(e.target.value)}
+                  className="font-mono"
+                />
+              )}
+            </Medan>
+          </div>
+
+          {p && Number(harga) > 0 && Number(kuota) > 0 ? (
+            <div className="mt-6 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-t border-tinta pt-3">
+              <Label>Nilai kuota penuh</Label>
+              <span className="font-mono text-[22px] leading-none text-tinta">
+                {rupiah(Number(harga) * Number(kuota))}
+              </span>
+            </div>
+          ) : null}
+          <Sunyi className="mt-2 max-w-[68ch] text-[13px]">
+            Angka itu berlaku bila seluruh kuota terjual. Yang benar-benar masuk escrow adalah
+            yang dipesan pembeli, dan dananya baru berpindah setelah barang diterima.
+          </Sunyi>
+        </Panel>
+
+        {galat ? (
+          <Galat judul="Kuota belum dibuka" className="mt-8">
+            {galat}
+          </Galat>
+        ) : null}
+
+        <Tombol
+          type="submit"
+          penuh
+          className="mt-8 py-4 text-[16px]"
+          sibuk={proses}
+          labelSibuk="Membuka kuota…"
+          disabled={Boolean(lahanTerpakai)}
+        >
+          Buka kuota
+        </Tombol>
       </form>
-    </div>
+    </Halaman>
   );
 }
 
 export default function OpenQuotaPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-sm text-gray-500">Memuat…</div>}>
+    <Suspense
+      fallback={
+        <Halaman lebar="sempit" judul="Buka kuota Pre-Order">
+          <Memuat baris={4} label="Memuat formulir" />
+        </Halaman>
+      }
+    >
       <FormBukaKuota />
     </Suspense>
   );

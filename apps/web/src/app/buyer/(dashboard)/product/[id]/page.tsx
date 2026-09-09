@@ -3,17 +3,18 @@
 import React, { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ShoppingCart } from "lucide-react";
-import { ambilNdvi, ambilProduk, ambilTimeline, ambilVerifikasi, urlBerkas } from "@/lib/api";
+import { ambilNdvi, ambilProduk, ambilTimeline, ambilVerifikasi } from "@/lib/api";
 import { bacaKeranjang, tambahKeKeranjang } from "@/lib/keranjang";
 import { angka, jamWib, rupiah, tanggalPanjang, tanggalPendek } from "@/lib/format-id";
 import type {
   CatalogItem,
   CommodityCategory,
   NdviSeries,
-  TimelineActivity,
   TimelineNodeResponse,
   TimelineVerifyResponse,
 } from "@agro-os/shared";
+import { KEGIATAN } from "@/components/kegiatan";
+import { FotoBukti } from "@/components/foto-bukti";
 import { KurvaNdviBatch } from "@/components/kurva-ndvi-batch";
 import { PilVerifikasi, STATUS_MENTAH } from "@/components/tanda-verifikasi";
 import {
@@ -63,16 +64,6 @@ const KATEGORI: Record<CommodityCategory, string> = {
   DAUN: "Sayuran daun",
   BUAH_UMBI: "Buah & umbi",
   KERING: "Komoditas kering",
-};
-
-const KEGIATAN: Record<TimelineActivity, string> = {
-  PENYIAPAN_LAHAN: "Penyiapan lahan",
-  PENANAMAN: "Penanaman",
-  PEMUPUKAN: "Pemupukan",
-  PENGENDALIAN_HAMA: "Pengendalian hama",
-  PENGAIRAN: "Pengairan",
-  PANEN: "Panen",
-  GAGAL_PANEN: "Gagal panen",
 };
 
 const HARI = 86_400_000;
@@ -518,21 +509,8 @@ function BarisNode({ n }: { n: TimelineNodeResponse }) {
         {n.photos.length ? (
           <ul className="mt-4 flex flex-wrap gap-3">
             {n.photos.map((f) => (
-              <li key={f.sha256} className="relative">
-                {/* Foto bukti sungguhan dari R2, disajikan lewat domain API. Halaman ini
-                    tidak lagi memajang foto stok: gambar yang bukan barangnya adalah
-                    dekorasi yang menempati tempat bukti. */}
-                <img
-                  src={urlBerkas(f.url)}
-                  alt={`Foto bukti ${KEGIATAN[n.activityType].toLowerCase()}`}
-                  loading="lazy"
-                  className="h-28 w-36 border border-kertas-garis bg-kertas object-cover"
-                />
-                {f.captureSource === "GALLERY" ? (
-                  <Pil nada="awas" className="absolute bottom-1 left-1">
-                    Dari galeri
-                  </Pil>
-                ) : null}
+              <li key={f.sha256}>
+                <FotoBukti foto={f} alt={`Foto bukti ${KEGIATAN[n.activityType].toLowerCase()}`} />
               </li>
             ))}
           </ul>

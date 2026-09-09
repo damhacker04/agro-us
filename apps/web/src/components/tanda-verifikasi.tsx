@@ -82,3 +82,26 @@ export function PilVerifikasi({
     </Pil>
   );
 }
+
+/**
+ * Pil status MENTAH — dipakai layar Tenant, yang berhak melihat versi tak diringkas.
+ *
+ * Pembeli melihat badge tiga keadaan; Tenant melihat kelimanya, termasuk yang tidak
+ * menguntungkan dirinya, karena dialah yang harus menindaklanjuti bila ada ketidaksesuaian.
+ * Memakai pemetaan yang SAMA dengan halaman keputusan beli supaya kedua sisi meja menyebut
+ * keadaan yang sama dengan kata dan warna yang sama.
+ */
+export function PilStatusMentah({
+  status,
+  className,
+}: {
+  status: VerificationStatus;
+  className?: string;
+}) {
+  const s = STATUS_MENTAH[status];
+  return (
+    <Pil nada={s.nada} garis={s.nada === "netral"} className={className}>
+      {s.teks}
+    </Pil>
+  );
+}

@@ -1,22 +1,49 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ArrowLeft, Clock, Loader2, Scale } from "lucide-react";
 import type { ClaimResponse } from "@agro-os/shared";
-import { GalatApi, ambilAntreanKlaim, putuskanKlaim, urlBerkas } from "@/lib/api";
-
-const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
-const jam = (iso: string) => new Date(iso).toLocaleString("id-ID");
+import { GalatApi, ambilAntreanKlaim, putuskanKlaim } from "@/lib/api";
+import { desimal, jamWib, rupiah, tanggalPanjang } from "@/lib/format-id";
+import { FotoPutusan } from "@/components/foto-bukti";
+import {
+  AreaTeks,
+  Deret,
+  Galat,
+  Halaman,
+  Label,
+  Masukan,
+  Medan,
+  Memuat,
+  Panel,
+  Pil,
+  Prosa,
+  Sunyi,
+  TautanKembali,
+  Tombol,
+  Ubin,
+} from "@/ui";
 
 type Antrean = ClaimResponse & { overdue: boolean };
 
-export default function OperatorClaimDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+/**
+ * OP-05b — Putusan klaim mutu.
+ *
+ * Layar ini memindahkan uang dari escrow Tenant ke pembeli, dan putusannya dibaca KEDUANYA.
+ * Karena itu urutannya dipertahankan dan dikuatkan: bukti pembeli lebih dulu, perhitungan
+ * sistem berikutnya, baru kotak putusan — angka tidak boleh dibaca sebelum dasarnya.
+ *
+ * MIGRASI DUNIA, dengan dua penguatan yang bukan soal rupa:
+ *
+ * 1. AKIBAT PUTUSAN DIHITUNG DI DEPAN MATA. Nilai yang diketik langsung diterjemahkan jadi
+ *    dua kalimat: berapa yang dipotong dari Tenant, dan berapa yang diterima pembeli.
+ *    Peringatan datang sebelum konsekuensi, dan di sini konsekuensinya adalah uang orang.
+ *
+ * 2. FOTO YANG GAGAL DIMUAT DINYATAKAN SEBAGAI PENGHALANG. Foto klaim adalah dasar putusan;
+ *    `<img>` yang diam-diam 404 berarti operator memutus tanpa melihat buktinya, dan tidak
+ *    ada apa pun di layar lama yang memberitahunya.
+ */
+export default function OperatorClaimDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = React.use(params);
   const router = useRouter();
 
@@ -26,6 +53,8 @@ export default function OperatorClaimDetailPage({
   const [memuat, setMemuat] = useState(true);
   const [proses, setProses] = useState(false);
   const [galat, setGalat] = useState("");
+  const [galatNilai, setGalatNilai] = useState("");
+  const [galatCatatan, setGalatCatatan] = useState("");
 
   useEffect(() => {
     // Tidak ada GET /operator/claims/:id — yang tersedia hanya antreannya, jadi
@@ -36,20 +65,31 @@ export default function OperatorClaimDetailPage({
         const c = d.find((x) => x.id === id) ?? null;
         setKlaim(c);
         if (c) setNilai(String(c.claimValue));
-        setGalat(c ? "" : "Klaim tidak ada di antrean — mungkin sudah diputus.");
+        setGalat(c ? "" : "Klaim ini tidak ada di antrean — kemungkinan sudah diputus operator lain.");
       })
-      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat klaim"))
+      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Klaim gagal dimuat"))
       .finally(() => setMemuat(false));
   }, [id]);
 
   async function putuskan() {
     if (!klaim) return;
     const angka = Number(nilai);
-    if (Number.isNaN(angka) || angka < 0) return setGalat("Nilai disetujui tidak sah.");
-    if (angka > klaim.claimValue) {
-      return setGalat(`Tidak boleh melebihi nilai klaim ${rp(klaim.claimValue)}.`);
+    setGalatNilai("");
+    setGalatCatatan("");
+
+    if (nilai.trim() === "" || Number.isNaN(angka) || angka < 0) {
+      return setGalatNilai("Isi nilai yang disetujui sebagai angka rupiah. Isi 0 untuk menolak klaim.");
     }
-    if (catatan.trim().length < 10) return setGalat("Alasan putusan minimal 10 karakter.");
+    if (angka > klaim.claimValue) {
+      return setGalatNilai(
+        `Tidak boleh melebihi nilai klaim ${rupiah(klaim.claimValue)} — server menolaknya.`,
+      );
+    }
+    if (catatan.trim().length < 10) {
+      return setGalatCatatan(
+        "Alasan putusan minimal 10 karakter. Kalimat ini dibaca pembeli maupun Tenant, dan ia satu-satunya penjelasan yang mereka terima.",
+      );
+    }
 
     setProses(true);
     setGalat("");
@@ -57,152 +97,178 @@ export default function OperatorClaimDetailPage({
       await putuskanKlaim(klaim.id, angka, catatan.trim());
       router.push("/operator/claims");
     } catch (e) {
-      setGalat(e instanceof GalatApi ? e.message : "Gagal menyimpan putusan.");
+      setGalat(e instanceof GalatApi ? e.message : "Putusan gagal disimpan.");
       setProses(false);
     }
   }
 
-  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat klaim…</div>;
+  const kembali = <TautanKembali href="/operator/claims">Antrean klaim</TautanKembali>;
 
-  if (galat && !klaim) {
+  if (memuat) {
     return (
-      <div className="p-8">
-        <Link
-          href="/operator/claims"
-          className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 mb-6"
-        >
-          <ArrowLeft className="w-4 h-4" /> Kembali ke Antrean
-        </Link>
-        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
-          {galat}
-        </div>
-      </div>
+      <Halaman judul="Putusan klaim" kembali={kembali}>
+        <Memuat baris={4} label="Memuat klaim" />
+      </Halaman>
     );
   }
 
-  if (!klaim) return null;
+  if (!klaim) {
+    return (
+      <Halaman judul="Putusan klaim" kembali={kembali}>
+        <Galat judul="Klaim tidak ada di antrean">
+          {galat} Antrean hanya memuat klaim yang belum diputus; yang sudah diputus tidak bisa
+          dibuka kembali dari sini.
+        </Galat>
+      </Halaman>
+    );
+  }
+
+  const disetujui = Number(nilai);
+  const sahDihitung = nilai.trim() !== "" && !Number.isNaN(disetujui) && disetujui >= 0;
+  const ditolakPenuh = sahDihitung && disetujui === 0;
 
   return (
-    <div className="p-8 max-w-3xl">
-      <Link
-        href="/operator/claims"
-        className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 hover:text-emerald-600 mb-6"
-      >
-        <ArrowLeft className="w-4 h-4" /> Kembali ke Antrean
-      </Link>
-
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-emerald-950">{klaim.productName}</h1>
-          <p className="text-sm text-gray-500 mt-1">Diajukan {jam(klaim.createdAt)}</p>
-        </div>
-        {klaim.overdue && (
-          <span className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-full bg-red-100 text-red-800 flex items-center gap-1">
-            <Clock className="w-3 h-3" /> Lewat SLA
-          </span>
-        )}
-      </div>
-
+    <Halaman
+      lebar="sempit"
+      kembali={kembali}
+      judul={klaim.productName}
+      pengantar={`Diajukan ${tanggalPanjang(klaim.createdAt)} · ${jamWib(klaim.createdAt)} WIB`}
+      aksi={klaim.overdue ? <Pil nada="awas">Lewat SLA</Pil> : null}
+    >
       {/* Bukti pembeli — dasar putusan, jadi ditaruh sebelum angkanya. */}
-      <div className="bg-white border border-gray-200 rounded-xl p-5 mb-5">
-        <h2 className="font-bold text-emerald-950 text-sm mb-3">Bukti dari Pembeli</h2>
-        <p className="text-sm text-gray-700 mb-3">{klaim.description}</p>
-        {klaim.photoUrl && (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img
-            src={
-              urlBerkas(klaim.photoUrl)
-            }
-            alt="Foto kondisi barang"
-            className="rounded-lg border border-gray-200 max-h-72"
+      <Panel label="Dasar putusan" judul="Bukti dari pembeli">
+        <Prosa className="text-[15px]">{klaim.description}</Prosa>
+        {klaim.photoUrl ? (
+          <div className="mt-6">
+            <FotoPutusan url={klaim.photoUrl} alt="Foto kondisi barang saat diterima pembeli" />
+          </div>
+        ) : (
+          <div className="mt-6 border-t-2 border-jambu pt-3">
+            <Label className="text-jambu">Tanpa foto</Label>
+            <Prosa className="mt-1.5 text-[14px]">
+              Klaim ini diajukan tanpa foto. Angka timbangan sendirian tidak menunjukkan
+              kondisi barang — pertimbangkan meminta bukti tambahan sebelum memutus.
+            </Prosa>
+          </div>
+        )}
+      </Panel>
+
+      <Panel label="Perhitungan sistem" judul="Dari mana angkanya berasal" className="mt-8">
+        <Deret kolom={4} as="dl">
+          <Ubin label="Seharusnya" nilai={desimal(klaim.expectedKg, 1)} satuan="kg" />
+          <Ubin label="Hasil timbang" nilai={desimal(klaim.actualWeightKg, 1)} satuan="kg" />
+          <Ubin label="Selisih kotor" nilai={desimal(klaim.shortfallKg, 1)} satuan="kg" />
+          <Ubin
+            label={`Toleransi ${desimal(klaim.shrinkTolerancePct, 0)}%`}
+            nilai={desimal(klaim.toleratedKg, 1)}
+            satuan="kg"
           />
-        )}
-      </div>
+        </Deret>
 
-      <div className="bg-white border border-gray-200 rounded-xl p-5 mb-5">
-        <h2 className="font-bold text-emerald-950 text-sm mb-3 flex items-center gap-2">
-          <Scale className="w-4 h-4 text-gray-400" /> Perhitungan Sistem
-        </h2>
-        <dl className="text-sm space-y-2">
-          {[
-            ["Seharusnya diterima", `${klaim.expectedKg} kg`],
-            ["Hasil timbang pembeli", `${klaim.actualWeightKg} kg`],
-            ["Selisih kotor", `${klaim.shortfallKg} kg`],
-            [
-              `Toleransi susut (${klaim.shrinkTolerancePct}%)`,
-              `− ${klaim.toleratedKg} kg`,
-            ],
-          ].map(([k, v]) => (
-            <div key={k} className="flex justify-between gap-4">
-              <dt className="text-gray-600">{k}</dt>
-              <dd className="font-medium text-gray-900">{v}</dd>
-            </div>
-          ))}
-          <div className="flex justify-between gap-4 border-t border-gray-100 pt-2">
-            <dt className="font-semibold text-gray-800">Bisa diklaim</dt>
-            <dd className="font-bold text-gray-900">
-              {klaim.claimableKg} kg · {rp(klaim.claimValue)}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-4">
-            <dt className="text-gray-600">Porsi nilai pesanan</dt>
-            <dd className="font-medium text-gray-900">{klaim.pctOfOrder}%</dd>
-          </div>
-        </dl>
-      </div>
+        <div className="mt-7 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-t-2 border-tinta pt-3">
+          <Label>Bisa diklaim</Label>
+          <span className="font-mono text-[22px] leading-none text-tinta">
+            {desimal(klaim.claimableKg, 1)} kg · {rupiah(klaim.claimValue)}
+          </span>
+        </div>
+        <Sunyi className="mt-2 max-w-[68ch] text-[13px]">
+          Setara {desimal(klaim.pctOfOrder, 0)}% nilai pesanan — itulah yang membuat klaim ini
+          sampai ke meja Anda alih-alih dipotong otomatis.
+        </Sunyi>
+      </Panel>
 
-      <div className="bg-white border border-gray-200 rounded-xl p-5">
-        <h2 className="font-bold text-emerald-950 text-sm mb-1">Putusan</h2>
-        <p className="text-xs text-gray-500 mb-4">
-          Nilai yang disetujui dipotong dari escrow Tenant dan dikembalikan ke pembeli.
-          Isi 0 untuk menolak klaim.
-        </p>
-
-        <label className="block text-xs font-semibold text-gray-700 mb-1">
-          Nilai disetujui (rupiah)
-        </label>
-        <input
-          type="number"
-          min={0}
-          max={klaim.claimValue}
-          value={nilai}
-          onChange={(e) => setNilai(e.target.value)}
-          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm mb-1"
-        />
-        <p className="text-[11px] text-gray-500 mb-4">
-          Maksimum {rp(klaim.claimValue)} — sistem menolak nilai di atas itu.
-        </p>
-
-        <label className="block text-xs font-semibold text-gray-700 mb-1">
-          Alasan putusan
-        </label>
-        <textarea
-          rows={3}
-          minLength={10}
-          maxLength={500}
-          value={catatan}
-          onChange={(e) => setCatatan(e.target.value)}
-          placeholder="Dasar keputusan — dibaca pembeli maupun Tenant."
-          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm mb-1"
-        />
-        <p className="text-[11px] text-gray-500 mb-4">{catatan.length}/500 karakter</p>
-
-        {galat && (
-          <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3 flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-            {galat}
-          </p>
-        )}
-
-        <button
-          onClick={putuskan}
-          disabled={proses}
-          className="w-full bg-emerald-950 text-white text-sm font-semibold py-3 rounded-lg hover:bg-emerald-800 disabled:opacity-60 flex items-center justify-center gap-2"
+      <Panel nada="awas" label="Putusan" judul="Yang akan terjadi pada uangnya" className="mt-8">
+        <Medan
+          label="Nilai disetujui"
+          petunjuk={`Dalam rupiah, paling banyak ${rupiah(klaim.claimValue)}. Isi 0 untuk menolak klaim.`}
+          galat={galatNilai || undefined}
+          wajib
         >
-          {proses && <Loader2 className="w-4 h-4 animate-spin" />}
-          {proses ? "Menyimpan…" : "Simpan Putusan"}
-        </button>
-      </div>
-    </div>
+          {(alat) => (
+            <Masukan
+              {...alat}
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={klaim.claimValue}
+              value={nilai}
+              onChange={(e) => {
+                setNilai(e.target.value);
+                setGalatNilai("");
+              }}
+              className="font-mono"
+            />
+          )}
+        </Medan>
+
+        {/* Akibatnya dihitung di depan mata, sebelum tombolnya ditekan. */}
+        {sahDihitung && disetujui <= klaim.claimValue ? (
+          <div className="mt-6 border-t-2 border-tinta pt-3">
+            <Label>Akibat putusan ini</Label>
+            {ditolakPenuh ? (
+              <Prosa className="mt-1.5 text-[14px]">
+                Klaim ditolak seluruhnya. Tidak ada dana yang dipotong dari Tenant, dan pembeli
+                tidak menerima pengembalian apa pun atas klaim ini.
+              </Prosa>
+            ) : (
+              <Prosa className="mt-1.5 text-[14px]">
+                <span className="font-mono text-tinta">{rupiah(disetujui)}</span> dipotong dari
+                escrow Tenant dan dikembalikan kepada pembeli
+                {disetujui < klaim.claimValue ? (
+                  <>
+                    ; sisanya{" "}
+                    <span className="font-mono text-tinta">
+                      {rupiah(klaim.claimValue - disetujui)}
+                    </span>{" "}
+                    tetap menjadi hak Tenant
+                  </>
+                ) : null}
+                . Putusan ini final dan langsung menggerakkan dana.
+              </Prosa>
+            )}
+          </div>
+        ) : null}
+
+        <Medan
+          label="Alasan putusan"
+          petunjuk="Dibaca pembeli maupun Tenant, dan ia satu-satunya penjelasan yang mereka terima."
+          galat={galatCatatan || undefined}
+          wajib
+          className="mt-6"
+        >
+          {(alat) => (
+            <AreaTeks
+              {...alat}
+              rows={3}
+              minLength={10}
+              maxLength={500}
+              value={catatan}
+              onChange={(e) => {
+                setCatatan(e.target.value);
+                setGalatCatatan("");
+              }}
+              placeholder="Foto menunjukkan sepertiga isi krat layu; selisih timbang konsisten dengan kondisi itu."
+            />
+          )}
+        </Medan>
+        <Sunyi className="mt-1.5 text-right font-mono text-[12px]">{catatan.length}/500</Sunyi>
+
+        {galat ? (
+          <Galat judul="Putusan belum tersimpan" className="mt-6">
+            {galat}
+          </Galat>
+        ) : null}
+
+        <Tombol
+          penuh
+          className="mt-7 py-4 text-[16px]"
+          sibuk={proses}
+          labelSibuk="Menyimpan putusan…"
+          onClick={putuskan}
+        >
+          Simpan putusan
+        </Tombol>
+      </Panel>
+    </Halaman>
   );
 }

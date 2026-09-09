@@ -1,16 +1,25 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, Lock, PencilLine } from "lucide-react";
 import type { BatchResponse } from "@agro-os/shared";
 import { GalatApi, ambilBatchSatu } from "@/lib/api";
-
-const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
-const tgl = (iso: string) =>
-  new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+import { angka, rupiah, tanggalPanjang } from "@/lib/format-id";
+import {
+  Deret,
+  Galat,
+  Halaman,
+  Label,
+  Memuat,
+  Panel,
+  Prosa,
+  TautanKembali,
+  TombolTaut,
+  Ubin,
+} from "@/ui";
 
 /**
+ * TN-20 — Ketentuan kuota PO.
+ *
  * Kuota PO yang sudah dibuka TIDAK bisa diubah, dan memang tidak ada endpoint untuk itu.
  *
  * Alasannya bukan kelalaian: harga dikunci saat pembeli memesan (FR-3.4), dan kuota
@@ -18,8 +27,11 @@ const tgl = (iso: string) =>
  * membayar berarti mengubah kesepakatan sepihak — persis yang hendak dicegah model
  * Pre-Order ini.
  *
- * Jadi halaman ini menampilkan nilai yang berlaku beserta alasannya, bukan formulir
- * yang tombol simpannya tidak menuju ke mana-mana.
+ * Jadi halaman ini menampilkan nilai yang berlaku beserta alasannya, bukan formulir yang
+ * tombol simpannya tidak menuju ke mana-mana. Migrasinya mempertahankan keputusan itu apa
+ * adanya dan hanya menguatkan satu hal: yang MASIH bisa diubah diberi tempat yang sama
+ * besarnya dengan yang tidak. Halaman yang hanya berisi larangan mengirim Tenant pergi
+ * tanpa jalan; halaman ini menutup satu pintu sambil menunjuk dua pintu yang terbuka.
  */
 export default function EditPoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = React.use(params);
@@ -38,98 +50,101 @@ export default function EditPoPage({ params }: { params: Promise<{ id: string }>
       .finally(() => setMemuat(false));
   }, [id]);
 
-  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat…</div>;
+  const kembali = <TautanKembali href={`/tenant/batch/${id}`}>Batch</TautanKembali>;
+
+  if (memuat) {
+    return (
+      <Halaman lebar="sempit" judul="Ketentuan kuota PO" kembali={kembali}>
+        <Memuat baris={3} label="Memuat ketentuan batch" />
+      </Halaman>
+    );
+  }
 
   if (galat || !batch) {
     return (
-      <div className="p-8">
-        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
-          {galat || "Batch tidak ditemukan"}
-        </div>
-      </div>
+      <Halaman lebar="sempit" judul="Ketentuan kuota PO" kembali={kembali}>
+        <Galat judul="Batch tidak dapat dimuat">
+          {galat || "Batch tidak ditemukan."} Ketentuan batch Anda tetap tersimpan di server —
+          muat ulang halaman untuk mencoba lagi.
+        </Galat>
+      </Halaman>
     );
   }
 
   const adaPembeli = batch.quotaBoxSold > 0;
 
   return (
-    <div className="p-8 max-w-2xl">
-      <Link
-        href={`/tenant/batch/${id}`}
-        className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 hover:text-emerald-600 mb-6"
-      >
-        <ArrowLeft className="w-4 h-4" /> Kembali ke Batch
-      </Link>
+    <Halaman
+      lebar="sempit"
+      kembali={kembali}
+      judul="Ketentuan kuota PO"
+      pengantar={batch.productName ?? "Batch"}
+    >
+      <Panel label="Berlaku sampai panen" judul="Yang sudah dikunci">
+        <Deret kolom={4} as="dl">
+          <Ubin label="Harga terkunci" nilai={rupiah(batch.lockedPrice)} catatan="per box" />
+          <Ubin label="Kuota dibuka" nilai={angka(batch.quotaBoxTotal)} satuan="box" />
+          <Ubin
+            label="Sudah terjual"
+            nilai={angka(batch.quotaBoxSold)}
+            satuan="box"
+            nada={adaPembeli ? "utama" : "netral"}
+          />
+          <Ubin label="Panen diklaim" nilai={tanggalPanjang(batch.claimedHarvestDate)} />
+        </Deret>
+      </Panel>
 
-      <h1 className="text-2xl font-bold text-emerald-950 mb-1">Ketentuan Kuota PO</h1>
-      <p className="text-sm text-gray-500 mb-6">{batch.productName ?? "Batch"}</p>
-
-      <div className="bg-white border border-gray-200 rounded-xl p-5 mb-5">
-        <dl className="text-sm space-y-2.5">
-          {[
-            ["Harga terkunci", `${rp(batch.lockedPrice)} / box`],
-            ["Kuota dibuka", `${batch.quotaBoxTotal} box`],
-            ["Sudah terjual", `${batch.quotaBoxSold} box`],
-            ["Tanggal panen", tgl(batch.claimedHarvestDate)],
-          ].map(([k, v]) => (
-            <div key={k} className="flex justify-between gap-4">
-              <dt className="text-gray-600">{k}</dt>
-              <dd className="font-semibold text-gray-900">{v}</dd>
-            </div>
-          ))}
-        </dl>
+      {/* Larangannya dinyatakan sebagai MEKANISME, bukan sebagai aturan rumah. Nadanya
+          menjelaskan siapa yang dilindungi dan mengapa — yang keras adalah mekanismenya,
+          bukan kalimatnya. */}
+      <div className="mt-10 border-t-2 border-tinta pt-4">
+        <Label>Ketentuan ini tidak bisa diubah</Label>
+        <Prosa className="mt-2 text-[15px]">
+          {adaPembeli ? (
+            <>
+              <span className="font-mono text-tinta">{angka(batch.quotaBoxSold)} box</span> sudah
+              dibayar pembeli pada harga{" "}
+              <span className="font-mono text-tinta">{rupiah(batch.lockedPrice)}</span>. Mengubah
+              harga atau memangkas kuota sekarang berarti mengubah kesepakatan yang sudah mereka
+              bayar — justru hal yang dicegah model Pre-Order, dan justru alasan mereka bersedia
+              membayar di muka.
+            </>
+          ) : (
+            <>
+              Harga dan kuota dikunci sejak batch dibuka supaya pembeli bisa merencanakan
+              biayanya jauh sebelum panen. Belum ada yang memesan batch ini, tetapi ketentuannya
+              tetap melekat: yang membuat kunci itu bernilai adalah bahwa ia tidak bisa dibuka
+              belakangan.
+            </>
+          )}
+        </Prosa>
       </div>
 
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 mb-5">
-        <div className="flex items-start gap-3">
-          <Lock className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
-          <div>
-            <h2 className="font-bold text-amber-900 text-sm mb-1">
-              Ketentuan ini tidak bisa diubah
-            </h2>
-            <p className="text-xs text-amber-800 leading-relaxed">
-              {adaPembeli ? (
-                <>
-                  <b>{batch.quotaBoxSold} box sudah dibayar</b> pembeli dengan harga{" "}
-                  {rp(batch.lockedPrice)}. Mengubah harga atau memangkas kuota sekarang berarti
-                  mengubah kesepakatan yang sudah mereka bayar — justru hal yang dicegah model
-                  Pre-Order.
-                </>
-              ) : (
-                <>
-                  Harga dan kuota dikunci sejak batch dibuka supaya pembeli bisa merencanakan
-                  biaya. Belum ada yang memesan, tetapi ketentuannya tetap melekat pada batch
-                  ini.
-                </>
-              )}
-            </p>
+      <Panel label="Masih terbuka" judul="Yang masih bisa Anda ubah" className="mt-10">
+        <dl className="space-y-4">
+          <div className="border-t border-kertas-garis pt-2.5">
+            <Label as="dt">Katalog produk</Label>
+            <dd className="mt-1 max-w-[58ch] text-[14px] leading-relaxed text-tinta-lembut">
+              Nama produk, grade, dan deskripsinya. Yang terkunci adalah ketentuan batch ini,
+              bukan cara produknya diperkenalkan.
+            </dd>
           </div>
-        </div>
-      </div>
+          <div className="border-t border-kertas-garis pt-2.5">
+            <Label as="dt">Verified Timeline</Label>
+            <dd className="mt-1 max-w-[58ch] text-[14px] leading-relaxed text-tinta-lembut">
+              Catatan budidaya bertambah sepanjang musim. Inilah yang paling menentukan apakah
+              pembeli berikutnya percaya kuota Anda selanjutnya.
+            </dd>
+          </div>
+        </dl>
 
-      <div className="bg-white border border-gray-200 rounded-xl p-5">
-        <h2 className="font-bold text-emerald-950 text-sm mb-2 flex items-center gap-2">
-          <PencilLine className="w-4 h-4 text-gray-400" /> Yang masih bisa Anda ubah
-        </h2>
-        <ul className="text-sm text-gray-600 space-y-1.5 list-disc list-inside mb-4">
-          <li>Nama produk, grade, dan deskripsi — lewat Katalog Produk.</li>
-          <li>Catatan budidaya — dengan menambah node baru di Verified Timeline.</li>
-        </ul>
-        <div className="flex gap-2">
-          <Link
-            href="/tenant/catalog"
-            className="flex-1 text-center border border-gray-300 text-gray-700 text-sm font-semibold py-2.5 rounded-lg hover:bg-gray-50"
-          >
-            Katalog Produk
-          </Link>
-          <Link
-            href={`/tenant/batch/${id}/progress/new`}
-            className="flex-1 text-center bg-emerald-950 text-white text-sm font-semibold py-2.5 rounded-lg hover:bg-emerald-800"
-          >
-            Catat Kegiatan
-          </Link>
+        <div className="mt-6 flex flex-wrap gap-2">
+          <TombolTaut href="/tenant/catalog" rupa="kedua">
+            Katalog produk
+          </TombolTaut>
+          <TombolTaut href={`/tenant/batch/${id}/progress/new`}>Catat kegiatan</TombolTaut>
         </div>
-      </div>
-    </div>
+      </Panel>
+    </Halaman>
   );
 }

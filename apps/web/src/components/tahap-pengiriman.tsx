@@ -3,32 +3,81 @@ import type { ShipmentStatus } from "@agro-os/shared";
 import { Pil, type Nada } from "@/ui";
 
 /**
- * Enam tahap pengiriman (§5.6.1) sebagai satu kosakata, dipakai daftar maupun rincian.
+ * Enam tahap pengiriman (§5.6.1) sebagai satu kosakata, dipakai daftar maupun rincian, dan
+ * dari kedua sisi meja.
  *
- * Nadanya menyatakan APAKAH PEMBELI PERLU BERTINDAK, bukan seberapa jauh prosesnya
- * berjalan: hanya `TIBA_DI_LOKASI` yang menuntut sesuatu dari pembeli, jadi hanya ia yang
- * memakai pil terisi. Sisanya bergaris. Kalau setiap tahap berkedip, tahap yang
- * benar-benar menunggu tidak lagi menonjol.
+ * NAMANYA SATU untuk semua peran. Sebelum ini ada tiga salinan dengan dua kosakata: daftar
+ * pesanan Tenant menyebut `PANEN` sebagai "Siap Kirim" sementara rincian pesanan Tenant —
+ * halaman berikutnya yang dibuka dari daftar itu — menyebutnya "Panen". Dua nama untuk satu
+ * keadaan pada dua layar berurutan membuat orang bertanya apakah statusnya berubah di
+ * antara klik.
  *
- * Ditaruh bersama karena dua salinan berarti dua kosakata: daftar pesanan sempat menyebut
- * tahap yang sama "Perlu konfirmasi" sementara halaman rinciannya menyebutnya "Tiba di
- * Lokasi" — nama berbeda untuk keadaan yang sama, pada dua layar yang dibaca berurutan.
+ * NADANYA BERBEDA PER PERAN, dan itu bukan inkonsistensi melainkan isi. Nada menyatakan
+ * SIAPA YANG HARUS BERTINDAK SEKARANG:
+ *
+ *   · Pembeli hanya perlu bertindak pada `TIBA_DI_LOKASI` — mengonfirmasi penerimaan.
+ *   · Tenant justru perlu bertindak pada `PANEN` — menerbitkan QR dan menyerahkan box ke
+ *     kurir. Setelah barang berjalan, tidak ada lagi yang bisa ia lakukan.
+ *
+ * Kalau setiap tahap berkedip, tahap yang benar-benar menunggu tidak lagi menonjol.
  */
-export const TAHAP: Record<ShipmentStatus, { label: string; nada: Nada; garis: boolean }> = {
-  MENUNGGU_PANEN: { label: "Menunggu panen", nada: "netral", garis: true },
-  PANEN: { label: "Panen", nada: "utama", garis: true },
-  DIKIRIM: { label: "Dikirim", nada: "kabar", garis: true },
-  TIBA_DI_LOKASI: { label: "Perlu konfirmasi", nada: "awas", garis: false },
-  DITERIMA: { label: "Diterima", nada: "utama", garis: true },
-  SELESAI: { label: "Selesai", nada: "utama", garis: false },
-  DIBATALKAN: { label: "Dibatalkan", nada: "awas", garis: true },
+
+export type PeranTahap = "pembeli" | "tenant";
+
+/** Nama tahap — sama untuk semua peran. */
+export const TAHAP: Record<ShipmentStatus, string> = {
+  MENUNGGU_PANEN: "Menunggu panen",
+  PANEN: "Panen",
+  DIKIRIM: "Dikirim",
+  TIBA_DI_LOKASI: "Tiba di lokasi",
+  DITERIMA: "Diterima",
+  SELESAI: "Selesai",
+  DIBATALKAN: "Dibatalkan",
 };
 
-export function PilTahap({ status, className }: { status: ShipmentStatus; className?: string }) {
-  const t = TAHAP[status];
+type Rupa = { nada: Nada; garis: boolean };
+
+const RUPA: Record<PeranTahap, Record<ShipmentStatus, Rupa>> = {
+  pembeli: {
+    MENUNGGU_PANEN: { nada: "netral", garis: true },
+    PANEN: { nada: "utama", garis: true },
+    DIKIRIM: { nada: "kabar", garis: true },
+    /** Satu-satunya yang menuntut tindakan pembeli. */
+    TIBA_DI_LOKASI: { nada: "awas", garis: false },
+    DITERIMA: { nada: "utama", garis: true },
+    SELESAI: { nada: "utama", garis: false },
+    DIBATALKAN: { nada: "awas", garis: true },
+  },
+  tenant: {
+    MENUNGGU_PANEN: { nada: "netral", garis: true },
+    /** Giliran Tenant: panen sudah tercatat, QR dan Kode Antar menunggu diterbitkan. */
+    PANEN: { nada: "awas", garis: false },
+    DIKIRIM: { nada: "kabar", garis: true },
+    /** Barang sudah di tangan kurir — Tenant tidak punya tindakan di sini. */
+    TIBA_DI_LOKASI: { nada: "kabar", garis: true },
+    DITERIMA: { nada: "utama", garis: true },
+    SELESAI: { nada: "utama", garis: false },
+    DIBATALKAN: { nada: "awas", garis: true },
+  },
+};
+
+export function PilTahap({
+  status,
+  peran = "pembeli",
+  className,
+}: {
+  status: ShipmentStatus;
+  peran?: PeranTahap;
+  className?: string;
+}) {
+  const r = RUPA[peran][status];
   return (
-    <Pil nada={t.nada} garis={t.garis} className={className}>
-      {t.label}
+    <Pil nada={r.nada} garis={r.garis} className={className}>
+      {TAHAP[status]}
     </Pil>
   );
 }
+
+/** Nada tahap untuk memberi warna pada aturan panel, bukan hanya pilnya. */
+export const nadaTahap = (status: ShipmentStatus, peran: PeranTahap = "pembeli"): Nada =>
+  RUPA[peran][status].nada;

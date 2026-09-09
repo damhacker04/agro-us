@@ -1,19 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Link from "next/link";
-import {
-  ArrowLeft,
-  Clock,
-  Loader2,
-  MapPin,
-  Phone,
-  Printer,
-  QrCode,
-  ShieldAlert,
-  User,
-} from "lucide-react";
-import type { BoxQrItem, ShipmentStatus, TenantOrderDetail } from "@agro-os/shared";
+import type { BoxQrItem, TenantOrderDetail } from "@agro-os/shared";
 import {
   GalatApi,
   ambilLembarQr,
@@ -21,26 +9,36 @@ import {
   terbitkanQr,
   terbitkanUlangKodeAntar,
 } from "@/lib/api";
+import { angka, rupiah, tanggalPanjang } from "@/lib/format-id";
+import { PilTahap, TAHAP, nadaTahap } from "@/components/tahap-pengiriman";
+import {
+  BarisData,
+  Deret,
+  Galat,
+  Halaman,
+  Label,
+  Memuat,
+  Panel,
+  Pil,
+  Prosa,
+  Sunyi,
+  TautanKembali,
+  Tombol,
+  TombolTaut,
+} from "@/ui";
 
-const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
-const tgl = (iso: string) =>
-  new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
-
-const TAHAP: Record<ShipmentStatus, { label: string; kelas: string }> = {
-  MENUNGGU_PANEN: { label: "Menunggu Panen", kelas: "bg-gray-100 text-gray-700" },
-  PANEN: { label: "Panen", kelas: "bg-lime-100 text-lime-800" },
-  DIKIRIM: { label: "Dikirim", kelas: "bg-blue-100 text-blue-800" },
-  TIBA_DI_LOKASI: { label: "Tiba di Lokasi", kelas: "bg-amber-100 text-amber-900" },
-  DITERIMA: { label: "Diterima", kelas: "bg-emerald-100 text-emerald-800" },
-  SELESAI: { label: "Selesai", kelas: "bg-emerald-700 text-white" },
-  DIBATALKAN: { label: "Dibatalkan", kelas: "bg-red-100 text-red-800" },
-};
-
-export default function TenantOrderDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+/**
+ * TN-22 — Rincian pesanan masuk, penerbitan QR box, dan Kode Antar.
+ *
+ * MIGRASI DUNIA, dengan satu penguatan yang bukan soal rupa: KODE ANTAR yang hanya
+ * ditampilkan sekali kini menguasai ground penuh `jambu`, bukan kotak amber pucat di antara
+ * kotak lain. Hukum region-utuh berlaku apa adanya di sini karena ia memang satu region
+ * kecil yang utuh — dan karena kode ini betul-betul tidak bisa dilihat lagi setelah halaman
+ * ditutup. Blok yang terbaca seperti keterangan biasa akan dilewati orang yang sedang
+ * buru-buru menyerahkan box ke kurir, dan biayanya adalah menerbitkan ulang kode sambil
+ * kurirnya menunggu.
+ */
+export default function TenantOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: shipmentId } = React.use(params);
 
   const [pesanan, setPesanan] = useState<TenantOrderDetail | null>(null);
@@ -77,7 +75,7 @@ export default function TenantOrderDetailPage({
       setKodeAntar(r.courierCode);
       setPesanan((p) => (p ? { ...p, qrIssued: true } : p));
     } catch (e) {
-      setGalatQr(e instanceof GalatApi ? e.message : "Gagal menerbitkan QR.");
+      setGalatQr(e instanceof GalatApi ? e.message : "QR gagal diterbitkan.");
     } finally {
       setProses(false);
     }
@@ -90,194 +88,216 @@ export default function TenantOrderDetailPage({
       const r = await terbitkanUlangKodeAntar(shipmentId);
       setKodeAntar(r.courierCode);
     } catch (e) {
-      setGalatQr(e instanceof GalatApi ? e.message : "Gagal menerbitkan kode baru.");
+      setGalatQr(e instanceof GalatApi ? e.message : "Kode baru gagal diterbitkan.");
     } finally {
       setProses(false);
     }
   }
 
-  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat pesanan…</div>;
+  const kembali = <TautanKembali href="/tenant/orders">Pesanan masuk</TautanKembali>;
 
-  if (galat || !pesanan) {
+  if (memuat) {
     return (
-      <div className="p-8">
-        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
-          {galat || "Pesanan tidak ditemukan"}
-        </div>
-      </div>
+      <Halaman judul="Rincian pesanan" kembali={kembali}>
+        <Memuat baris={4} label="Memuat pesanan" />
+      </Halaman>
     );
   }
 
-  const t = TAHAP[pesanan.status];
+  if (galat || !pesanan) {
+    return (
+      <Halaman judul="Rincian pesanan" kembali={kembali}>
+        <Galat judul="Pesanan tidak dapat dimuat">
+          {galat || "Pesanan tidak ditemukan."} Pesanan yang masuk tetap tercatat di server —
+          muat ulang halaman untuk mencoba lagi.
+        </Galat>
+      </Halaman>
+    );
+  }
 
   return (
-    <div className="p-8 max-w-3xl">
-      <Link
-        href="/tenant/orders"
-        className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 hover:text-emerald-600 mb-6"
-      >
-        <ArrowLeft className="w-4 h-4" /> Kembali ke Pesanan Masuk
-      </Link>
-
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-emerald-950">{pesanan.buyerName}</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            {pesanan.zoneName} · dipesan {tgl(pesanan.createdAt)} · siap {tgl(pesanan.readyDate)}
-          </p>
-        </div>
-        <span className={`shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-full ${t.kelas}`}>
-          {t.label}
-        </span>
-      </div>
-
+    <Halaman
+      kembali={kembali}
+      judul={pesanan.buyerName}
+      pengantar={`${pesanan.zoneName} · dipesan ${tanggalPanjang(pesanan.createdAt)} · siap ${tanggalPanjang(pesanan.readyDate)}`}
+      aksi={
+        <>
+          <PilTahap status={pesanan.status} peran="tenant" />
+          <TombolTaut href={`/tenant/orders/${shipmentId}/invoice`} rupa="kedua" ukuran="sm">
+            Surat jalan
+          </TombolTaut>
+        </>
+      }
+    >
       {/* Identitas penerima — Tenant perlu tahu siapa yang berhak menerima di lokasi. */}
-      <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">
-        <h2 className="font-bold text-emerald-950 mb-3 text-sm">Tujuan Pengiriman</h2>
-        <div className="space-y-2 text-sm text-gray-700">
-          <div className="flex items-center gap-2">
-            <User className="w-4 h-4 text-gray-400 shrink-0" />
+      <Panel label="Tujuan" judul="Siapa yang menerima barang" className="mb-8">
+        <Deret kolom={4} as="dl">
+          <BarisData label="Penerima" prosa>
             {pesanan.recipient.name}
-          </div>
-          <div className="flex items-center gap-2">
-            <Phone className="w-4 h-4 text-gray-400 shrink-0" />
-            {pesanan.recipient.phone}
-          </div>
-          <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-gray-400 shrink-0" />
-            Jam terima {pesanan.recipient.receivingHours}
-          </div>
-          {pesanan.recipient.landmark && (
-            <div className="flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-gray-400 shrink-0" />
-              {pesanan.recipient.landmark}
-            </div>
-          )}
-        </div>
-      </div>
+          </BarisData>
+          <BarisData label="Telepon">{pesanan.recipient.phone}</BarisData>
+          <BarisData label="Jam terima">{pesanan.recipient.receivingHours}</BarisData>
+          <BarisData label="Patokan" prosa>
+            {pesanan.recipient.landmark || "—"}
+          </BarisData>
+        </Deret>
+      </Panel>
 
-      <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">
-        <h2 className="font-bold text-emerald-950 mb-3 text-sm">Item Anda</h2>
-        <div className="space-y-3">
-          {pesanan.lines.map((l) => (
-            <div
-              key={l.orderItemId}
-              className="flex items-center justify-between gap-4 border-b border-gray-100 pb-3 last:border-0 last:pb-0"
-            >
-              <div className="min-w-0">
-                <div className="font-semibold text-sm text-gray-900 truncate">
-                  {l.productName}{" "}
-                  <span className="text-xs font-normal text-gray-500">Grade {l.grade}</span>
-                </div>
-                <div className="text-xs text-gray-500 mt-0.5">
-                  {l.qtyBox} box × {rp(l.unitPriceLocked)}
+      <Panel label="Item Anda" judul="Yang harus Anda siapkan" className="mb-8">
+        <ul>
+          {pesanan.lines.map((l) => {
+            const kurang =
+              l.qtyBoxFulfilled !== null && l.qtyBoxFulfilled < l.qtyBox
+                ? l.qtyBox - l.qtyBoxFulfilled
+                : 0;
+            return (
+              <li
+                key={l.orderItemId}
+                className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2 border-t border-kertas-garis py-4"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-baseline gap-x-3">
+                    <span className="text-[15px] font-bold text-tinta">{l.productName}</span>
+                    <span className="text-[13px] text-tinta-samar">Grade {l.grade}</span>
+                  </div>
+                  <Sunyi className="mt-1 text-[13px]">
+                    <span className="font-mono">
+                      {angka(l.qtyBox)} box × {rupiah(l.unitPriceLocked)}
+                    </span>
+                  </Sunyi>
                   {/* Selisih janji vs realisasi adalah shortfall — angka yang menentukan
                       rasio publik Tenant, jadi ditampilkan apa adanya. */}
-                  {l.qtyBoxFulfilled !== null && l.qtyBoxFulfilled < l.qtyBox && (
-                    <span className="text-red-700 font-semibold">
-                      {" "}
-                      · terpenuhi {l.qtyBoxFulfilled} box
-                    </span>
-                  )}
+                  {kurang > 0 ? (
+                    <div className="mt-2.5 border-t-2 border-jambu pt-2">
+                      <Label className="text-jambu">
+                        Terpenuhi {angka(l.qtyBoxFulfilled as number)} dari {angka(l.qtyBox)} box
+                      </Label>
+                      <p className="mt-1 max-w-[58ch] text-[13px] leading-relaxed text-tinta-lembut">
+                        Pembeli yang kurang sudah ditawari substitusi, jadwal ulang, atau
+                        pengembalian dana. Selisihnya tercatat pada siklus ini.
+                      </p>
+                    </div>
+                  ) : null}
                 </div>
-              </div>
-              <div className="font-bold text-sm text-gray-900 shrink-0">{rp(l.subtotal)}</div>
-            </div>
-          ))}
+                <span className="shrink-0 font-mono text-[15px] text-tinta">
+                  {rupiah(l.subtotal)}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+
+        <div className="mt-5 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-t border-tinta pt-3">
+          <Label>Nilai bagian Anda</Label>
+          <span className="font-mono text-[22px] leading-none text-tinta">
+            {rupiah(pesanan.subtotal)}
+          </span>
         </div>
-        <div className="flex justify-between items-center mt-4 pt-3 border-t border-gray-200">
-          <span className="text-sm font-semibold text-gray-700">Nilai bagian Anda</span>
-          <span className="font-bold text-lg text-gray-900">{rp(pesanan.subtotal)}</span>
-        </div>
-      </div>
+        <Sunyi className="mt-2 max-w-[68ch] text-[13px]">
+          Belum termasuk ongkir dan add-on laporan — keduanya milik pembeli terhadap AgroUs,
+          bukan bagian Anda. Dananya cair otomatis setelah jendela klaim mutu berakhir.
+        </Sunyi>
+      </Panel>
 
       {/* ---------- QR & Kode Antar ---------- */}
-      <div className="bg-white border border-gray-200 rounded-xl p-5">
-        <div className="flex items-center justify-between gap-4 mb-1">
-          <h2 className="font-bold text-emerald-950 text-sm">QR Box &amp; Kode Antar</h2>
-          {pesanan.qrIssued && (
-            <button
-              onClick={kodeBaru}
-              disabled={proses}
-              className="text-xs font-semibold text-emerald-700 hover:underline disabled:opacity-50"
-            >
+      <Panel
+        nada={nadaTahap(pesanan.status, "tenant")}
+        label="Serah terima"
+        judul="QR box & Kode Antar"
+        aksi={
+          pesanan.qrIssued ? (
+            <Tombol rupa="sunyi" ukuran="sm" onClick={kodeBaru} disabled={proses}>
               Terbitkan kode antar baru
-            </button>
-          )}
-        </div>
-        <p className="text-xs text-gray-500 mb-4">
-          Satu QR per box fisik. Kode Antar 4 digit diberikan kepada kurir secara lisan —
-          bukan ditempel di box.
-        </p>
+            </Tombol>
+          ) : null
+        }
+      >
+        <Prosa className="text-[14px]">
+          Satu QR per box fisik, ditempel di boxnya. Kode Antar 4 digit diberikan kepada kurir
+          secara lisan — kalau ia menempel di box, siapa pun yang memegang box bisa membuka
+          pengantarannya.
+        </Prosa>
 
-        {galatQr && (
-          <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
-            {galatQr}
-          </p>
-        )}
-
-        {kodeAntar && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 mb-4">
-            <div className="flex items-start gap-2">
-              <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-              <div>
-                <div className="text-xs font-bold text-amber-900 mb-1">
-                  Kode Antar — ditampilkan sekali
-                </div>
-                <div className="font-mono text-3xl font-black tracking-[0.3em] text-amber-950">
-                  {kodeAntar}
-                </div>
-                <p className="text-[11px] text-amber-800 mt-1.5">
-                  Catat sekarang. Kode ini tidak bisa dilihat lagi setelah halaman ditutup —
-                  bila hilang, terbitkan kode baru.
-                </p>
-              </div>
-            </div>
+        {/* Region kecil yang utuh: ground penuh, tipe kertas, sekunder dari hue-nya sendiri.
+            Kode ini tidak bisa dilihat lagi setelah halaman ditutup. */}
+        {kodeAntar ? (
+          <div className="mt-6 bg-jambu p-6">
+            <Label className="text-kabut-jambu">Kode Antar — ditampilkan sekali</Label>
+            <p className="mt-2.5 font-mono text-[34px] leading-none tracking-[0.35em] text-kertas-terang">
+              {kodeAntar}
+            </p>
+            <p className="mt-4 max-w-[58ch] text-[14px] leading-relaxed text-kabut-jambu">
+              Catat sekarang, lalu sebutkan kepada kurir saat menyerahkan box. Kode ini tidak
+              bisa dilihat lagi setelah halaman ditutup — bila hilang, terbitkan kode baru dan
+              kode lama langsung berhenti berlaku.
+            </p>
           </div>
-        )}
+        ) : null}
 
-        {!pesanan.qrIssued ? (
-          <button
+        {galatQr ? (
+          <Galat judul="Penerbitan gagal" className="mt-6">
+            {galatQr}
+          </Galat>
+        ) : null}
+
+        {/* Tombolnya hanya ditawarkan pada tahap yang server memang menerimanya. QR baru bisa
+            diterbitkan setelah batch berstatus Panen, dan tidak lagi berguna setelah barang
+            berjalan — menawarkannya di luar jendela itu berarti menyodorkan kendali yang
+            satu-satunya hasilnya penolakan. */}
+        {!pesanan.qrIssued && pesanan.status === "MENUNGGU_PANEN" ? (
+          <div className="mt-6 border-t-2 border-tinta pt-3">
+            <Label>Belum bisa diterbitkan</Label>
+            <Prosa className="mt-1.5 text-[14px]">
+              QR dan Kode Antar terbit setelah Anda mencatat panen batch ini. Sampai itu
+              terjadi, belum ada box fisik yang bisa ditempeli.
+            </Prosa>
+          </div>
+        ) : !pesanan.qrIssued && pesanan.status !== "PANEN" ? (
+          <div className="mt-6 border-t-2 border-tinta pt-3">
+            <Label>Jendela penerbitan sudah lewat</Label>
+            <Prosa className="mt-1.5 text-[14px]">
+              Pengiriman ini sudah berstatus {TAHAP[pesanan.status].toLowerCase()}, jadi QR
+              box tidak lagi berguna. Bila ada yang perlu ditelusuri soal serah terimanya,
+              rincian pengirimannya ada di surat jalan.
+            </Prosa>
+          </div>
+        ) : !pesanan.qrIssued ? (
+          <Tombol
+            penuh
+            className="mt-6 py-4 text-[16px]"
+            sibuk={proses}
+            labelSibuk="Menerbitkan…"
             onClick={cetakQr}
-            disabled={proses}
-            className="w-full bg-emerald-950 text-white text-sm font-semibold py-3 rounded-lg hover:bg-emerald-800 disabled:opacity-60 flex items-center justify-center gap-2"
           >
-            {proses ? <Loader2 className="w-4 h-4 animate-spin" /> : <QrCode className="w-4 h-4" />}
-            {proses ? "Menerbitkan…" : "Terbitkan QR & Kode Antar"}
-          </button>
+            Terbitkan QR & Kode Antar
+          </Tombol>
         ) : boxes.length === 0 ? (
-          <p className="text-sm text-gray-500">Memuat lembar QR…</p>
+          <Memuat baris={1} label="Memuat lembar QR" className="mt-6" />
         ) : (
           <>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs text-gray-500">{boxes.length} box</span>
-              <button
-                onClick={() => window.print()}
-                className="text-xs font-semibold text-emerald-700 hover:underline flex items-center gap-1"
-              >
-                <Printer className="w-3 h-3" /> Cetak lembar
-              </button>
+            <div className="mt-7 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-tinta pt-3">
+              <Label>{angka(boxes.length)} box</Label>
+              <Tombol rupa="kedua" ukuran="sm" onClick={() => window.print()} className="print:hidden">
+                Cetak lembar QR
+              </Tombol>
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+            <ul className="mt-5 grid grid-cols-3 gap-4 sm:grid-cols-4">
               {boxes.map((b, i) => (
-                <div
-                  key={b.tokenId}
-                  className={`rounded-lg border p-2 text-center ${
-                    b.consumedAt ? "border-gray-200 bg-gray-50 opacity-60" : "border-gray-200"
-                  }`}
-                >
+                <li key={b.tokenId} className="border border-kertas-garis bg-kertas-terang p-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={b.qrDataUrl} alt={`QR box ${i + 1}`} className="w-full" />
-                  <div className="text-[10px] text-gray-500 mt-1">
-                    Box {i + 1}
-                    {b.consumedAt && " · terpindai"}
+                  <div className="mt-1.5 flex items-baseline justify-between gap-2">
+                    <span className="font-mono text-[11px] text-tinta-samar">
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                    {b.consumedAt ? <Pil nada="utama" garis>Terpindai</Pil> : null}
                   </div>
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
           </>
         )}
-      </div>
-    </div>
+      </Panel>
+    </Halaman>
   );
 }

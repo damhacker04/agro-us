@@ -1,17 +1,41 @@
 "use client";
 
 import React, { Suspense, useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Loader2 } from "lucide-react";
 import type { CommoditySummary, ProductResponse } from "@agro-os/shared";
+import { GalatApi, ambilKomoditas, ambilProdukTenant, buatProduk, ubahProduk } from "@/lib/api";
+import { angka, desimal } from "@/lib/format-id";
 import {
-  GalatApi,
-  ambilKomoditas,
-  ambilProdukTenant,
-  buatProduk,
-  ubahProduk,
-} from "@/lib/api";
+  AreaTeks,
+  Deret,
+  Galat,
+  Halaman,
+  Label,
+  Masukan,
+  Medan,
+  Memuat,
+  Panel,
+  Pilihan,
+  Prosa,
+  Sunyi,
+  TautanKembali,
+  Tombol,
+  Ubin,
+} from "@/ui";
+
+/**
+ * TN-13b — Tambah / ubah produk.
+ *
+ * MIGRASI DUNIA. Yang berubah selain rupa: rendemen rata-rata komoditas berhenti memakai
+ * `toLocaleString("id-ID")` — data ICU runtime berbeda antara server dan peramban, dan
+ * selisih satu karakter membuang seluruh pohon React dengan galat hidrasi. Sama seperti
+ * yang sudah dicatat di MIGRASI.md.
+ *
+ * Keterangan toleransi susut DIPERTAHANKAN dan justru diberi tempat lebih jelas. Angka itu
+ * melekat pada komoditas, bukan pada produk, dan ia yang menentukan berapa kekurangan berat
+ * yang masih dianggap wajar saat pembeli mengajukan klaim — Tenant berhak tahu sebelum
+ * memilih, bukan setelah klaim pertama datang.
+ */
 
 const GRADE = ["A", "B", "C"] as const;
 
@@ -64,8 +88,9 @@ function FormProduk() {
         }
         setGalat("");
       })
-      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat data"))
+      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Data gagal dimuat"))
       .finally(() => setMemuat(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, sedangUbah]);
 
   async function simpan(e: React.FormEvent) {
@@ -86,174 +111,217 @@ function FormProduk() {
       else await buatProduk(isi);
       router.push("/tenant/catalog");
     } catch (err) {
-      setGalat(err instanceof GalatApi ? err.message : "Gagal menyimpan produk.");
+      setGalat(err instanceof GalatApi ? err.message : "Produk gagal disimpan.");
       setProses(false);
     }
   }
 
-  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat…</div>;
+  const kembali = <TautanKembali href="/tenant/catalog">Katalog produk</TautanKembali>;
+  const judul = sedangUbah ? "Ubah produk" : "Tambah produk";
+
+  if (memuat) {
+    return (
+      <Halaman lebar="sempit" judul={judul} kembali={kembali}>
+        <Memuat baris={4} label="Memuat komoditas" />
+      </Halaman>
+    );
+  }
 
   const dipilih = komoditas.find((k) => k.id === commodityId);
 
   return (
-    <div className="p-8 max-w-2xl">
-      <Link
-        href="/tenant/catalog"
-        className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 hover:text-emerald-600 mb-6"
-      >
-        <ArrowLeft className="w-4 h-4" /> Kembali ke Katalog
-      </Link>
-
-      <h1 className="text-2xl font-bold text-emerald-950 mb-1">
-        {sedangUbah ? "Ubah Produk" : "Tambah Produk"}
-      </h1>
-      <p className="text-sm text-gray-500 mb-6">
-        Produk belum bisa dipesan sebelum Anda membuka kuota Pre-Order untuknya dari
-        Manajemen Batch.
-      </p>
-
-      <form onSubmit={simpan} className="space-y-4">
-        <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Komoditas</label>
-            <select
-              required
-              value={commodityId}
-              onChange={(e) => setCommodityId(e.target.value)}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white"
-            >
-              {komoditas.map((k) => (
-                <option key={k.id} value={k.id}>
-                  {k.name}
-                </option>
-              ))}
-            </select>
-            {/* Toleransi susut menentukan berapa kekurangan berat yang masih dianggap
-                wajar saat pembeli mengajukan klaim — angkanya melekat pada komoditas,
-                bukan pada produk, jadi Tenant perlu tahu sebelum memilih. */}
-            {dipilih && (
-              <p className="text-xs text-gray-500 mt-1">
-                Toleransi susut {dipilih.shrinkTolerancePct}% · rendemen rata-rata{" "}
-                {dipilih.avgYieldKgPerHa.toLocaleString("id-ID")} kg/ha
-              </p>
+    <Halaman
+      lebar="sempit"
+      kembali={kembali}
+      judul={judul}
+      pengantar="Produk belum bisa dipesan sampai Anda membuka kuota Pre-Order untuknya dari halaman Batch. Yang diisi di sini adalah dasarnya: nama, grade, harga, dan isi per box."
+    >
+      <form onSubmit={simpan}>
+        {/* Tanpa `label`: kepala panelnya akan berbunyi "KOMODITAS" tepat di atas isian
+            yang labelnya juga "KOMODITAS", dan yang kedua lalu terbaca sebagai keterangan
+            tambahan yang ternyata bukan. */}
+        <Panel judul="Yang Anda tanam">
+          <Medan label="Komoditas" wajib>
+            {(alat) => (
+              <Pilihan
+                {...alat}
+                value={commodityId}
+                onChange={(e) => setCommodityId(e.target.value)}
+              >
+                {komoditas.map((k) => (
+                  <option key={k.id} value={k.id}>
+                    {k.name}
+                  </option>
+                ))}
+              </Pilihan>
             )}
-          </div>
+          </Medan>
 
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Nama produk</label>
-            <input
-              required
-              minLength={3}
-              maxLength={120}
-              value={nama}
-              onChange={(e) => setNama(e.target.value)}
-              placeholder="mis. Wortel Pujon Grade A"
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
-            />
-          </div>
+          {/* Dua angka yang melekat pada KOMODITAS, bukan pada produk, dan keduanya
+              menentukan hal yang berbeda: toleransi susut menentukan berapa kekurangan
+              berat yang masih dianggap wajar saat pembeli mengajukan klaim; rendemen
+              menentukan batas kuota yang boleh Anda buka di petak seluas berapa pun. */}
+          {dipilih ? (
+            <Deret kolom={2} as="dl" className="mt-6">
+              <Ubin
+                label="Toleransi susut"
+                nilai={desimal(dipilih.shrinkTolerancePct, 0)}
+                satuan="%"
+                catatan="Kekurangan berat sampai batas ini dianggap susut wajar saat klaim mutu"
+              />
+              <Ubin
+                label="Rendemen rata-rata"
+                nilai={angka(dipilih.avgYieldKgPerHa)}
+                satuan="kg/ha"
+                catatan="Dasar perhitungan batas kuota tiap petak lahan"
+              />
+            </Deret>
+          ) : null}
+        </Panel>
 
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Grade</label>
-            <div className="flex gap-2">
+        <Panel label="Produk" judul="Bagaimana ia diperkenalkan" className="mt-8">
+          <Medan
+            label="Nama produk"
+            petunjuk="Yang dibaca pembeli di katalog. Sebutkan komoditas dan asalnya."
+            wajib
+          >
+            {(alat) => (
+              <Masukan
+                {...alat}
+                minLength={3}
+                maxLength={120}
+                value={nama}
+                onChange={(e) => setNama(e.target.value)}
+                placeholder="Wortel Pujon Grade A"
+              />
+            )}
+          </Medan>
+
+          <fieldset className="mt-6">
+            <legend className="mb-2">
+              <Label>Grade</Label>
+            </legend>
+            <p className="mb-3 text-[12px] leading-snug text-tinta-samar">
+              Standar grade ditetapkan per komoditas, dan pembeli menyaring katalog dengannya.
+            </p>
+            <div className="grid grid-cols-3 gap-2">
               {GRADE.map((g) => (
-                <button
+                <Tombol
                   key={g}
                   type="button"
+                  rupa={grade === g ? "utama" : "kedua"}
+                  aria-pressed={grade === g}
+                  className="py-3.5"
                   onClick={() => setGrade(g)}
-                  className={`flex-1 px-3 py-2.5 rounded-lg text-sm font-medium border transition ${
-                    grade === g
-                      ? "bg-emerald-950 text-white border-emerald-950"
-                      : "border-gray-200 text-gray-700 hover:bg-gray-50"
-                  }`}
                 >
                   Grade {g}
-                </button>
+                </Tombol>
               ))}
             </div>
+          </fieldset>
+
+          <div className="mt-6 grid gap-5 sm:grid-cols-2">
+            <Medan label="Harga per box" petunjuk="Dalam rupiah, tanpa titik." wajib>
+              {(alat) => (
+                <Masukan
+                  {...alat}
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  step={1}
+                  value={harga}
+                  onChange={(e) => setHarga(e.target.value)}
+                  placeholder="145000"
+                  className="font-mono"
+                />
+              )}
+            </Medan>
+
+            <Medan label="Isi per box" petunjuk="Dalam kilogram." wajib>
+              {(alat) => (
+                <Masukan
+                  {...alat}
+                  type="number"
+                  inputMode="decimal"
+                  min={0.01}
+                  step={0.01}
+                  value={kgBox}
+                  onChange={(e) => setKgBox(e.target.value)}
+                  placeholder="10"
+                  className="font-mono"
+                />
+              )}
+            </Medan>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                Harga per box (Rp)
-              </label>
-              <input
-                required
-                type="number"
-                min={1}
-                step={1}
-                value={harga}
-                onChange={(e) => setHarga(e.target.value)}
-                placeholder="145000"
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+          <Medan
+            label="Perkiraan tanggal panen"
+            petunjuk="Perkiraan awal untuk produk ini. Tanggal yang mengikat dikunci nanti, saat kuota dibuka."
+            wajib
+            className="mt-6"
+          >
+            {(alat) => (
+              <Masukan
+                {...alat}
+                type="date"
+                value={panen}
+                onChange={(e) => setPanen(e.target.value)}
+                className="font-mono"
               />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                Isi per box (kg)
-              </label>
-              <input
-                required
-                type="number"
-                min={0.01}
-                step={0.01}
-                value={kgBox}
-                onChange={(e) => setKgBox(e.target.value)}
-                placeholder="10"
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+            )}
+          </Medan>
+
+          <Medan
+            label="Deskripsi"
+            petunjuk="Opsional. Dibaca pembeli apa adanya — sebutkan cara tanam atau ciri yang membedakan."
+            className="mt-6"
+          >
+            {(alat) => (
+              <AreaTeks
+                {...alat}
+                rows={3}
+                maxLength={2000}
+                value={deskripsi}
+                onChange={(e) => setDeskripsi(e.target.value)}
+                placeholder="Ditanam di ketinggian 1.200 mdpl, panen pagi dan langsung disortir."
               />
-            </div>
-          </div>
+            )}
+          </Medan>
+        </Panel>
 
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Perkiraan tanggal panen
-            </label>
-            <input
-              required
-              type="date"
-              value={panen}
-              onChange={(e) => setPanen(e.target.value)}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Deskripsi <span className="font-normal text-gray-400">(opsional)</span>
-            </label>
-            <textarea
-              rows={3}
-              maxLength={2000}
-              value={deskripsi}
-              onChange={(e) => setDeskripsi(e.target.value)}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
-            />
-          </div>
-        </div>
-
-        {galat && (
-          <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+        {galat ? (
+          <Galat judul="Produk belum tersimpan" className="mt-8">
             {galat}
-          </p>
-        )}
+          </Galat>
+        ) : null}
 
-        <button
+        <Tombol
           type="submit"
-          disabled={proses}
-          className="w-full bg-emerald-950 text-white text-sm font-semibold py-3 rounded-lg hover:bg-emerald-800 disabled:opacity-60 flex items-center justify-center gap-2"
+          penuh
+          className="mt-8 py-4 text-[16px]"
+          sibuk={proses}
+          labelSibuk="Menyimpan…"
         >
-          {proses && <Loader2 className="w-4 h-4 animate-spin" />}
-          {proses ? "Menyimpan…" : sedangUbah ? "Simpan Perubahan" : "Tambah Produk"}
-        </button>
+          {sedangUbah ? "Simpan perubahan" : "Tambah produk"}
+        </Tombol>
+        <Prosa className="mt-3 text-[13px]">
+          Menyimpan produk belum membuka kuota apa pun, jadi belum ada yang bisa dipesan
+          pembeli dan belum ada yang mengikat Anda.
+        </Prosa>
       </form>
-    </div>
+    </Halaman>
   );
 }
 
 export default function CatalogEditPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-sm text-gray-500">Memuat…</div>}>
+    <Suspense
+      fallback={
+        <Halaman lebar="sempit" judul="Produk">
+          <Memuat baris={4} label="Memuat formulir" />
+        </Halaman>
+      }
+    >
       <FormProduk />
     </Suspense>
   );

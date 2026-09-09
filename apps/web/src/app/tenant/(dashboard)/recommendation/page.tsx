@@ -1,17 +1,43 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ArrowRight, CalendarDays, Lightbulb, Lock, TrendingUp } from "lucide-react";
 import { GalatApi, aktifkanLangganan, ambilRekomendasi } from "@/lib/api";
+import { angka, tanggalPendek } from "@/lib/format-id";
 import type { PlantingRecommendation } from "@agro-os/shared";
+import {
+  Deret,
+  Galat,
+  Halaman,
+  Kosong,
+  Label,
+  Memuat,
+  Panel,
+  Pil,
+  Prosa,
+  Sunyi,
+  Tombol,
+  TombolTaut,
+  Ubin,
+  type Nada,
+} from "@/ui";
+
+/**
+ * TN-25 — Rekomendasi tanam (§5.8).
+ *
+ * MIGRASI DUNIA. Yang berubah selain rupa: tanggal berhenti memakai
+ * `toLocaleDateString("id-ID", { timeZone: "UTC" })` dan jumlah kg berhenti memakai
+ * `toLocaleString` — keduanya bergantung pada data ICU runtime yang berbeda antara server
+ * dan peramban. Di halaman yang berisi angka untuk dipakai mengambil keputusan modal,
+ * angka yang berubah bentuk tergantung mesin siapa yang membacanya adalah cacat, bukan
+ * detail.
+ */
 
 /** Penanda kejenuhan pasokan (FR-8.4) — mencegah semua Tenant menanam komoditas sama. */
-const SATURASI: Record<string, { label: string; kelas: string }> = {
-  KURANG: { label: "Pasokan kurang", kelas: "bg-emerald-100 text-emerald-800" },
-  SEIMBANG: { label: "Seimbang", kelas: "bg-gray-100 text-gray-700" },
-  JENUH: { label: "Jenuh", kelas: "bg-red-100 text-red-800" },
-  TANPA_DATA: { label: "Belum terukur", kelas: "bg-gray-100 text-gray-500" },
+const SATURASI: Record<string, { label: string; nada: Nada; garis: boolean }> = {
+  KURANG: { label: "Pasokan kurang", nada: "utama", garis: false },
+  SEIMBANG: { label: "Seimbang", nada: "netral", garis: true },
+  JENUH: { label: "Jenuh", nada: "awas", garis: false },
+  TANPA_DATA: { label: "Belum terukur", nada: "netral", garis: true },
 };
 
 /** Dasar keyakinan angka permintaan. WAJIB tampil bersama angkanya: Tenant mengeluarkan
@@ -23,13 +49,6 @@ const KEYAKINAN: Record<string, string> = {
   RENDAH: "Keyakinan rendah",
   TANPA_DATA: "Tanpa riwayat",
 };
-
-const tglPendek = (iso: string) =>
-  new Date(`${iso}T00:00:00Z`).toLocaleDateString("id-ID", {
-    day: "numeric",
-    month: "short",
-    timeZone: "UTC",
-  });
 
 /**
  * Satu kartu per (zona, komoditas), bukan per minggu panen.
@@ -53,68 +72,62 @@ function KartuKomoditas({ minggu }: { minggu: PlantingRecommendation[] }) {
   const s = SATURASI[r.saturation]!;
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-5">
-      <div className="flex items-start justify-between gap-3 mb-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <Lightbulb className="w-4 h-4 text-amber-500 shrink-0" />
-          <h3 className="font-bold text-gray-900 truncate">{r.commodityName}</h3>
-          <span className="text-xs text-gray-400 shrink-0">· {r.zoneName}</span>
-        </div>
-        <div className="flex gap-1.5 shrink-0">
-          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${s.kelas}`}>
+    <Panel
+      nada={s.nada}
+      label={r.zoneName}
+      judul={r.commodityName}
+      aksi={
+        <>
+          <Pil nada={s.nada} garis={s.garis}>
             {s.label}
-          </span>
-          <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">
+          </Pil>
+          <Pil nada="netral" garis>
             {KEYAKINAN[r.confidence]}
-          </span>
-        </div>
-      </div>
-
-      {urut.length > 1 && (
-        <div className="mb-3">
-          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 mb-1.5">
-            <CalendarDays className="w-3 h-3" />
-            Pilih minggu panen ({urut.length} pilihan)
-          </div>
-          <div className="flex flex-wrap gap-1.5">
+          </Pil>
+        </>
+      }
+    >
+      {urut.length > 1 ? (
+        <fieldset className="mb-6">
+          <legend className="mb-2">
+            <Label>Minggu panen · {urut.length} pilihan</Label>
+          </legend>
+          <div className="flex flex-wrap gap-2">
             {[...urut]
               .sort((a, b) => a.harvestWeekStart.localeCompare(b.harvestWeekStart))
               .map((m) => (
-                <button
+                <Tombol
                   key={m.harvestWeekStart}
                   type="button"
+                  ukuran="sm"
+                  rupa={m.harvestWeekStart === r.harvestWeekStart ? "utama" : "kedua"}
+                  aria-pressed={m.harvestWeekStart === r.harvestWeekStart}
                   onClick={() => setDipilih(m.harvestWeekStart)}
-                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition ${
-                    m.harvestWeekStart === r.harvestWeekStart
-                      ? "bg-emerald-950 text-white border-emerald-950"
-                      : "border-gray-200 text-gray-600 hover:bg-gray-50"
-                  }`}
+                  className="font-mono"
                 >
-                  {tglPendek(m.harvestWeekStart)}
-                </button>
+                  {tanggalPendek(m.harvestWeekStart)}
+                </Tombol>
               ))}
           </div>
-        </div>
-      )}
+        </fieldset>
+      ) : null}
 
       {/* Kalimatnya dirakit server supaya angka dan kata selalu berubah bersamaan. */}
-      <p className="text-sm text-gray-700 leading-relaxed">{r.sentence}</p>
+      <Prosa className="text-[15px]">{r.sentence}</Prosa>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
-        <span>
-          Batas untuk Anda:{" "}
-          <b className="text-gray-800">{r.suggestedKgForYou.toLocaleString("id-ID")} kg</b>
-        </span>
-        <span>
-          Sisa waktu tanam: <b className="text-gray-800">{r.daysUntilPlantingDeadline} hari</b>
-        </span>
-        <span>
-          Panen:{" "}
-          <b className="text-gray-800">
-            {tglPendek(r.harvestWeekStart)}–{tglPendek(r.harvestWeekEnd)}
-          </b>
-        </span>
-      </div>
+      <Deret kolom={3} as="dl" className="mt-6">
+        <Ubin label="Batas untuk Anda" nilai={angka(r.suggestedKgForYou)} satuan="kg" />
+        <Ubin
+          label="Sisa waktu tanam"
+          nilai={angka(r.daysUntilPlantingDeadline)}
+          satuan="hari"
+          nada={r.daysUntilPlantingDeadline <= 7 ? "awas" : "netral"}
+        />
+        <Ubin
+          label="Minggu panen"
+          nilai={`${tanggalPendek(r.harvestWeekStart)}–${tanggalPendek(r.harvestWeekEnd)}`}
+        />
+      </Deret>
 
       {/* Jembatan intelijen → aksi (FR-8.3).
           Tanpa ini rekomendasi berhenti sebagai bacaan: Tenant harus mengetik ulang
@@ -122,13 +135,14 @@ function KartuKomoditas({ minggu }: { minggu: PlantingRecommendation[] }) {
           setiap ketikan ulang adalah peluang angkanya melenceng dari yang disarankan.
           Yang dikirim hanya PENUNJUKNYA, bukan angkanya: form yang menghitung ulang
           lewat endpoint prefill, supaya kejenuhan zona dinilai saat form dibuka. */}
-      <Link
+      <TombolTaut
         href={`/tenant/batch/new?zona=${r.zoneId}&komoditas=${r.commodityId}&minggu=${r.harvestWeekStart}`}
-        className="mt-4 w-full flex items-center justify-center gap-2 bg-emerald-950 text-white text-sm font-semibold py-2.5 rounded-lg hover:bg-emerald-800 transition"
+        penuh
+        className="mt-7 py-3.5"
       >
-        Buka Kuota untuk Minggu Ini <ArrowRight className="w-4 h-4" />
-      </Link>
-    </div>
+        Buka kuota untuk minggu ini
+      </TombolTaut>
+    </Panel>
   );
 }
 
@@ -137,6 +151,7 @@ export default function RecommendationPage() {
   const [terkunci, setTerkunci] = useState(false);
   const [galat, setGalat] = useState("");
   const [memuat, setMemuat] = useState(true);
+  const [proses, setProses] = useState(false);
 
   const muat = useCallback(() => {
     setMemuat(true);
@@ -147,13 +162,79 @@ export default function RecommendationPage() {
       })
       .catch((e) => {
         if (e instanceof GalatApi && e.kode === "SUBSCRIPTION_REQUIRED") setTerkunci(true);
-        else setGalat(e instanceof GalatApi ? e.message : "Gagal memuat rekomendasi");
+        else setGalat(e instanceof GalatApi ? e.message : "Rekomendasi gagal dimuat");
       })
       .finally(() => setMemuat(false));
   }, []);
 
   useEffect(muat, [muat]);
 
+  if (memuat) {
+    return (
+      <Halaman judul="Rekomendasi tanam">
+        <Memuat baris={3} label="Memuat rekomendasi" />
+      </Halaman>
+    );
+  }
+
+  if (terkunci) {
+    return (
+      <Halaman
+        lebar="sempit"
+        judul="Rekomendasi tanam"
+        pengantar="Bagian dari paket Verified. Ia menunjukkan permintaan yang belum tertutup di zona Anda, 8–16 minggu ke depan."
+      >
+        <Panel nada="utama" label="Paket Verified" judul="Belum aktif untuk akun Anda">
+          <Prosa className="text-[15px]">
+            Rekomendasi Tanam membaca laju pesanan zona Anda dan menunjukkan komoditas mana yang
+            permintaannya belum tertutup, beserta batas yang masuk akal untuk Anda tanam. Tanpa
+            paket ini, seluruh fitur lain tetap berjalan seperti biasa.
+          </Prosa>
+          <Sunyi className="mt-4 max-w-[68ch] text-[13px]">
+            Badge verifikasi yang sudah Anda miliki dan batch yang kuotanya sudah terjual tidak
+            terpengaruh sama sekali oleh status paket ini.
+          </Sunyi>
+          <Tombol
+            className="mt-7 py-3.5"
+            sibuk={proses}
+            labelSibuk="Mengaktifkan…"
+            onClick={() => {
+              setProses(true);
+              aktifkanLangganan(1)
+                .then(muat)
+                .finally(() => setProses(false));
+            }}
+          >
+            Aktifkan paket Verified
+          </Tombol>
+          {/* Mitra pembayaran belum tersambung — dinyatakan, bukan disamarkan. */}
+          <div className="mt-5 border-t-2 border-jambu pt-3">
+            <Label className="text-jambu">Mode peragaan</Label>
+            <Prosa className="mt-1.5 text-[14px]">
+              Aktivasi ini berjalan tanpa pembayaran sungguhan. Mitra pembayaran berizin belum
+              tersambung, jadi tidak ada tagihan yang benar-benar diterbitkan.
+            </Prosa>
+          </div>
+        </Panel>
+      </Halaman>
+    );
+  }
+
+  if (galat) {
+    return (
+      <Halaman judul="Rekomendasi tanam">
+        <Galat judul="Rekomendasi gagal dimuat">
+          {galat} Angka permintaan dihitung ulang tiap kali halaman dibuka — muat ulang untuk
+          mencoba lagi.
+        </Galat>
+      </Halaman>
+    );
+  }
+
+  return <IsiRekomendasi data={data} />;
+}
+
+function IsiRekomendasi({ data }: { data: PlantingRecommendation[] }) {
   // Dikelompokkan per zona DAN komoditas: Tenant bisa melayani beberapa zona, dan
   // kekurangan Wortel di Kota Malang bukan kekurangan yang sama dengan di Kota Batu.
   // Urutan kartu mengikuti tenggat tanam terdekat di dalam tiap kelompok.
@@ -172,64 +253,31 @@ export default function RecommendationPage() {
     );
   }, [data]);
 
-  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat rekomendasi…</div>;
-
-  if (terkunci) {
-    return (
-      <div className="p-8 max-w-xl">
-        <div className="rounded-2xl border border-gray-200 bg-white p-8 text-center">
-          <Lock className="w-10 h-10 text-gray-300 mx-auto mb-4" />
-          <h2 className="text-lg font-bold text-gray-900 mb-1">Fitur Paket Verified</h2>
-          <p className="text-sm text-gray-600 mb-1">
-            Rekomendasi Tanam menunjukkan permintaan yang belum terpenuhi di zona Anda 8–16
-            minggu ke depan.
-          </p>
-          <p className="text-xs text-gray-500 mb-6">
-            Badge verifikasi lama Anda dan batch yang PO-nya sudah terjual tidak terpengaruh.
-          </p>
-          <button
-            onClick={() => aktifkanLangganan(1).then(muat)}
-            className="bg-emerald-950 text-white text-sm font-semibold px-5 py-2.5 rounded-lg hover:bg-emerald-800"
-          >
-            Aktifkan Paket Verified
-          </button>
-          <p className="text-[11px] text-amber-700 mt-3">Mode peragaan: aktivasi tanpa pembayaran.</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (galat)
-    return (
-      <div className="p-8">
-        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">{galat}</div>
-      </div>
-    );
-
   return (
-    <div className="p-8 max-w-3xl">
-      <h1 className="text-2xl font-bold text-emerald-950 mb-1">Rekomendasi Tanam</h1>
-      <p className="text-sm text-gray-500 mb-6">
-        Angka permintaan adalah <b>proyeksi</b> dari laju pesanan beberapa minggu terakhir —
-        bukan pesanan yang sudah ada. Musiman dan hari raya belum dimodelkan.
-      </p>
-
-      {data.length === 0 ? (
-        <div className="rounded-2xl border border-gray-200 bg-white p-10 text-center">
-          <TrendingUp className="w-10 h-10 text-gray-300 mx-auto mb-4" />
-          <h2 className="font-bold text-gray-800 mb-1">Belum ada rekomendasi</h2>
-          <p className="text-sm text-gray-500">
-            Muncul bila ada permintaan yang belum tertutup dan umur tanam komoditasnya masih
-            sempat dikejar.
-          </p>
-        </div>
+    <Halaman
+      judul="Rekomendasi tanam"
+      pengantar="Angka permintaan di sini adalah PROYEKSI dari laju pesanan beberapa minggu terakhir — bukan pesanan yang sudah ada di tangan. Musiman dan hari raya belum dimodelkan, jadi perlakukan ia sebagai petunjuk arah, bukan janji."
+    >
+      {kelompok.length === 0 ? (
+        <Kosong
+          judul="Belum ada rekomendasi"
+          aksi={
+            <TombolTaut href="/tenant/batch/new" ukuran="sm">
+              Buka kuota sendiri
+            </TombolTaut>
+          }
+        >
+          Rekomendasi muncul bila ada permintaan yang belum tertutup di zona Anda dan umur
+          tanam komoditasnya masih sempat dikejar. Kosong berarti pasokan zona Anda sedang
+          seimbang — itu kabar baik, bukan kegagalan sistem.
+        </Kosong>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-8">
           {kelompok.map(([kunci, minggu]) => (
             <KartuKomoditas key={kunci} minggu={minggu} />
           ))}
         </div>
       )}
-    </div>
+    </Halaman>
   );
 }

@@ -2,20 +2,36 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, Clock, Scale } from "lucide-react";
+import { CLAIM_AUTO_SETTLE_MAX_PCT } from "@agro-os/shared";
 import type { ClaimResponse } from "@agro-os/shared";
 import { GalatApi, ambilAntreanKlaim } from "@/lib/api";
-
-const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
-const jam = (iso: string) => new Date(iso).toLocaleString("id-ID");
+import { desimal, jamWib, rupiah, tanggalPanjang } from "@/lib/format-id";
+import {
+  Deret,
+  Galat,
+  Halaman,
+  Kosong,
+  Label,
+  Memuat,
+  Panel,
+  Pil,
+  Prosa,
+  Sunyi,
+  Ubin,
+} from "@/ui";
 
 type Antrean = ClaimResponse & { overdue: boolean };
 
 /**
- * Antrean klaim mutu >10% nilai order (FR-5.6, OP-05).
+ * OP-05 — Antrean klaim mutu di atas ambang potong-otomatis (FR-5.6).
  *
- * Klaim ≤10% sudah dipotong otomatis dari escrow dan TIDAK muncul di sini — yang
+ * Klaim di bawah ambang sudah dipotong otomatis dari escrow dan TIDAK muncul di sini — yang
  * sampai ke meja operator hanya yang nilainya cukup besar untuk perlu diputus manusia.
+ *
+ * MIGRASI DUNIA. Yang berubah selain rupa: ambang 10% berhenti diketik di kalimat dan
+ * diimpor dari `CLAIM_AUTO_SETTLE_MAX_PCT`. Ia aturan yang dijalankan server saat memutuskan
+ * klaim mana yang masuk antrean ini; angka yang menentukan beban kerja operator tidak boleh
+ * punya dua sumber.
  */
 export default function OperatorClaimsPage() {
   const [antrean, setAntrean] = useState<Antrean[]>([]);
@@ -28,92 +44,123 @@ export default function OperatorClaimsPage() {
         setAntrean(d);
         setGalat("");
       })
-      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat antrean klaim"))
+      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Antrean klaim gagal dimuat"))
       .finally(() => setMemuat(false));
   }, []);
 
-  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat antrean…</div>;
+  if (memuat) {
+    return (
+      <Halaman judul="Antrean klaim mutu">
+        <Memuat baris={3} label="Memuat antrean klaim" />
+      </Halaman>
+    );
+  }
 
   if (galat) {
     return (
-      <div className="p-8">
-        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
-          {galat}
-        </div>
-      </div>
+      <Halaman judul="Antrean klaim mutu">
+        <Galat judul="Antrean gagal dimuat">
+          {galat} Klaim yang menunggu tetap tercatat di server, dan dananya tetap tertahan —
+          muat ulang halaman untuk mencoba lagi.
+        </Galat>
+      </Halaman>
     );
   }
 
   const telat = antrean.filter((c) => c.overdue).length;
 
   return (
-    <div className="p-8 max-w-5xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-emerald-950">Antrean Klaim Mutu</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Hanya klaim di atas 10% nilai pesanan yang masuk sini. Sisanya sudah dipotong
-          otomatis dari escrow.
-        </p>
-      </div>
-
-      {telat > 0 && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 mb-5 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-          <div>
-            <p className="font-bold text-red-900 text-sm">{telat} klaim melewati SLA</p>
-            <p className="text-xs text-red-800 mt-0.5">
-              Selama belum diputus, dana pembeli maupun Tenant sama-sama tertahan.
-            </p>
-          </div>
-        </div>
-      )}
+    <Halaman
+      judul="Antrean klaim mutu"
+      pengantar={`Hanya klaim di atas ${CLAIM_AUTO_SETTLE_MAX_PCT}% nilai pesanan yang sampai ke meja ini. Sisanya sudah dipotong otomatis dari escrow tanpa melewati siapa pun.`}
+      aksi={
+        antrean.length > 0 ? (
+          <Pil nada={telat > 0 ? "awas" : "netral"} garis={telat === 0}>
+            {antrean.length} menunggu putusan
+          </Pil>
+        ) : null
+      }
+    >
+      {telat > 0 ? (
+        <Panel nada="awas" label="Lewat SLA" judul={`${telat} klaim menunggu terlalu lama`} className="mb-8">
+          <Prosa className="text-[14px]">
+            Selama belum diputus, dana pembeli maupun Tenant sama-sama tertahan — keduanya
+            menunggu tanpa bisa berbuat apa pun. Klaim yang lewat SLA berdiri paling atas di
+            daftar di bawah.
+          </Prosa>
+        </Panel>
+      ) : null}
 
       {antrean.length === 0 ? (
-        <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center">
-          <CheckCircle2 className="w-10 h-10 text-emerald-300 mx-auto mb-4" />
-          <h2 className="font-bold text-gray-800 mb-1">Antrean bersih</h2>
-          <p className="text-sm text-gray-500">Tidak ada klaim yang menunggu keputusan.</p>
-        </div>
+        /* Antrean kosong di sini adalah antrean yang SEHAT, bukan kegagalan memuat. */
+        <Kosong judul="Tidak ada klaim yang menunggu putusan">
+          Klaim di bawah ambang potong-otomatis diselesaikan sistem tanpa melewati meja ini,
+          jadi antrean kosong berarti tidak ada perselisihan besar yang sedang berjalan.
+        </Kosong>
       ) : (
-        <div className="space-y-3">
-          {antrean.map((c) => (
-            <Link
-              key={c.id}
-              href={`/operator/claims/${c.id}`}
-              className={`block bg-white border rounded-xl p-5 hover:shadow-md transition ${
-                c.overdue ? "border-red-300" : "border-gray-200"
-              }`}
-            >
-              <div className="flex items-start justify-between gap-4 mb-3">
-                <div className="min-w-0">
-                  <h3 className="font-bold text-gray-900 truncate">{c.productName}</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    diajukan {jam(c.createdAt)}
-                  </p>
-                </div>
-                <div className="flex flex-col items-end gap-1.5 shrink-0">
-                  <span className="text-sm font-bold text-gray-900">{rp(c.claimValue)}</span>
-                  <span
-                    className={`text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1 ${
-                      c.overdue ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-900"
-                    }`}
-                  >
-                    <Clock className="w-3 h-3" />
-                    {c.overdue ? "Lewat SLA" : c.slaDueAt ? `SLA ${jam(c.slaDueAt)}` : "Menunggu"}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 text-xs text-gray-600 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
-                <Scale className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                Seharusnya {c.expectedKg} kg, ditimbang {c.actualWeightKg} kg — setelah
-                toleransi susut {c.shrinkTolerancePct}% ({c.toleratedKg} kg), yang bisa diklaim{" "}
-                <b>{c.claimableKg} kg</b> · {c.pctOfOrder}% nilai pesanan
-              </div>
-            </Link>
-          ))}
+        <div className="space-y-8">
+          {[...antrean]
+            .sort((a, b) => Number(b.overdue) - Number(a.overdue))
+            .map((c) => (
+              <BarisKlaim key={c.id} c={c} />
+            ))}
         </div>
       )}
-    </div>
+    </Halaman>
+  );
+}
+
+function BarisKlaim({ c }: { c: Antrean }) {
+  return (
+    <Panel
+      nada={c.overdue ? "awas" : "kabar"}
+      label={`Diajukan ${tanggalPanjang(c.createdAt)} · ${jamWib(c.createdAt)} WIB`}
+      judul={
+        <Link
+          href={`/operator/claims/${c.id}`}
+          className="underline-offset-4 transition-colors duration-150 hover:text-ungu hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ungu"
+        >
+          {c.productName}
+        </Link>
+      }
+      aksi={
+        <Pil nada={c.overdue ? "awas" : "kabar"} garis={!c.overdue}>
+          {c.overdue
+            ? "Lewat SLA"
+            : c.slaDueAt
+              ? `SLA ${tanggalPanjang(c.slaDueAt)} ${jamWib(c.slaDueAt)}`
+              : "Menunggu"}
+        </Pil>
+      }
+    >
+      <Deret kolom={4} as="dl">
+        <Ubin label="Seharusnya" nilai={desimal(c.expectedKg, 1)} satuan="kg" />
+        <Ubin label="Hasil timbang" nilai={desimal(c.actualWeightKg, 1)} satuan="kg" />
+        <Ubin
+          label={`Toleransi ${desimal(c.shrinkTolerancePct, 0)}%`}
+          nilai={desimal(c.toleratedKg, 1)}
+          satuan="kg"
+        />
+        <Ubin
+          label="Bisa diklaim"
+          nilai={desimal(c.claimableKg, 1)}
+          satuan="kg"
+          nada="awas"
+          catatan={`${rupiah(c.claimValue)} · ${desimal(c.pctOfOrder, 0)}% nilai pesanan`}
+        />
+      </Deret>
+
+      <Sunyi className="mt-6 max-w-[68ch] text-[13px]">
+        Selisih kotornya {desimal(c.shortfallKg, 1)} kg; toleransi susut alami komoditas ini
+        sudah dipotong dari angka yang bisa diklaim.
+      </Sunyi>
+
+      <div className="mt-5 border-t border-kertas-garis pt-3">
+        <Label>Keluhan pembeli</Label>
+        <p className="mt-1.5 max-w-[68ch] text-[14px] leading-relaxed text-tinta-lembut">
+          {c.description}
+        </p>
+      </div>
+    </Panel>
   );
 }

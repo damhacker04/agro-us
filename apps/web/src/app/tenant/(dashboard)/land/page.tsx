@@ -1,37 +1,62 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Link from "next/link";
-import {
-  Map as MapIcon,
-  Shapes,
-  Footprints,
-  PenTool,
-  ShieldCheck,
-  ShieldAlert,
-  Plus,
-} from "lucide-react";
 import { MIN_LAND_PLOT_HA } from "@agro-os/shared";
 import type { CaptureMethod, LandPlotResponse } from "@agro-os/shared";
 import { GalatApi, ambilLahan } from "@/lib/api";
+import { desimal } from "@/lib/format-id";
+import {
+  Deret,
+  Galat,
+  Halaman,
+  Kosong,
+  Label,
+  Memuat,
+  Panel,
+  Pil,
+  Prosa,
+  Sunyi,
+  TombolTaut,
+  Ubin,
+} from "@/ui";
 
-const METODE: Record<CaptureMethod, { label: string; Ikon: typeof PenTool }> = {
-  GAMBAR_PETA: { label: "Digambar di peta", Ikon: PenTool },
-  WALK_AROUND: { label: "Dikelilingi berjalan kaki", Ikon: Footprints },
+/**
+ * TN-05 — Manajemen lahan.
+ *
+ * MIGRASI DUNIA. Dua hal yang berubah selain rupa:
+ *
+ * 1. DUA "KARTU STATISTIK" BERIKON DIBUANG. Total luas dan jumlah petak sebelumnya berdiri
+ *    sebagai dua kotak besar berbayang, masing-masing dengan ikon dalam kotak berwarna —
+ *    pola hero-metric yang isinya cuma dua angka. Keduanya kini `Ubin`, perangkat yang sudah
+ *    dipakai seluruh halaman kerja untuk hal yang sama, dan tempat yang dibebaskannya
+ *    dikembalikan ke petaknya sendiri.
+ *
+ * 2. POLIGON BERHENTI JADI HIASAN HIJAU. Bentuk petak digambar `ungu` — warna mekanisme
+ *    verifikasi — karena poligon inilah yang nanti diadu dengan citra satelit. Ia bukan
+ *    gambar pemanis di kepala kartu; ia isi kartunya.
+ */
+
+const METODE: Record<CaptureMethod, string> = {
+  GAMBAR_PETA: "Digambar dari koordinat",
+  WALK_AROUND: "Dikelilingi berjalan kaki",
 };
 
 /**
  * Menggambar poligon lahan yang SEBENARNYA, bukan bentuk hiasan.
  *
- * Koordinat dinormalisasi ke kotak 100×100 dengan skala seragam supaya proporsi
- * petak tetap benar; lintang dibalik karena sumbu Y layar tumbuh ke bawah sedangkan
- * lintang tumbuh ke utara. Ini pratinjau bentuk, bukan peta — tidak ada latar peta,
- * jadi tidak ada yang bisa disalahartikan sebagai lokasi presisi.
+ * Koordinat dinormalisasi ke kotak 100×100 dengan skala seragam supaya proporsi petak tetap
+ * benar; lintang dibalik karena sumbu Y layar tumbuh ke bawah sedangkan lintang tumbuh ke
+ * utara. Ini pratinjau bentuk, bukan peta — tidak ada latar peta, jadi tidak ada yang bisa
+ * disalahartikan sebagai lokasi presisi.
  */
 function PratinjauPoligon({ polygon }: { polygon: LandPlotResponse["polygon"] }) {
   const cincin = polygon?.coordinates?.[0];
   if (!cincin || cincin.length < 3) {
-    return <Shapes className="w-10 h-10 text-gray-300" />;
+    return (
+      <div className="flex h-28 w-32 items-center justify-center border border-kertas-garis bg-kertas">
+        <Label>Tanpa bentuk</Label>
+      </div>
+    );
   }
 
   const xs = cincin.map((c) => c[0]!);
@@ -57,12 +82,12 @@ function PratinjauPoligon({ polygon }: { polygon: LandPlotResponse["polygon"] })
     .join(" ");
 
   return (
-    <svg viewBox="0 0 100 100" className="w-32 h-28" role="img" aria-label="Bentuk petak lahan">
+    <svg viewBox="0 0 100 100" className="h-28 w-32" role="img" aria-label="Bentuk petak lahan">
       <polygon
         points={titik}
-        className="fill-emerald-400/50 stroke-emerald-600"
+        className="fill-ungu/15 stroke-ungu"
         strokeWidth={2}
-        strokeLinejoin="round"
+        strokeLinejoin="miter"
       />
     </svg>
   );
@@ -79,130 +104,129 @@ export default function TenantLandManagementPage() {
         setLahan(d);
         setGalat("");
       })
-      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat lahan"))
+      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Lahan gagal dimuat"))
       .finally(() => setMemuat(false));
   }, []);
 
-  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat lahan…</div>;
+  const aksi = (
+    <TombolTaut href="/tenant/land/mapping" ukuran="sm">
+      Petakan lahan
+    </TombolTaut>
+  );
+
+  if (memuat) {
+    return (
+      <Halaman judul="Lahan">
+        <Memuat baris={3} label="Memuat lahan" />
+      </Halaman>
+    );
+  }
 
   if (galat) {
     return (
-      <div className="p-8">
-        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
-          {galat}
-        </div>
-      </div>
+      <Halaman judul="Lahan" aksi={aksi}>
+        <Galat judul="Lahan gagal dimuat">
+          {galat} Petak Anda tetap tersimpan di server — muat ulang halaman untuk mencoba lagi.
+        </Galat>
+      </Halaman>
     );
   }
 
   const totalHa = lahan.reduce((s, l) => s + l.areaHa, 0);
 
   return (
-    <div className="p-8 pb-20 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-6 gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-emerald-950">Manajemen Lahan</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Luas dihitung server dari poligon Anda — tidak diketik sendiri.
-          </p>
-        </div>
-        <Link
-          href="/tenant/land/mapping"
-          className="shrink-0 flex items-center gap-2 bg-emerald-950 text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-emerald-800"
-        >
-          <Plus className="w-4 h-4" /> Petakan Lahan
-        </Link>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-700">
-            <MapIcon className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="text-xs font-bold text-gray-500 mb-1">Total Luas Terdaftar</div>
-            <div className="text-2xl font-black text-gray-900">
-              {totalHa.toFixed(2)} Hektar
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 bg-gray-50 rounded-xl flex items-center justify-center text-gray-700">
-            <Shapes className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="text-xs font-bold text-gray-500 mb-1">Jumlah Petak Lahan</div>
-            <div className="text-2xl font-black text-gray-900">
-              {lahan.length} Poligon Aktif
-            </div>
-          </div>
-        </div>
-      </div>
-
+    <Halaman
+      judul="Lahan"
+      pengantar="Luas dihitung server dari poligon Anda, tidak diketik sendiri. Poligon itu juga yang dibandingkan dengan citra satelit saat klaim panen diverifikasi — jadi ia menentukan dua hal sekaligus: batas kuota yang boleh dibuka, dan sejauh mana klaim bisa dibuktikan."
+      aksi={aksi}
+    >
       {lahan.length === 0 ? (
-        <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center">
-          <MapIcon className="w-10 h-10 text-gray-300 mx-auto mb-4" />
-          <h2 className="font-bold text-gray-800 mb-1">Belum ada lahan terpetakan</h2>
-          <p className="text-sm text-gray-500">
-            Petakan minimal satu petak sebelum bisa membuka kuota Pre-Order.
-          </p>
+        <Kosong
+          judul="Belum ada lahan terpetakan"
+          aksi={
+            <TombolTaut href="/tenant/land/mapping" ukuran="sm">
+              Petakan petak pertama
+            </TombolTaut>
+          }
+        >
+          Kuota Pre-Order dihitung dari luas petak yang poligonnya sudah tersimpan, jadi
+          setidaknya satu petak harus ada sebelum kuota bisa dibuka. Memetakannya cukup
+          sekali per petak.
+        </Kosong>
+      ) : (
+        <>
+          <Deret kolom={2} as="dl" className="mb-10">
+            <Ubin label="Total luas terdaftar" nilai={desimal(totalHa, 2)} satuan="ha" />
+            <Ubin
+              label="Petak terdaftar"
+              nilai={String(lahan.length)}
+              satuan={lahan.length === 1 ? "poligon" : "poligon"}
+            />
+          </Deret>
+
+          <div className="space-y-8">
+            {lahan.map((l, i) => (
+              <BarisLahan key={l.id} l={l} urutan={i + 1} />
+            ))}
+          </div>
+        </>
+      )}
+    </Halaman>
+  );
+}
+
+function BarisLahan({ l, urutan }: { l: LandPlotResponse; urutan: number }) {
+  const terbatas = l.verificationTier === "TERBATAS";
+
+  return (
+    <Panel
+      nada={terbatas ? "awas" : "netral"}
+      label={`Petak ${urutan} · ${METODE[l.captureMethod]}`}
+      judul={`${desimal(l.areaHa, 2)} hektar`}
+      aksi={
+        <Pil nada={terbatas ? "awas" : "utama"} garis={!terbatas}>
+          {terbatas ? "Verifikasi terbatas" : "Verifikasi normal"}
+        </Pil>
+      }
+    >
+      <div className="flex flex-wrap items-start gap-x-8 gap-y-5">
+        <PratinjauPoligon polygon={l.polygon} />
+        <div className="min-w-0 flex-1">
+          <dl className="space-y-4">
+            <div className="border-t border-kertas-garis pt-2.5">
+              <Label as="dt">Penanda petak</Label>
+              <dd className="mt-1 font-mono text-[13px] text-tinta-lembut">{l.id.slice(0, 8)}</dd>
+            </div>
+            <div className="border-t border-kertas-garis pt-2.5">
+              <Label as="dt">Titik sudut</Label>
+              <dd className="mt-1 font-mono text-[13px] text-tinta-lembut">
+                {/* Cincin GeoJSON tertutup: titik terakhir mengulang yang pertama, jadi
+                    jumlah sudut sebenarnya satu lebih sedikit dari panjang cincinnya. */}
+                {Math.max((l.polygon?.coordinates?.[0]?.length ?? 1) - 1, 0)} sudut
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+
+      {terbatas ? (
+        <div className="mt-6 border-t-2 border-jambu pt-3">
+          <Label className="text-jambu">
+            Di bawah {desimal(MIN_LAND_PLOT_HA, 1)} hektar
+          </Label>
+          <Prosa className="mt-1.5 text-[14px]">
+            Terlalu kecil untuk dipisahkan dari petak tetangga oleh citra satelit — satu piksel
+            Sentinel-2 menutupi 10×10 meter, jadi petak sekecil ini bercampur dengan lahan di
+            sebelahnya. Batch di petak ini tetap bisa dibuka dan tetap terjual; yang tidak bisa
+            dicapai hanyalah badge Terverifikasi Satelit, jadi ia bersandar pada bukti foto.
+          </Prosa>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {lahan.map((l, i) => {
-            const m = METODE[l.captureMethod];
-            const terbatas = l.verificationTier === "TERBATAS";
-            return (
-              <div
-                key={l.id}
-                className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm flex flex-col"
-              >
-                <div className="h-40 bg-gray-100 flex items-center justify-center relative border-b border-gray-100">
-                  <div
-                    className={`absolute top-4 left-4 text-white text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider flex items-center gap-1 ${
-                      terbatas ? "bg-amber-500" : "bg-emerald-600"
-                    }`}
-                  >
-                    {terbatas ? (
-                      <ShieldAlert className="w-3 h-3" />
-                    ) : (
-                      <ShieldCheck className="w-3 h-3" />
-                    )}
-                    {terbatas ? "TERBATAS" : "NORMAL"}
-                  </div>
-                  <PratinjauPoligon polygon={l.polygon} />
-                  <div className="absolute bottom-4 right-4 bg-white border border-gray-200 text-gray-800 text-[10px] font-bold px-2 py-1 rounded-full shadow-sm">
-                    Luas: {l.areaHa.toFixed(2)} Ha
-                  </div>
-                </div>
-
-                <div className="p-5 flex-1">
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="min-w-0">
-                      <h3 className="font-bold text-lg text-gray-900 mb-0.5">Petak {i + 1}</h3>
-                      <div className="text-[11px] text-gray-500 flex items-center gap-1.5">
-                        <m.Ikon className="w-3 h-3" /> {m.label}
-                      </div>
-                    </div>
-                    <span className="font-mono text-[10px] text-gray-300 shrink-0">
-                      {l.id.slice(0, 8)}
-                    </span>
-                  </div>
-
-                  {terbatas && (
-                    <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                      Di bawah {MIN_LAND_PLOT_HA} ha — terlalu kecil untuk dipisahkan dari petak
-                      tetangga oleh citra satelit. Batch di sini hanya bisa mencapai badge bukti
-                      foto, bukan Terverifikasi Satelit.
-                    </p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <Sunyi className="mt-6 max-w-[68ch] text-[13px]">
+          Cukup luas untuk dikenali terpisah oleh citra Sentinel-2, jadi batch di petak ini bisa
+          mencapai badge Terverifikasi Satelit.
+        </Sunyi>
       )}
-    </div>
+    </Panel>
   );
 }

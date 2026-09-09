@@ -2,40 +2,52 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, FileText, MapPin, ShieldCheck } from "lucide-react";
 import type { LegalityQueueItem, LegalityStatus } from "@agro-os/shared";
 import { GalatApi, ambilAntreanLegalitas } from "@/lib/api";
+import { angka, tanggalPanjang } from "@/lib/format-id";
+import { PilLegalitas } from "@/components/status-legalitas";
+import {
+  BarisData,
+  Deret,
+  Galat,
+  Halaman,
+  Kosong,
+  Label,
+  Memuat,
+  Panel,
+  Prosa,
+  Tombol,
+} from "@/ui";
 
-const tgl = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "—";
-
-const TAB: Array<{ nilai: "PENDING" | "APPROVED" | "REJECTED"; label: string }> = [
+/**
+ * OP-03 — Verifikasi legalitas Tenant (FR-1.7, UC-12).
+ *
+ * MIGRASI DUNIA. Yang berubah selain rupa: pil status berhenti mencetak `{legalityStatus}`
+ * apa adanya. Konsol sebelumnya memuat "PENDING" dan "REJECTED" — nama kolom basis data,
+ * bukan label. Kosakatanya kini di `@/components/status-legalitas`, dan sengaja berbeda dari
+ * kalimat yang dibaca Tenant: operator butuh tahu apa yang harus ia lakukan, Tenant butuh
+ * tahu apa artinya bagi dirinya.
+ */
+const TAB: Array<{ nilai: LegalityStatus; label: string }> = [
   { nilai: "PENDING", label: "Menunggu" },
   { nilai: "APPROVED", label: "Disetujui" },
   { nilai: "REJECTED", label: "Ditolak" },
 ];
 
-const WARNA: Record<LegalityStatus, string> = {
-  PENDING: "bg-amber-100 text-amber-900",
-  APPROVED: "bg-emerald-100 text-emerald-800",
-  REJECTED: "bg-red-100 text-red-800",
-};
-
-/** Verifikasi legalitas Tenant (FR-1.7, UC-12/OP-03). */
 export default function OperatorLegalityPage() {
-  const [tab, setTab] = useState<"PENDING" | "APPROVED" | "REJECTED">("PENDING");
+  const [tab, setTab] = useState<LegalityStatus>("PENDING");
   const [antrean, setAntrean] = useState<LegalityQueueItem[]>([]);
   const [memuat, setMemuat] = useState(true);
   const [galat, setGalat] = useState("");
 
-  const muat = useCallback((status: typeof tab) => {
+  const muat = useCallback((status: LegalityStatus) => {
     setMemuat(true);
     ambilAntreanLegalitas(status)
       .then((d) => {
         setAntrean(d);
         setGalat("");
       })
-      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat antrean"))
+      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Antrean gagal dimuat"))
       .finally(() => setMemuat(false));
   }, []);
 
@@ -44,82 +56,88 @@ export default function OperatorLegalityPage() {
   }, [tab, muat]);
 
   return (
-    <div className="p-8 max-w-5xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-emerald-950">Verifikasi Legalitas Tenant</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Tenant hanya bisa membuka kuota Pre-Order setelah legalitasnya disetujui.
-        </p>
-      </div>
-
-      <div className="flex gap-2 mb-5">
-        {TAB.map((t) => (
-          <button
-            key={t.nilai}
-            onClick={() => setTab(t.nilai)}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${
-              tab === t.nilai
-                ? "bg-emerald-950 text-white"
-                : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {galat && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700 mb-4">
-          {galat}
-        </div>
-      )}
+    <Halaman
+      judul="Verifikasi legalitas"
+      pengantar="Tenant baru bisa membuka kuota Pre-Order setelah legalitasnya disetujui — pembeli membayar di muka atas nama yang tertera di dokumen ini."
+      aksi={
+        <>
+          {TAB.map((t) => (
+            <Tombol
+              key={t.nilai}
+              rupa={tab === t.nilai ? "utama" : "kedua"}
+              ukuran="sm"
+              aria-pressed={tab === t.nilai}
+              onClick={() => setTab(t.nilai)}
+            >
+              {t.label}
+            </Tombol>
+          ))}
+        </>
+      }
+    >
+      {galat ? (
+        <Galat judul="Antrean gagal dimuat" className="mb-8">
+          {galat} Pendaftaran Tenant tetap tersimpan di server — muat ulang halaman untuk
+          mencoba lagi.
+        </Galat>
+      ) : null}
 
       {memuat ? (
-        <div className="text-sm text-gray-500">Memuat…</div>
+        <Memuat baris={3} label="Memuat antrean legalitas" />
       ) : antrean.length === 0 ? (
-        <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center">
-          <CheckCircle2 className="w-10 h-10 text-emerald-300 mx-auto mb-4" />
-          <h2 className="font-bold text-gray-800 mb-1">Tidak ada Tenant di daftar ini</h2>
-        </div>
+        /* Antrean tinjauan yang kosong adalah antrean yang sehat, bukan kegagalan. */
+        <Kosong judul={`Tidak ada Tenant berstatus ${TAB.find((t) => t.nilai === tab)!.label.toLowerCase()}`}>
+          {tab === "PENDING"
+            ? "Tidak ada pendaftaran yang menunggu tinjauan Anda. Tenant baru muncul di sini setelah mengunggah dokumen legalitasnya."
+            : "Belum ada Tenant di daftar ini."}
+        </Kosong>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-8">
           {antrean.map((t) => (
-            <Link
+            <Panel
               key={t.tenantId}
-              href={`/operator/legality/${t.tenantId}`}
-              className="block bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <h3 className="font-bold text-gray-900 truncate">{t.companyName}</h3>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 mt-1">
-                    <span className="flex items-center gap-1">
-                      <MapPin className="w-3 h-3" />
-                      {t.zoneNames.length ? t.zoneNames.join(", ") : "belum pilih zona"}
-                    </span>
-                    <span>{t.landPlotCount} petak lahan</span>
-                    <span>mendaftar {tgl(t.submittedAt)}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-xs mt-2">
-                    <FileText className="w-3 h-3 text-gray-400 shrink-0" />
-                    {/* Dokumen yang belum diunggah bukan hal sepele: tanpa itu tidak
-                        ada yang bisa ditinjau, jadi dibedakan dari sekadar "menunggu". */}
-                    <span className={t.legalityDocUrl ? "text-gray-600" : "text-amber-700 font-semibold"}>
-                      {t.legalityDocUrl ? "Dokumen terlampir" : "Dokumen belum diunggah"}
-                    </span>
-                  </div>
-                </div>
-                <span
-                  className={`shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1 ${WARNA[t.legalityStatus]}`}
+              nada={t.legalityStatus === "PENDING" ? "kabar" : "netral"}
+              /* `submittedAt` boleh null, dan mengisinya dengan tanggal hari ini akan
+                 MENGARANG tanggal pendaftaran — persis jenis kekeliruan yang paling sulit
+                 terlihat, karena hasilnya tampak masuk akal. */
+              label={
+                t.submittedAt ? `Mendaftar ${tanggalPanjang(t.submittedAt)}` : "Belum mengirim dokumen"
+              }
+              judul={
+                <Link
+                  href={`/operator/legality/${t.tenantId}`}
+                  className="underline-offset-4 transition-colors duration-150 hover:text-ungu hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ungu"
                 >
-                  <ShieldCheck className="w-3 h-3" />
-                  {t.legalityStatus}
-                </span>
-              </div>
-            </Link>
+                  {t.companyName}
+                </Link>
+              }
+              aksi={<PilLegalitas status={t.legalityStatus} />}
+            >
+              <Deret kolom={3} as="dl">
+                <BarisData label="Zona layanan" prosa>
+                  {t.zoneNames.length ? t.zoneNames.join(", ") : "Belum memilih zona"}
+                </BarisData>
+                <BarisData label="Petak lahan">{angka(t.landPlotCount)} petak</BarisData>
+                <BarisData label="Dokumen" prosa>
+                  {t.legalityDocUrl ? "Terlampir" : "Belum diunggah"}
+                </BarisData>
+              </Deret>
+
+              {/* Dokumen yang belum diunggah bukan hal sepele: tanpa itu tidak ada yang bisa
+                  ditinjau, jadi dibedakan dari sekadar "menunggu". */}
+              {!t.legalityDocUrl ? (
+                <div className="mt-6 border-t-2 border-jambu pt-3">
+                  <Label className="text-jambu">Belum ada yang bisa ditinjau</Label>
+                  <Prosa className="mt-1.5 text-[14px]">
+                    Tenant ini belum mengunggah dokumen apa pun. Menolak dengan alasan itu
+                    memberitahunya apa yang harus dilakukan; membiarkannya di antrean tidak.
+                  </Prosa>
+                </div>
+              ) : null}
+            </Panel>
           ))}
         </div>
       )}
-    </div>
+    </Halaman>
   );
 }
