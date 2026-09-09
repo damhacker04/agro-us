@@ -27,7 +27,7 @@ Setengah migrasi lebih buruk daripada belum migrasi.
 | C | Alur pembeli | selesai (11 dari 11) |
 | D | Kurir | selesai (3 dari 3) |
 | E | Tenant | selesai (24 dari 24) |
-| **F** | **Operator** | **5 dari 14** |
+| F | Operator | selesai (14 dari 14) |
 
 Hitungan Fase D dulu tertulis "1 dari 2" dan itu keliru: alur kurir punya TIGA halaman, dan
 yang ketiga — `/scan/[token]`, pintu masuknya — tidak ikut terhitung karena ia tinggal di
@@ -298,6 +298,168 @@ harus ikut bercabang bersama keadaan yang menampilkannya.
 Satu hal yang TIDAK diubah: putusan klaim maupun legalitas tidak pernah dikirim selama
 pemeriksaan. Antrean klaim demo kosong, jadi layar berisinya dilihat lewat rute tiruan
 GET-saja di proksi scratchpad; `POST /decide` sengaja tidak ditiru.
+
+### Fase F — verifikasi satelit (OP-04, OP-04b)
+
+**Kurvanya akhirnya sampai ke meja yang memutus.** Layar ini menilai apakah kurva vegetasi
+mendukung tanggal yang diklaim Tenant, dan satu-satunya bentuk kurvanya adalah tabel angka.
+Pembeli — yang cuma membaca hasilnya — sudah melihat grafiknya sejak Fase C. **Orang yang
+mengambil keputusan punya bukti visual lebih sedikit daripada orang yang membaca akibatnya.**
+`KurvaNdviBatch` yang sama dipakai di kedua tempat.
+
+**Salinan ketiga pemetaan status dibuang.** Halaman antrean punya `STATUS`-nya sendiri
+lengkap dengan emerald/amber/orange/gray/red — persis yang dilarang docstring
+`tanda-verifikasi.tsx`. Berbeda dengan legalitas, di sini kosakatanya sengaja TIDAK dipisah
+per peran: `STATUS_MENTAH` sudah menyatakan alasannya sendiri, bahwa kedua sisi meja harus
+menyebut keadaan yang sama dengan kata dan warna yang sama.
+
+**Akibat putusan dinyatakan sebagai tanda yang dilihat pembeli.** Empat status mentah
+meringkas jadi tiga badge, dan peringkasannya tidak terbaca dari nama statusnya: "citra tidak
+bisa dinilai" dan "citra menyangkal klaim" sama-sama jadi "belum terverifikasi", padahal
+artinya jauh berbeda. Pemetaannya diambil dari `toVerificationBadge` di kontrak bersama.
+
+**Tidak ada medan catatan, dan itu keputusan sadar.** `DecideSatelliteBody.note` diterima DTO
+lalu dibuang — controller memanggil `decideSatellite(batchId, dto.verificationStatus)` tanpa
+meneruskannya. Menyediakan kotak alasan yang isinya menguap adalah meminta orang menulis
+untuk tempat sampah. Yang harus diperbaiki lebih dulu adalah servernya.
+
+**Dua cacat yang hanya terlihat di layar sungguhan:**
+
+- *Satu fakta, dua sumber.* Panel pembanding membaca tanggal terdeteksi dari item antrean
+  sementara kurva menggambarnya dari deret NDVI. Begitu keduanya berbeda, halaman menulis
+  "panen tidak terdeteksi" tepat di atas grafik yang menggambar garis panen terdeteksi.
+  Sekarang keduanya membaca deret yang sama.
+- *Nol bukan "sedikit".* Batch demo punya `observationCount` 0, dan kalimat yang ditulis untuk
+  "ada lintasan, sebagian dibuang" berbunyi "0 dari 0 lintasan terpakai, yang tertutup awan
+  dibuang" — mengarang proses yang tidak pernah terjadi. Tiga keadaan, bukan dua.
+
+Ini kali keempat dalam dua batch **kalimat yang benar di satu keadaan jadi salah di keadaan
+lain.** Aturannya sudah ditulis di bagian sebelumnya; yang baru di sini adalah bahwa
+keadaan-nol hampir selalu butuh cabangnya sendiri, bukan menumpang cabang "sedikit".
+
+### Fase F — komoditas & angka kalibrasi (OP-10, OP-10b)
+
+Tiga angka di layar ini mengikat SEMUA Tenant sekaligus: rendemen membatasi kuota PO,
+toleransi susut menentukan klaim mutu mana yang sah, umur tanam minimal jadi pagar tanggal
+panen. Dan ketiganya berlaku surut terhadap batch yang sedang berjalan.
+
+**Pemanggilan yang tampak memformat angka, ternyata tidak memformat apa pun.**
+`avgYieldKgPerHa.toLocaleString("id-ID")` — nilainya Decimal Prisma yang diserialkan sebagai
+STRING, jadi yang terpanggil `String.prototype.toLocaleString`, yang mengembalikan stringnya
+apa adanya dan mengabaikan argumen locale-nya. Rendemen lima digit tampil `15000` tanpa
+pemisah ribuan, tanpa satu pun galat. **Karena kontraknya mengaku `number`, TypeScript tidak
+bisa menangkapnya** — dan itu pelajaran yang lebih besar dari bug-nya: tipe yang berbohong
+mematikan alat yang seharusnya menjaga. Pembacaannya kini lewat `bacaKomoditas`.
+
+**Formulir menawarkan dua dari tiga nilai enum.** `CommodityCategory` punya DAUN, BUAH_UMBI,
+dan KERING; tombolnya diketik tangan dan berhenti di dua. Belum ada komoditas KERING di data
+demo, jadi kekurangannya diam — tetapi komoditas kering tidak akan pernah bisa dibuat, dan
+begitu ada satu, formulirnya terbuka tanpa kategori tersorot sehingga klik pertama operator
+diam-diam memindahkan kategorinya. Pilihannya kini dibangkitkan dari `Object.values(enum)`.
+
+**Yang TIDAK disentuh dinyatakan.** Formulir berisi lima medan di atas data yang punya lebih
+banyak medan terbaca seperti formulir yang akan menghapus sisanya. Server hanya menulis
+`gradeStandards` bila medannya terkirim, jadi definisi grade A/B/C aman — dan sekarang
+halamannya mengatakan itu, alih-alih membiarkan operator menebak.
+
+**Satu kecurigaan yang ternyata salah, dan itu pantas dicatat.** Saya menduga kolom "umur
+tanam" selalu kosong karena `growingDaysMin` tidak ada di `CommoditySummary` dan halamannya
+menambal dengan cast lokal. Memeriksa responsnya sungguhan: servernya MENGIRIM medan itu
+(150 hari untuk Apel Batu). Yang cacat kontraknya, bukan tampilannya. Membetulkan "bug" itu
+tanpa memeriksa akan merusak kolom yang selama ini benar.
+
+Kontrak `CommoditySummary` memang tertinggal dari servernya — `growingDaysMin`,
+`shelfLifeDays`, dan `ambientStable` dikirim tetapi tidak dideklarasikan, dan
+`shrinkTolerancePct`/`avgYieldKgPerHa` dideklarasikan `number` padahal tiba sebagai string.
+Perbaikan yang benar ada di serialisasi server, jadi tidak dikerjakan di sini; sementara itu
+pembacaannya dikumpulkan di `@/components/komoditas` supaya konversinya tidak lupa dilakukan
+di halaman berikutnya. Modul yang sama menghapus salinan kedua pemetaan `KATEGORI` yang
+sebelumnya hidup di halaman produk pembeli.
+
+### Fase F — escrow & umur simpan (OP-09, OP-14)
+
+Dua layar pemantauan, dan keduanya hanya berguna bila menyatakan batas pengetahuannya
+sendiri: yang satu tentang uang yang belum benar-benar berpindah, yang lain tentang angka
+yang belum divalidasi.
+
+**"Sudah dicairkan" berhenti jadi judul yang menyesatkan.** `menungguPenyaluran` adalah
+BAGIAN dari `totalDicairkan` yang instruksinya ke mitra pembayaran belum sukses. Di data demo
+keduanya sama persis — Rp8.892.000 — artinya **nol rupiah benar-benar sampai ke rekening
+siapa pun.** Layar lama menyatakannya sebagai butir bersarang dengan indentasi dua spasi di
+dalam string, `"  ↳ menunggu penyaluran"`, padahal butir-butirnya duduk di dalam grid: spasi
+itu tidak menghasilkan indentasi apa pun, jadi hubungan induk-anaknya tidak pernah terlihat.
+Ketiga angkanya kini satu panel yang menghitung selisihnya sendiri dan menamainya "sudah
+diterima Tenant".
+
+**Saldo tertahan negatif dinyatakan sebagai anomali.** `tertahan` = seluruh HOLD dikurangi
+seluruh arus keluar, jadi angka negatif berarti ada potongan atau pengalihan tanpa dana yang
+pernah ditahan untuknya. Data demo punya satu: Tani Muda Wajak, −Rp6.600.000 tertahan dengan
+Rp0 pernah ditahan — dan 6,6 juta itu persis jumlah potongan klaim (1,76 jt) dan pengalihan
+substitusi (4,84 jt) di ringkasan atas. Buku besar append-only tidak bisa disunting dari
+layar, jadi **satu-satunya guna dashboard ini adalah membuat keadaan seperti itu kelihatan**
+— dan layar lama mencetaknya abu-abu, sama seperti angka lainnya.
+
+**Kartu hijau tua ber-`blur-2xl` dibuang.** Kaca dan cahaya sebagai hiasan sudah dibuang dari
+beranda Tenant di Fase E; ini salinan keduanya.
+
+**`{b.shipmentStatus}` berhenti dicetak mentah** — kebocoran nama enum kelima, setelah
+kegiatan timeline, buku besar escrow, status legalitas, dan verifikasi satelit. Pilnya
+sengaja NETRAL alih-alih memakai `PilTahap`: `RUPA` di komponen itu menyatakan GILIRAN SIAPA
+sebuah tahap, dan di layar ini tidak ada tahap yang menuntut tindakan operator. Warna
+mendesaknya sudah dipakai sisa umur simpan, dan warna yang dipakai dua kali untuk dua arti
+berhenti berarti apa pun.
+
+**`settled` akhirnya dipakai.** Kontraknya memuat penanda apakah umurnya sudah final (barang
+tiba) atau jamnya masih berjalan; layar lama membuangnya. "Sisa 2 hari" yang membeku dan
+"sisa 2 hari" yang masih menghitung mundur menuntut tindakan berbeda dari yang membacanya.
+
+**`rupiah()` menaruh minus di tempat yang salah.** `Rp-6.600.000` menempatkan tanda di antara
+penanda mata uang dan angkanya, seolah yang negatif adalah rupiahnya. Kini `-Rp6.600.000`.
+Cacat ini tidak pernah terlihat sebelumnya karena tidak ada layar yang menampilkan rupiah
+negatif — sampai panel anomali di atas dibuat.
+
+Satu catatan cara kerja: dua "cacat" yang saya lihat di tangkapan layar halaman umur simpan
+— baris keempat hilang dan satu baris kehilangan keterangannya — ternyata **tidak ada**.
+Keduanya artefak tangkapan layar yang terpotong. Membaca DOM-nya lebih dulu mencegah
+"perbaikan" atas sesuatu yang sudah benar, persis seperti dugaan `growingDaysMin` di batch
+komoditas.
+
+### Fase F — tiga halaman terakhir (OP-08, OP-11, beranda)
+
+**Beranda merakit dirinya dari dua antrean, padahal ada lima.** Docstring-nya menyebut
+alasannya — hanya klaim dan legalitas yang punya endpoint — dan itu benar saat ditulis. Kini
+tinjauan satelit, tinjauan kewajaran, dan pantau umur simpan semuanya punya endpoint dan
+halamannya sendiri. Akibatnya beranda bisa berkata "tidak ada antrean" sementara sebuah
+tinjauan satelit menunggu. **Kesalahan terburuk yang bisa dilakukan sebuah antrean kerja
+adalah menyatakan dirinya kosong padahal tidak.**
+
+**`Promise.all` → `Promise.allSettled`.** `all` menolak pada kegagalan pertama, jadi satu
+antrean bermasalah menghapus empat antrean lain yang baik-baik saja dan menggantinya dengan
+satu kotak merah. Sekarang antrean yang gagal mencetak `?` berikut pil "gagal dimuat", sisanya
+tetap terbaca, dan `semuaBersih` menolak menyimpulkan apa pun selama ada yang tidak diketahui
+— **antrean yang tidak diketahui isinya tidak pernah dihitung nol.** Dibuktikan dengan
+menggagalkan satu endpoint dengan sengaja di proksi, lalu melepasnya lagi.
+
+**"SLA 1 hari kerja" berhenti diketik di kalimat** — `CLAIM_REVIEW_SLA_HOURS` dari kontrak
+bersama, aturan yang sama yang dipakai server saat menandai klaim lewat SLA.
+
+**Tombol ubah zona tidak punya nama.** Ia hanya berisi ikon pensil tanpa `aria-label` maupun
+teks, jadi pembaca layar mengumumkan tiga tombol identik bernama "button" di daftar tiga zona.
+
+**Dua saluran galat zona dipisah.** Satu state `galat` dipakai bersama oleh kegagalan MEMUAT
+daftar dan kegagalan MENYIMPAN formulir, ditampilkan dengan syarat `galat && !buka`. Akibatnya
+galat pemuatan berpindah ke dalam formulir begitu formulirnya dibuka, dan orang membaca
+"gagal memuat zona" sebagai alasan simpanannya gagal.
+
+**Audit: `toLocaleDateString` diganti `tanggalPanjang`.** Di halaman yang seluruh gunanya
+membuktikan sesuatu TIDAK berubah, tanggal yang berbeda antara render server dan render klien
+adalah jenis ketidakcocokan yang paling buruk untuk ditemukan. Data demo ternyata memang punya
+satu jangkar yang tidak cocok — Wortel Pujon Grade A, dijangkarkan 7 Agustus 2026.
+
+Dua duplikasi yang SAYA buat sendiri dan ketahuan dari tangkapan layar: kota tercetak dua kali
+di tiap kartu zona (label panel + baris data), dan kalimat "belum dipublikasikan ke penyimpanan
+eksternal" terulang di tiap kartu jangkar padahal panel di bawahnya sudah menyatakannya.
+Pengulangan justru menumpulkan kalimat yang sedang berusaha jujur.
 
 ## Yang harus diperiksa tiap kali, dan alasannya
 

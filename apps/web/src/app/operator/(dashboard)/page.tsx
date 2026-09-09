@@ -2,151 +2,266 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, Clock, FileCheck2, Scale, ShieldCheck } from "lucide-react";
-import type { ClaimResponse, LegalityQueueItem } from "@agro-os/shared";
-import { GalatApi, ambilAntreanKlaim, ambilAntreanLegalitas } from "@/lib/api";
-
-const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
-const jam = (iso: string) => new Date(iso).toLocaleString("id-ID");
+import { CLAIM_REVIEW_SLA_HOURS } from "@agro-os/shared";
+import type { ClaimResponse } from "@agro-os/shared";
+import {
+  ambilAntreanKewajaran,
+  ambilAntreanKlaim,
+  ambilAntreanLegalitas,
+  ambilAntreanSatelit,
+  ambilAntreanUmurSimpan,
+} from "@/lib/api";
+import { angka, jamWib, rupiah, tanggalPanjang } from "@/lib/format-id";
+import { Galat, Halaman, Kosong, Label, Memuat, Panel, Pil, Prosa, Sunyi } from "@/ui";
 
 type Antrean = ClaimResponse & { overdue: boolean };
 
 /**
- * Dashboard operator.
+ * Beranda operator — antrean kerja, bukan pameran angka.
  *
- * Sengaja dirakit dari dua antrean yang SUDAH punya endpoint — klaim mutu dan
- * legalitas — bukan dari endpoint ringkasan tersendiri. Yang ditampilkan hanya
- * pekerjaan yang benar-benar bisa dikerjakan operator hari ini; kartu metrik yang
- * angkanya tidak ada sumbernya lebih baik tidak ada sama sekali.
+ * MIGRASI DUNIA, dengan tiga hal yang bukan soal rupa:
+ *
+ * 1. LIMA ANTREAN, BUKAN DUA. Layar lama merakit dirinya dari klaim mutu dan legalitas
+ *    saja, dan docstring-nya menyebut alasannya: hanya keduanya yang punya endpoint. Itu
+ *    benar saat ditulis dan tidak lagi benar sekarang — tinjauan satelit, tinjauan kewajaran,
+ *    dan pantau umur simpan semuanya punya endpoint dan halamannya sendiri. Akibatnya
+ *    beranda bisa berkata "tidak ada antrean" sementara sebuah tinjauan satelit menunggu:
+ *    **kesalahan terburuk yang bisa dilakukan sebuah antrean kerja adalah menyatakan dirinya
+ *    kosong padahal tidak.**
+ *
+ * 2. SATU ENDPOINT GAGAL TIDAK LAGI MENGOSONGKAN SELURUH HALAMAN. `Promise.all` menolak pada
+ *    kegagalan pertama, jadi satu antrean yang bermasalah menghapus empat antrean lain yang
+ *    baik-baik saja. Dengan `allSettled`, yang gagal menyebut dirinya gagal dan sisanya tetap
+ *    terbaca — dan sebuah antrean yang tidak diketahui isinya TIDAK pernah dihitung nol.
+ *
+ * 3. "SLA 1 HARI KERJA" BERHENTI DIKETIK DI KALIMAT. Angkanya `CLAIM_REVIEW_SLA_HOURS` di
+ *    kontrak bersama — aturan yang dijalankan server saat menandai klaim lewat SLA.
  */
+type Keadaan = { jumlah: number | null; gagal: boolean };
+
+const KOSONG_KEADAAN: Keadaan = { jumlah: null, gagal: false };
+
 export default function OperatorDashboardPage() {
   const [klaim, setKlaim] = useState<Antrean[]>([]);
-  const [legalitas, setLegalitas] = useState<LegalityQueueItem[]>([]);
+  const [klaimGagal, setKlaimGagal] = useState(false);
+  const [legalitas, setLegalitas] = useState<Keadaan>(KOSONG_KEADAAN);
+  const [satelit, setSatelit] = useState<Keadaan>(KOSONG_KEADAAN);
+  const [kewajaran, setKewajaran] = useState<Keadaan>(KOSONG_KEADAAN);
+  const [umurLewat, setUmurLewat] = useState<Keadaan>(KOSONG_KEADAAN);
   const [memuat, setMemuat] = useState(true);
-  const [galat, setGalat] = useState("");
 
   useEffect(() => {
-    Promise.all([ambilAntreanKlaim(), ambilAntreanLegalitas("PENDING")])
-      .then(([k, l]) => {
-        setKlaim(k);
-        setLegalitas(l);
-        setGalat("");
+    Promise.allSettled([
+      ambilAntreanKlaim(),
+      ambilAntreanLegalitas("PENDING"),
+      ambilAntreanSatelit(),
+      ambilAntreanKewajaran(),
+      ambilAntreanUmurSimpan(),
+    ])
+      .then(([k, l, s, w, u]) => {
+        if (k.status === "fulfilled") setKlaim(k.value);
+        else setKlaimGagal(true);
+
+        setLegalitas(
+          l.status === "fulfilled"
+            ? { jumlah: l.value.length, gagal: false }
+            : { jumlah: null, gagal: true },
+        );
+        setSatelit(
+          s.status === "fulfilled"
+            ? { jumlah: s.value.length, gagal: false }
+            : { jumlah: null, gagal: true },
+        );
+        setKewajaran(
+          w.status === "fulfilled"
+            ? { jumlah: w.value.length, gagal: false }
+            : { jumlah: null, gagal: true },
+        );
+        setUmurLewat(
+          u.status === "fulfilled"
+            ? {
+                jumlah: u.value.filter(
+                  (b) => b.umurSimpan.remainingDays !== null && b.umurSimpan.remainingDays < 0,
+                ).length,
+                gagal: false,
+              }
+            : { jumlah: null, gagal: true },
+        );
       })
-      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat dashboard"))
       .finally(() => setMemuat(false));
   }, []);
 
-  if (memuat) return <div className="p-8 text-sm text-gray-500">Memuat dashboard…</div>;
-
-  if (galat) {
+  if (memuat) {
     return (
-      <div className="p-8">
-        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
-          {galat}
-        </div>
-      </div>
+      <Halaman judul="Konsol operator" pengantar="Pekerjaan yang menunggu keputusan manusia.">
+        <Memuat baris={4} label="Memuat antrean" />
+      </Halaman>
     );
   }
 
   const telat = klaim.filter((c) => c.overdue);
   const nilaiTertahan = klaim.reduce((s, c) => s + c.claimValue, 0);
 
+  const PUTUSAN = [
+    {
+      href: "/operator/claims",
+      nama: "Klaim mutu",
+      keadaan: klaimGagal
+        ? { jumlah: null, gagal: true }
+        : { jumlah: klaim.length, gagal: false },
+      akibat:
+        "Selama belum diputus, dana pembeli maupun Tenant sama-sama tertahan dan keduanya menunggu tanpa bisa berbuat apa pun.",
+    },
+    {
+      href: "/operator/legality",
+      nama: "Verifikasi legalitas",
+      keadaan: legalitas,
+      akibat: "Tenant belum bisa membuka kuota Pre-Order sebelum legalitasnya disetujui.",
+    },
+    {
+      href: "/operator/satellite",
+      nama: "Tinjauan satelit",
+      keadaan: satelit,
+      akibat:
+        "Batch tetap bertanda “belum terverifikasi” di katalog selama tidak ada yang meninjau.",
+    },
+    {
+      href: "/operator/kewajaran",
+      nama: "Tinjauan kewajaran",
+      keadaan: kewajaran,
+      akibat:
+        "Hasil panen yang berada di tepi pita perkiraan menunggu penilaian manusia, bukan putusan otomatis.",
+    },
+  ];
+
+  const adaGagal =
+    klaimGagal || legalitas.gagal || satelit.gagal || kewajaran.gagal || umurLewat.gagal;
+  // Antrean yang tidak diketahui isinya TIDAK boleh ikut menyimpulkan "semua bersih".
+  const semuaBersih =
+    !adaGagal &&
+    PUTUSAN.every((p) => p.keadaan.jumlah === 0) &&
+    (umurLewat.jumlah ?? 0) === 0;
+
   return (
-    <div className="p-8 max-w-5xl">
-      <div className="mb-8">
-        <h1 className="text-3xl font-black text-emerald-950 mb-2">Konsol Operator</h1>
-        <p className="text-gray-500">Pekerjaan yang menunggu keputusan manusia.</p>
-      </div>
+    <Halaman judul="Konsol operator" pengantar="Pekerjaan yang menunggu keputusan manusia.">
+      {adaGagal ? (
+        <Galat judul="Sebagian antrean tidak bisa dibaca" className="mb-8">
+          Antrean yang gagal dimuat ditandai di bawah. Isinya tidak dihitung nol — muat ulang
+          halaman sebelum menyimpulkan bahwa tidak ada yang menunggu.
+        </Galat>
+      ) : null}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <Link
-          href="/operator/claims"
-          className={`rounded-2xl p-6 border-2 shadow-sm transition ${
-            telat.length
-              ? "bg-red-50/40 border-red-200 hover:bg-red-50"
-              : "bg-white border-gray-200 hover:bg-gray-50"
-          }`}
+      {telat.length > 0 ? (
+        <Panel
+          nada="awas"
+          label="Lewat SLA"
+          judul={`${angka(telat.length)} klaim menunggu terlalu lama`}
+          className="mb-8"
         >
-          <div className="flex justify-between items-start mb-2">
-            <div className="text-xs font-bold text-gray-700">Klaim Mutu</div>
-            <Scale className={`w-5 h-5 ${telat.length ? "text-red-600" : "text-gray-300"}`} />
-          </div>
-          <div className="text-3xl font-black text-gray-900 mb-6">{klaim.length}</div>
-          <div className={`text-xs font-medium ${telat.length ? "text-red-700" : "text-gray-500"}`}>
-            {telat.length
-              ? `${telat.length} sudah melewati SLA.`
-              : "Semua masih dalam SLA."}
-          </div>
-        </Link>
-
-        <Link
-          href="/operator/legality"
-          className="rounded-2xl p-6 border-2 border-gray-200 bg-white shadow-sm hover:bg-gray-50 transition"
-        >
-          <div className="flex justify-between items-start mb-2">
-            <div className="text-xs font-bold text-gray-700">Verifikasi Legalitas</div>
-            <FileCheck2 className="w-5 h-5 text-gray-300" />
-          </div>
-          <div className="text-3xl font-black text-gray-900 mb-6">{legalitas.length}</div>
-          <div className="text-xs text-gray-500 font-medium">
-            Tenant menunggu persetujuan sebelum bisa membuka kuota.
-          </div>
-        </Link>
-
-        <div className="rounded-2xl p-6 border-2 border-gray-200 bg-white shadow-sm">
-          <div className="flex justify-between items-start mb-2">
-            <div className="text-xs font-bold text-gray-700">Nilai Klaim Tertahan</div>
-            <ShieldCheck className="w-5 h-5 text-gray-300" />
-          </div>
-          <div className="text-3xl font-black text-gray-900 mb-6">{rp(nilaiTertahan)}</div>
-          <div className="text-xs text-gray-500 font-medium">
-            Selama belum diputus, dana ini tertahan bagi pembeli maupun Tenant.
-          </div>
-        </div>
-      </div>
-
-      {telat.length > 0 && (
-        <div className="bg-white border-2 border-red-200 rounded-2xl p-6 mb-8">
-          <div className="flex items-center gap-2 mb-1">
-            <AlertTriangle className="w-4 h-4 text-red-600" />
-            <h2 className="text-sm font-bold text-red-700">Klaim Melewati SLA</h2>
-          </div>
-          <p className="text-xs text-gray-500 mb-4">
-            SLA 1 hari kerja. Semakin lama menggantung, semakin lama uang kedua pihak
-            tertahan.
-          </p>
-          <div className="space-y-2">
+          <Prosa className="text-[14px]">
+            SLA peninjauan {angka(CLAIM_REVIEW_SLA_HOURS)} jam. Semakin lama menggantung,
+            semakin lama uang kedua pihak tertahan.
+          </Prosa>
+          <div className="mt-6 space-y-3">
             {telat.map((c) => (
               <Link
                 key={c.id}
                 href={`/operator/claims/${c.id}`}
-                className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 px-4 py-3 hover:bg-gray-50 transition"
+                className="block border-t-2 border-jambu pt-3 transition-colors duration-150 hover:bg-kertas-garis/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ungu"
               >
-                <div className="min-w-0">
-                  <div className="font-semibold text-sm text-gray-900 truncate">
-                    {c.productName}
-                  </div>
-                  <div className="text-xs text-gray-500 flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    jatuh tempo {c.slaDueAt ? jam(c.slaDueAt) : "—"} · {rp(c.claimValue)}
-                  </div>
-                </div>
-                <ArrowRight className="w-4 h-4 text-gray-400 shrink-0" />
+                <Label className="text-jambu">{c.productName}</Label>
+                <p className="mt-1.5 font-mono text-[14px] text-tinta">
+                  {rupiah(c.claimValue)}
+                  {c.slaDueAt
+                    ? ` · jatuh tempo ${tanggalPanjang(c.slaDueAt)} ${jamWib(c.slaDueAt)} WIB`
+                    : ""}
+                </p>
               </Link>
             ))}
           </div>
-        </div>
+        </Panel>
+      ) : null}
+
+      {semuaBersih ? (
+        <Kosong judul="Tidak ada yang menunggu keputusan Anda">
+          Kelima antrean kosong: tidak ada klaim, pendaftaran legalitas, tinjauan satelit,
+          maupun tinjauan kewajaran yang menggantung, dan tidak ada batch yang lewat umur
+          simpan.
+        </Kosong>
+      ) : (
+        <Panel label="Menunggu putusan" judul="Antrean yang terbuka">
+          <div className="space-y-0">
+            {PUTUSAN.map((p) => (
+              <BarisAntrean key={p.href} {...p} />
+            ))}
+          </div>
+        </Panel>
       )}
 
-      {klaim.length === 0 && legalitas.length === 0 && (
-        <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center">
-          <ShieldCheck className="w-10 h-10 text-emerald-300 mx-auto mb-4" />
-          <h2 className="font-bold text-gray-800 mb-1">Tidak ada antrean</h2>
-          <p className="text-sm text-gray-500">
-            Semua klaim dan pengajuan legalitas sudah diputus.
+      <Panel label="Perlu dilihat" judul="Bukan putusan, tetapi tidak boleh luput" className="mt-8">
+        <BarisAntrean
+          href="/operator/umur-simpan"
+          nama="Batch lewat umur simpan"
+          keadaan={umurLewat}
+          akibat="Halaman itu tidak memblokir pengiriman apa pun — angkanya masih indikatif, jadi yang menimbang tetap manusia."
+        />
+      </Panel>
+
+      {!klaimGagal && klaim.length > 0 ? (
+        <Panel label="Sedang tertahan" judul="Nilai klaim yang belum diputus" className="mt-8">
+          <p className="font-mono text-[26px] leading-none text-tinta">
+            {rupiah(nilaiTertahan)}
           </p>
-        </div>
-      )}
-    </div>
+          <Sunyi className="mt-3 max-w-[68ch] text-[13px]">
+            Jumlah nilai seluruh klaim di antrean. Selama belum diputus, dana ini tertahan bagi
+            pembeli maupun Tenant.
+          </Sunyi>
+        </Panel>
+      ) : null}
+    </Halaman>
+  );
+}
+
+function BarisAntrean({
+  href,
+  nama,
+  keadaan,
+  akibat,
+}: {
+  href: string;
+  nama: string;
+  keadaan: Keadaan;
+  akibat: string;
+}) {
+  const kosong = keadaan.jumlah === 0;
+
+  return (
+    <Link
+      href={href}
+      className="flex items-baseline gap-6 border-b border-kertas-garis py-4 transition-colors duration-150 last:border-b-0 hover:bg-kertas-garis/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ungu"
+    >
+      {/* Angkanya lebih dulu dan sejajar: yang dicari mata di antrean kerja adalah berapa,
+          bukan namanya. */}
+      <span
+        className={`w-12 shrink-0 text-right font-mono text-[26px] leading-none ${
+          keadaan.gagal ? "text-tinta-samar" : kosong ? "text-tinta-samar" : "text-tinta"
+        }`}
+      >
+        {keadaan.gagal ? "?" : angka(keadaan.jumlah ?? 0)}
+      </span>
+      <span className="min-w-0">
+        <span className="flex flex-wrap items-baseline gap-x-3">
+          <span className="text-[15px] font-semibold text-tinta">{nama}</span>
+          {keadaan.gagal ? <Pil nada="awas">Gagal dimuat</Pil> : null}
+        </span>
+        <span className="mt-1 block max-w-[68ch] text-[13px] leading-relaxed text-tinta-lembut">
+          {keadaan.gagal
+            ? "Jumlahnya tidak diketahui, dan tidak dianggap nol. Muat ulang halaman untuk membacanya lagi."
+            : kosong
+              ? "Tidak ada yang menunggu."
+              : akibat}
+        </span>
+      </span>
+    </Link>
   );
 }

@@ -72,9 +72,15 @@ export function angka(n: number): string {
     .replace(/^/, n < 0 ? "-" : "");
 }
 
-/** `145000` → `Rp145.000`. */
+/**
+ * `145000` → `Rp145.000`, `-6600000` → `-Rp6.600.000`.
+ *
+ * Tandanya diangkat ke DEPAN penanda mata uang. `Rp-6.600.000` menaruh minus di antara "Rp"
+ * dan angkanya, seolah yang negatif adalah rupiahnya, bukan jumlahnya — dan justru di layar
+ * tempat angka negatif muncul (saldo escrow yang minus) pembacaannya harus paling tegas.
+ */
 export function rupiah(n: number): string {
-  return `Rp${angka(n)}`;
+  return n < 0 ? `-Rp${angka(Math.abs(n))}` : `Rp${angka(n)}`;
 }
 
 /** `0.81` → `0,81`. Koma desimal, sesuai penulisan angka Indonesia. */

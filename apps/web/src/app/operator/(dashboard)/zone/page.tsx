@@ -1,50 +1,88 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Loader2, MapPin, Pencil, Plus, X } from "lucide-react";
 import type { UpsertZoneBody, ZoneSummary } from "@agro-os/shared";
 import { GalatApi, ambilZonaOperator, buatZona, ubahZona } from "@/lib/api";
-
-const rp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
-const KOSONG: UpsertZoneBody = { name: "", city: "", minOrderValue: 0 };
+import { rupiah } from "@/lib/format-id";
+import {
+  BarisData,
+  Deret,
+  Galat,
+  Halaman,
+  Kosong,
+  Masukan,
+  Medan,
+  Memuat,
+  Panel,
+  Prosa,
+  Sunyi,
+  Tombol,
+} from "@/ui";
 
 /**
- * Manajemen zona layanan (OP-09).
+ * OP-11 — Manajemen zona layanan.
  *
- * `minOrderValue` bukan angka hiasan: itu gerbang unit economics yang menolak checkout
- * di bawahnya, karena satu perjalanan kurir untuk muatan kecil merugi. Menurunkannya
- * berdampak langsung ke setiap pembeli di zona itu.
+ * `minOrderValue` bukan angka hiasan: itu gerbang unit economics yang menolak checkout di
+ * bawahnya, karena satu perjalanan kurir untuk muatan kecil merugi. Menurunkannya berdampak
+ * langsung ke setiap pembeli di zona itu.
+ *
+ * MIGRASI DUNIA, dengan dua hal yang bukan soal rupa:
+ *
+ * 1. TOMBOL UBAH PUNYA NAMA. Ia hanya berisi ikon pensil tanpa `aria-label` maupun teks, jadi
+ *    pembaca layar mengumumkannya sebagai "button" — dan di daftar tiga zona, tiga tombol
+ *    tanpa nama tidak bisa dibedakan satu sama lain.
+ *
+ * 2. DUA SALURAN GALAT DIPISAH. `galat` dipakai bersama oleh kegagalan MEMUAT daftar dan
+ *    kegagalan MENYIMPAN formulir, lalu ditampilkan di dua tempat dengan syarat `galat &&
+ *    !buka`. Akibatnya galat pemuatan berpindah ke dalam formulir begitu formulirnya dibuka:
+ *    orang membaca "gagal memuat zona" sebagai alasan simpanannya gagal.
  */
+const KOSONG: UpsertZoneBody = { name: "", city: "", minOrderValue: 0 };
+
 export default function OperatorZonePage() {
   const [zona, setZona] = useState<ZoneSummary[]>([]);
   const [memuat, setMemuat] = useState(true);
-  const [galat, setGalat] = useState("");
+  const [galatMuat, setGalatMuat] = useState("");
 
   const [buka, setBuka] = useState(false);
   const [ubahId, setUbahId] = useState<string | null>(null);
   const [isi, setIsi] = useState<UpsertZoneBody>(KOSONG);
   const [proses, setProses] = useState(false);
+  const [galatSimpan, setGalatSimpan] = useState("");
 
   const muat = useCallback(() => {
     setMemuat(true);
     ambilZonaOperator()
-      .then((d) => { setZona(d); setGalat(""); })
-      .catch((e) => setGalat(e instanceof GalatApi ? e.message : "Gagal memuat zona"))
+      .then((d) => {
+        setZona(d);
+        setGalatMuat("");
+      })
+      .catch((e) => setGalatMuat(e instanceof GalatApi ? e.message : "Zona gagal dimuat"))
       .finally(() => setMemuat(false));
   }, []);
 
-  useEffect(() => { muat(); }, [muat]);
+  useEffect(() => {
+    muat();
+  }, [muat]);
 
   function mulaiUbah(z: ZoneSummary) {
     setUbahId(z.id);
     setIsi({ name: z.name, city: z.city, minOrderValue: z.minOrderValue });
+    setGalatSimpan("");
+    setBuka(true);
+  }
+
+  function mulaiBaru() {
+    setUbahId(null);
+    setIsi(KOSONG);
+    setGalatSimpan("");
     setBuka(true);
   }
 
   async function simpan(e: React.FormEvent) {
     e.preventDefault();
     setProses(true);
-    setGalat("");
+    setGalatSimpan("");
     try {
       if (ubahId) await ubahZona(ubahId, isi);
       else await buatZona(isi);
@@ -53,96 +91,157 @@ export default function OperatorZonePage() {
       setIsi(KOSONG);
       muat();
     } catch (err) {
-      setGalat(err instanceof GalatApi ? err.message : "Gagal menyimpan zona.");
+      setGalatSimpan(err instanceof GalatApi ? err.message : "Zona gagal disimpan.");
     } finally {
       setProses(false);
     }
   }
 
   return (
-    <div className="p-8 max-w-4xl">
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-emerald-950">Manajemen Zona</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Zona menentukan katalog mana yang dilihat pembeli dan Tenant mana yang bisa
-            menjadi pengganti saat panen kurang.
-          </p>
-        </div>
-        <button
-          onClick={() => { setUbahId(null); setIsi(KOSONG); setBuka(true); }}
-          className="shrink-0 flex items-center gap-2 bg-emerald-950 text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-emerald-800"
+    <Halaman
+      judul="Manajemen zona"
+      pengantar="Zona menentukan katalog mana yang dilihat pembeli dan Tenant mana yang bisa menjadi pengganti saat panen kurang."
+      aksi={
+        !buka ? (
+          <Tombol ukuran="sm" onClick={mulaiBaru}>
+            Tambah zona
+          </Tombol>
+        ) : null
+      }
+    >
+      {buka ? (
+        <Panel
+          nada="utama"
+          label={ubahId ? "Mengubah zona" : "Zona baru"}
+          judul={ubahId ? isi.name || "Zona tanpa nama" : "Tambah zona layanan"}
+          aksi={
+            <Tombol rupa="sunyi" ukuran="sm" onClick={() => setBuka(false)}>
+              Batal
+            </Tombol>
+          }
+          className="mb-8"
         >
-          <Plus className="w-4 h-4" /> Tambah Zona
-        </button>
-      </div>
+          <form onSubmit={simpan}>
+            <Deret kolom={2}>
+              <Medan label="Nama zona" wajib>
+                {(alat) => (
+                  <Masukan
+                    {...alat}
+                    required
+                    minLength={3}
+                    value={isi.name}
+                    onChange={(e) => setIsi({ ...isi, name: e.target.value })}
+                    placeholder="Kota Malang"
+                  />
+                )}
+              </Medan>
+              <Medan label="Kota / kabupaten" wajib>
+                {(alat) => (
+                  <Masukan
+                    {...alat}
+                    required
+                    minLength={3}
+                    value={isi.city}
+                    onChange={(e) => setIsi({ ...isi, city: e.target.value })}
+                    placeholder="Kota Malang"
+                  />
+                )}
+              </Medan>
+            </Deret>
 
-      {galat && !buka && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700 mb-4">{galat}</div>
-      )}
+            <Medan
+              label="Nilai minimum pesanan"
+              petunjuk="Dalam rupiah. Checkout di bawah nilai ini ditolak — di titik itu satu perjalanan kurir merugi."
+              wajib
+              className="mt-6"
+            >
+              {(alat) => (
+                <Masukan
+                  {...alat}
+                  required
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={isi.minOrderValue}
+                  onChange={(e) => setIsi({ ...isi, minOrderValue: Number(e.target.value) })}
+                  className="font-mono"
+                />
+              )}
+            </Medan>
 
-      {buka && (
-        <form onSubmit={simpan} className="bg-white border border-emerald-200 rounded-xl p-5 mb-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="font-bold text-emerald-950 text-sm">{ubahId ? "Ubah Zona" : "Zona Baru"}</h2>
-            <button type="button" onClick={() => setBuka(false)} aria-label="Tutup">
-              <X className="w-4 h-4 text-gray-400" />
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <input required minLength={3} value={isi.name}
-              onChange={(e) => setIsi({ ...isi, name: e.target.value })}
-              placeholder="Nama zona (mis. Kota Malang)"
-              className="px-3 py-2.5 border border-gray-300 rounded-lg text-sm" />
-            <input required minLength={3} value={isi.city}
-              onChange={(e) => setIsi({ ...isi, city: e.target.value })}
-              placeholder="Kota/kabupaten"
-              className="px-3 py-2.5 border border-gray-300 rounded-lg text-sm" />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">Nilai minimum pesanan (Rp)</label>
-            <input required type="number" min={0} value={isi.minOrderValue}
-              onChange={(e) => setIsi({ ...isi, minOrderValue: Number(e.target.value) })}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" />
-            <p className="text-[11px] text-gray-500 mt-1">
-              Checkout di bawah nilai ini ditolak — di titik itu satu perjalanan kurir merugi.
-            </p>
-          </div>
-          {galat && (
-            <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />{galat}
-            </p>
-          )}
-          <button type="submit" disabled={proses}
-            className="w-full bg-emerald-950 text-white text-sm font-semibold py-2.5 rounded-lg hover:bg-emerald-800 disabled:opacity-60 flex items-center justify-center gap-2">
-            {proses && <Loader2 className="w-4 h-4 animate-spin" />}
-            {proses ? "Menyimpan…" : "Simpan"}
-          </button>
-        </form>
-      )}
+            {ubahId ? (
+              <Sunyi className="mt-6 max-w-[68ch] text-[13px]">
+                Perubahan berlaku langsung bagi setiap pembeli di zona ini: menaikkan minimum
+                menolak keranjang yang tadinya sah, menurunkannya membuka perjalanan kurir
+                yang muatannya belum tentu menutup ongkos.
+              </Sunyi>
+            ) : null}
 
-      {memuat ? (
-        <div className="text-sm text-gray-500">Memuat…</div>
+            {/* Galat SIMPAN, bukan galat muat — dua sebab yang berbeda tidak boleh berbagi
+                satu kotak, apalagi kotak yang muncul di dalam formulir. */}
+            {galatSimpan ? (
+              <Galat judul="Zona belum tersimpan" className="mt-6">
+                {galatSimpan}
+              </Galat>
+            ) : null}
+
+            <Tombol
+              type="submit"
+              penuh
+              className="mt-7 py-3.5 text-[15px]"
+              sibuk={proses}
+              labelSibuk="Menyimpan…"
+            >
+              {ubahId ? "Simpan perubahan" : "Tambah zona"}
+            </Tombol>
+          </form>
+        </Panel>
+      ) : null}
+
+      {galatMuat ? (
+        <Galat judul="Zona gagal dimuat">
+          {galatMuat} Zona yang sudah ada tetap berlaku di server — muat ulang halaman untuk
+          mencoba lagi.
+        </Galat>
+      ) : memuat ? (
+        <Memuat baris={3} label="Memuat zona" />
+      ) : zona.length === 0 ? (
+        <Kosong judul="Belum ada zona layanan">
+          Tanpa zona, pembeli tidak bisa memilih wilayah dan katalog tidak menampilkan apa
+          pun. Tambahkan zona pertama untuk membuka pendaftaran Tenant di wilayah itu.
+        </Kosong>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-8">
           {zona.map((z) => (
-            <div key={z.id} className="bg-white border border-gray-200 rounded-xl p-5 flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <h3 className="font-bold text-gray-900 flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-gray-400 shrink-0" />{z.name}
-                </h3>
-                <p className="text-xs text-gray-500 mt-0.5 ml-6">
-                  {z.city} · minimum pesanan {rp(z.minOrderValue)}
-                </p>
-              </div>
-              <button onClick={() => mulaiUbah(z)}
-                className="shrink-0 w-9 h-9 rounded-lg border border-gray-300 flex items-center justify-center hover:bg-gray-50">
-                <Pencil className="w-4 h-4 text-gray-600" />
-              </button>
-            </div>
+            <Panel
+              key={z.id}
+              label={z.city}
+              judul={z.name}
+              aksi={
+                <Tombol rupa="kedua" ukuran="sm" onClick={() => mulaiUbah(z)}>
+                  Ubah
+                </Tombol>
+              }
+            >
+              {/* Kotanya sudah berdiri sebagai label panel; mengulanginya sebagai baris data
+                  membuat nama yang sama tercetak dua kali di satu kartu. */}
+              <Deret kolom={2} as="dl">
+                <BarisData label="Minimum pesanan">{rupiah(z.minOrderValue)}</BarisData>
+              </Deret>
+            </Panel>
           ))}
         </div>
       )}
-    </div>
+
+      {!memuat && !galatMuat && zona.length > 0 ? (
+        <Panel label="Yang belum ada" judul="Zona tidak bisa dinonaktifkan" className="mt-8">
+          <Prosa className="text-[14px]">
+            Belum ada cara menutup zona dari halaman ini. Menutupnya menyentuh Tenant yang
+            sudah terdaftar, kuota yang sudah dibuka, dan pesanan yang sedang berjalan di
+            dalamnya — jadi ia butuh alurnya sendiri, bukan satu tombol hapus.
+          </Prosa>
+        </Panel>
+      ) : null}
+    </Halaman>
   );
 }

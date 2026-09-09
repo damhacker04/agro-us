@@ -8,12 +8,12 @@ import { bacaKeranjang, tambahKeKeranjang } from "@/lib/keranjang";
 import { angka, jamWib, rupiah, tanggalPanjang, tanggalPendek } from "@/lib/format-id";
 import type {
   CatalogItem,
-  CommodityCategory,
   NdviSeries,
   TimelineNodeResponse,
   TimelineVerifyResponse,
 } from "@agro-os/shared";
 import { KEGIATAN } from "@/components/kegiatan";
+import { KATEGORI } from "@/components/komoditas";
 import { FotoBukti } from "@/components/foto-bukti";
 import { KurvaNdviBatch } from "@/components/kurva-ndvi-batch";
 import { PilVerifikasi, STATUS_MENTAH } from "@/components/tanda-verifikasi";
@@ -59,12 +59,6 @@ import {
  * sertifikat, citra, rantai — dengan panel keputusan beli yang lengket di sisi kanan
  * supaya bukti tidak perlu ditukar dengan tombolnya.
  */
-
-const KATEGORI: Record<CommodityCategory, string> = {
-  DAUN: "Sayuran daun",
-  BUAH_UMBI: "Buah & umbi",
-  KERING: "Komoditas kering",
-};
 
 const HARI = 86_400_000;
 const selisihHari = (dari: string, ke: string) =>
