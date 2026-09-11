@@ -11,13 +11,20 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "type-check": "tsc --noEmit",
+    "type-check": "tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:coverage:100": "vitest run --coverage --coverage.thresholds.100",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "devDependencies": {
-    "typescript": "^5.6.0"
+    "@vitest/coverage-v8": "3.2.7",
+    "typescript": "^5.6.0",
+    "vitest": "3.2.7"
   }
 }

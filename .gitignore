@@ -39,3 +39,14 @@ Thumbs.db
 
 # Foto bukti timeline (storage dev lokal — lihat storage.service.ts)
 apps/api/uploads/
+
+# Local QA reports and Python caches (source tests remain tracked)
+coverage/
+coverage-*/
+.coverage
+coverage.json
+coverage.xml
+htmlcov/
+.pytest_cache/
+__pycache__/
+*.pyc

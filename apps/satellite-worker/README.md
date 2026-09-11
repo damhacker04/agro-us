@@ -5,13 +5,20 @@ sebagai scheduled job terpisah, **tidak sinkron** dengan request API.
 
 ```bash
 python -m venv .venv && .venv/Scripts/activate      # Windows
-pip install -r requirements.txt
+pip install -r requirements-dev.txt                  # runtime + pytest/coverage
 cp .env.example .env                                 # samakan DATABASE_URL dgn apps/api
 
 SYNTHETIC_SCENES=1 python -m src.main                # mode pengembangan (tanpa kredensial)
 python -m src.main                                   # mode nyata (butuh Copernicus)
-pytest                                               # 12 uji aturan keputusan
+pytest                                               # 105 lulus + 4 known regressions (xfail)
 ```
+
+Suite offline mengukur seluruh `src` dengan **100% statement dan branch coverage**;
+105 test yang lulus sendiri mencapai angka itu. Empat acceptance test tetap `xfail`
+karena defect yang ditemukan belum diperbaiki. Set `QA_ENFORCE_REGRESSIONS=1` untuk
+menjalankannya sebagai acceptance gate yang merah. Coverage tidak membuktikan
+akurasi deteksi pada lahan nyata. Lihat [audit satelit](../../docs/qa/SATELLITE_AUDIT.md).
+Untuk menjalankan worker tanpa tooling test, cukup pasang `requirements.txt`.
 
 ## Alur
 
@@ -125,4 +132,6 @@ untuk demo **dan** untuk mengalibrasi ambang terhadap lahan yang tanggalnya suda
    tarik kurva historisnya, lalu kalibrasi. Tidak perlu menunggu 2-3 musim sendiri.
 3. **Mode sintetis membangun kurva DARI klaim Tenant**, sehingga selalu cenderung
    "terverifikasi". Berguna menguji pipeline, **tidak berguna menguji kejujuran Tenant**.
-4. **Belum dijadwalkan** — pasang cron harian.
+4. **Scheduler sudah tersedia** di `.github/workflows/satellite-verify.yml`, setiap
+   02:00 WIB. Aktivasi memerlukan secret `DATABASE_URL`; ketika kosong, eksekusi
+   terjadwal dilewati. Periksa log job untuk memastikan verifikasi benar-benar berjalan.

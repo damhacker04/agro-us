@@ -1,0 +1,90 @@
+name: qa
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm type-check
+      - run: pnpm build
+      # The requested all-source 100% target is an explicit gate, currently unmet.
+      - run: pnpm test:coverage:100
+      - name: Simpan hasil coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typescript-coverage
+          path: |
+            apps/api/coverage
+            apps/web/coverage
+            packages/shared/coverage
+          if-no-files-found: warn
+
+  satellite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            apps/satellite-worker/requirements.txt
+            apps/satellite-worker/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+        working-directory: apps/satellite-worker
+      - run: python -m pytest -q
+        working-directory: apps/satellite-worker
+      - name: Simpan hasil coverage worker
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: satellite-coverage
+          path: |
+            apps/satellite-worker/htmlcov
+            apps/satellite-worker/coverage.xml
+
+  # A separate acceptance gate exposes known defects. It is deliberately red until
+  # fixed; the passing characterization suite must never imply release readiness.
+  regression-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @agro-os/shared build
+      - run: pip install -r apps/satellite-worker/requirements-dev.txt
+      - run: pnpm test:regressions

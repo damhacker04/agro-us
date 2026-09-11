@@ -8,12 +8,25 @@ import { defineConfig } from "vitest/config";
  * mahal — verifikasi tanda tangan callback pembayaran adalah yang pertama, karena ia satu-
  * satunya pagar antara "tahu nomor tagihan" dan "dapat barang gratis".
  *
- * Alur yang butuh Postgres + PostGIS masih diuji ujung ke ujung terhadap produksi. Itu
- * bukan pengganti, dan tidak berpura-pura menjadi pengganti.
+ * Basis data, SMS dan payment provider diganti test doubles. Suite ini tidak
+ * membuktikan SQL/PostGIS atau integrasi provider; pengujian itu memerlukan lingkungan
+ * integrasi tersendiri. Coverage selalu memakai seluruh src, termasuk file yang belum
+ * diimpor oleh tes, supaya persentasenya tidak menyembunyikan fitur belum diuji.
  */
 export default defineConfig({
   test: {
     include: ["src/**/*.spec.ts"],
     environment: "node",
+    coverage: {
+      provider: "v8",
+      all: true,
+      include: ["src/**/*.ts"],
+      exclude: ["src/**/*.spec.ts", "src/**/*.d.ts"],
+      reporter: ["text", "json", "json-summary", "html"],
+      reportsDirectory: "coverage",
+      thresholds: process.env["QA_STRICT_COVERAGE"] === "true"
+        ? { statements: 100, branches: 100, functions: 100, lines: 100 }
+        : undefined,
+    },
   },
 });
