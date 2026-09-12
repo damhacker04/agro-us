@@ -60,11 +60,17 @@ describe("S3 configuration and public URLs", () => {
     expect(Logger.prototype.warn).toHaveBeenCalledWith(expect.stringContaining("DIABAIKAN"));
     expect(storage.info().keterangan).toContain("API sendiri");
   });
-  const regression = process.env.QA_ENFORCE_REGRESSIONS === "1" ? it : it.fails;
-  regression("KNOWN GAP: the r2.dev fallback policy must also inspect URLs with a path prefix", async () => {
+  it("applies the r2.dev fallback to URLs with a path prefix too", async () => {
     vi.stubEnv("S3_PUBLIC_URL", "https://bucket.r2.dev/proof");
     const storage = new S3StorageService();
     expect((await storage.put(jpeg, "proof.jpg", "image/jpeg")).url).toMatch(/^\/uploads\//);
+  });
+
+  it("does not mistake a custom domain that merely contains the text for r2.dev", async () => {
+    // `r2.dev.kebun.example` bukan r2.dev; pencocokan harus pada batas host, bukan substring.
+    vi.stubEnv("S3_PUBLIC_URL", "https://r2.dev.kebun.example/proof");
+    const storage = new S3StorageService();
+    expect((await storage.put(jpeg, "proof.jpg", "image/jpeg")).url).toMatch(/^https:\/\/r2\.dev\.kebun\.example\//);
   });
 });
 

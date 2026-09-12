@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { IsInt, IsNumber, IsPositive, IsString, IsUUID, Matches, MaxLength, Min, MinLength } from "class-validator";
+import { IsInt, IsNumber, IsPositive, IsString, IsUUID, MaxLength, Min, MinLength } from "class-validator";
 import { IsUrlUnggahan } from "../storage/uploaded-url.validator";
 
 export class FileClaimDto {

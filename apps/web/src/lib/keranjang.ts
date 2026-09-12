@@ -27,10 +27,32 @@ export interface BarisKeranjang extends CartLine {
   zoneId: string;
 }
 
+/**
+ * Satu baris keranjang yang masih bisa dipercaya.
+ *
+ * `JSON.parse` yang berhasil TIDAK berarti bentuknya benar: `{"oldVersion":1}` adalah
+ * JSON yang sah dan dulu dikembalikan apa adanya, sehingga `.reduce` di `jumlahItem`
+ * meledak dan seluruh cangkang pembeli ikut mati hanya karena satu kunci penyimpanan
+ * tertinggal dari versi lama. Yang dibuang di sini hanya baris yang rusak, bukan seluruh
+ * keranjang — pesanan yang masih utuh tidak perlu ikut hilang.
+ */
+function barisSah(nilai: unknown): nilai is BarisKeranjang {
+  if (typeof nilai !== "object" || nilai === null) return false;
+  const b = nilai as Record<string, unknown>;
+  return (
+    typeof b["batchId"] === "string" &&
+    typeof b["qtyBox"] === "number" &&
+    Number.isInteger(b["qtyBox"]) &&
+    (b["qtyBox"] as number) > 0
+  );
+}
+
 export function bacaKeranjang(): BarisKeranjang[] {
   if (typeof window === "undefined") return [];
   try {
-    return JSON.parse(localStorage.getItem(KUNCI) ?? "[]") as BarisKeranjang[];
+    const isi: unknown = JSON.parse(localStorage.getItem(KUNCI) ?? "[]");
+    if (!Array.isArray(isi)) return [];
+    return isi.filter(barisSah);
   } catch {
     return [];
   }
@@ -43,14 +65,21 @@ function tulis(isi: BarisKeranjang[]) {
 }
 
 export function tambahKeKeranjang(item: CatalogItem, zoneId: string, qtyBox = 1) {
+  // `Math.min` saja tidak menjaga apa pun di sisi bawah: `Math.min(-2, 5)` adalah -2,
+  // dan baris ber-qty negatif menempel di keranjang sampai checkout, tempat ia
+  // MENGURANGI total yang harus dibayar. Jumlah yang tidak masuk akal bukan perintah
+  // yang perlu ditafsirkan — ia diabaikan di pintu masuk.
+  const diminta = Math.floor(qtyBox);
+  if (!Number.isFinite(diminta) || diminta < 1) return;
+
   const isi = bacaKeranjang();
   const ada = isi.find((b) => b.batchId === item.batchId);
   if (ada) {
-    ada.qtyBox = Math.min(ada.qtyBox + qtyBox, item.quotaBoxAvailable);
+    ada.qtyBox = Math.min(ada.qtyBox + diminta, item.quotaBoxAvailable);
   } else {
     isi.push({
       batchId: item.batchId,
-      qtyBox: Math.min(qtyBox, item.quotaBoxAvailable),
+      qtyBox: Math.min(diminta, item.quotaBoxAvailable),
       productName: item.productName,
       tenantName: item.tenant.companyName,
       unitPriceLocked: item.lockedPrice,

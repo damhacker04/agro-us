@@ -128,9 +128,7 @@ export default function CartPage() {
                       ikon={Minus}
                       onClick={() => ubahJumlah(b.batchId, b.qtyBox - 1)}
                     />
-                    <span className="w-12 text-center font-mono text-[15px] text-tinta">
-                      {b.qtyBox}
-                    </span>
+                    <JumlahBox baris={b} />
                     <BtnJumlah
                       label={`Tambah ${b.productName}`}
                       ikon={Plus}
@@ -239,6 +237,59 @@ function BarisUang({ istilah, nilai }: { istilah: string; nilai: number }) {
       <dt className="text-tinta-lembut">{istilah}</dt>
       <dd className="font-mono text-tinta">{rupiah(nilai)}</dd>
     </div>
+  );
+}
+
+/**
+ * Jumlah box yang BISA DIKETIK, bukan hanya ditekan naik-turun.
+ *
+ * Pembeli institusional memesan 40, 120, 300 box; mencapainya lewat tombol plus berarti
+ * ratusan klik, dan angka yang cuma bisa dinaikkan satu-satu adalah kendali yang menghukum
+ * pesanan besar — justru pesanan yang paling penting di produk ini.
+ *
+ * Ketikan ditahan dulu di state lokal dan baru disimpan saat blur atau Enter. Menyimpan
+ * tiap penekanan tombol berarti "1", "12", lalu "120" masing-masing memicu satu panggilan
+ * pratinjau ke server, dan pembeli melihat rencana pengiriman berkedip tiga kali untuk satu
+ * angka. `type="text"` + `inputMode="numeric"`, bukan `type="number"`: panah bawaan peramban
+ * membulat dan berbeda di tiap mesin, sementara yang kita mau tetap dua tombol yang sudah
+ * ada di sebelahnya.
+ */
+function JumlahBox({ baris }: { baris: BarisKeranjang }) {
+  const [teks, setTeks] = useState(String(baris.qtyBox));
+
+  // Tombol − / + dan tab lain yang mengubah keranjang tetap jadi sumber kebenaran.
+  useEffect(() => setTeks(String(baris.qtyBox)), [baris.qtyBox]);
+
+  function simpan() {
+    const angka = Number.parseInt(teks, 10);
+    // Kotak kosong atau nol BUKAN perintah menghapus baris: penghapusan punya tombolnya
+    // sendiri, dan kehilangan baris karena salah ketik adalah kehilangan yang mahal.
+    if (!Number.isFinite(angka) || angka < 1) {
+      setTeks(String(baris.qtyBox));
+      return;
+    }
+    setTeks(String(angka));
+    if (angka !== baris.qtyBox) ubahJumlah(baris.batchId, angka);
+  }
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      autoComplete="off"
+      aria-label={`Jumlah box ${baris.productName}`}
+      value={teks}
+      onChange={(e) => setTeks(e.target.value.replace(/\D/g, "").slice(0, 5))}
+      onBlur={simpan}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+        if (e.key === "Escape") setTeks(String(baris.qtyBox));
+      }}
+      className="w-14 self-stretch border-x border-kertas-garis bg-transparent py-2 text-center font-mono text-[15px] text-tinta focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-ungu"
+    />
   );
 }
 

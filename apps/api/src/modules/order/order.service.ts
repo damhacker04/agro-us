@@ -3,7 +3,6 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import {
   toVerificationBadge,
   type BuyerOrderDetail,
-  PAYMENT_EXPIRY_MS,
   SHIPPING_COST_PER_PLAN,
   TRACEABILITY_REPORT_FEE,
   type CheckoutResponse,

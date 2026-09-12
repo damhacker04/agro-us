@@ -101,10 +101,15 @@ describe("local object reads", () => {
     disk.stat.mockRejectedValueOnce(Object.assign(new Error("missing"), { code: "ENOENT" }));
     expect(await new LocalDiskStorageService().baca("aa/missing.jpg")).toBeNull();
   });
-  const regression = process.env.QA_ENFORCE_REGRESSIONS === "1" ? it : it.fails;
-  regression("KNOWN GAP: local permission failures must not masquerade as an absent proof", async () => {
+  it("surfaces a permission failure instead of reporting the proof as absent", async () => {
     const failure = Object.assign(new Error("permission denied"), { code: "EACCES" });
     disk.stat.mockRejectedValueOnce(failure);
     await expect(new LocalDiskStorageService().baca("aa/proof.jpg")).rejects.toBe(failure);
+  });
+
+  it.each(["ENOENT", "ENOTDIR"])("still reports %s as an absent proof", async (code) => {
+    // Hanya dua kode ini yang benar-benar berarti "berkasnya tidak ada".
+    disk.stat.mockRejectedValueOnce(Object.assign(new Error("hilang"), { code }));
+    await expect(new LocalDiskStorageService().baca("aa/proof.jpg")).resolves.toBeNull();
   });
 });

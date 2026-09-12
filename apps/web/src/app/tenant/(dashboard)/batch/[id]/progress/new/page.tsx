@@ -103,7 +103,6 @@ export default function TambahNodePage({ params }: { params: Promise<{ id: strin
   // yang terisi lebih awal punya waktu lebih panjang untuk mengunci titik yang akurat.
   useEffect(() => {
     ambilLokasi();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /** Susun badan multipart node timeline. Sama untuk jalur biasa maupun konfirmasi panen. */

@@ -42,13 +42,24 @@ const METODE: { nilai: PaymentMethod; judul: string; jelas: string }[] = [
   { nilai: "EWALLET", judul: "E-wallet", jelas: "Bayar lewat tautan dompet digital." },
 ];
 
+/** "08:30" → 510. Dipakai untuk membandingkan dua jam, bukan untuk menampilkan apa pun. */
+const keMenit = (jam: string) => Number(jam.slice(0, 2)) * 60 + Number(jam.slice(3, 5));
+
+/** Lamanya jendela dalam kata, supaya pembeli melihat akibat pilihannya, bukan hanya angkanya. */
+function lamaJendela(menit: number) {
+  const j = Math.floor(menit / 60);
+  const m = menit % 60;
+  return [j ? `${j} jam` : "", m ? `${m} menit` : ""].filter(Boolean).join(" ");
+}
+
 export default function CheckoutPage() {
   const router = useRouter();
   const [isi, setIsi] = useState<BarisKeranjang[]>([]);
   const [nama, setNama] = useState("");
   const [telepon, setTelepon] = useState("");
   const [patokan, setPatokan] = useState("");
-  const [jam, setJam] = useState("08:00-16:00");
+  const [jamMulai, setJamMulai] = useState("08:00");
+  const [jamSelesai, setJamSelesai] = useState("16:00");
   const [lat, setLat] = useState("-7.9666");
   const [lng, setLng] = useState("112.6304");
   const [metode, setMetode] = useState<PaymentMethod>("QRIS");
@@ -62,8 +73,24 @@ export default function CheckoutPage() {
     setIsi(baris);
   }, [router]);
 
+  /**
+   * Jendela terima dirakit dari dua jam, bukan diketik sebagai satu kalimat.
+   *
+   * Server menolak apa pun di luar `HH:MM-HH:MM` (`DeliveryDetailDto.receivingHours`), dan
+   * satu kotak teks bebas menyerahkan seluruh aturan itu ke ingatan pembeli: "8 pagi - 4
+   * sore", "08.00-16.00", dan "pagi saja" semuanya lolos di peramban lalu ditolak server
+   * setelah tombol ditekan. `type="time"` memindahkan aturannya ke kendali itu sendiri —
+   * huruf tidak bisa masuk, menitnya selalu dua digit, dan pemilih jam bawaan sistem
+   * (termasuk 12 jam AM/PM di ponsel yang setelan bahasanya begitu) tetap menyerahkan nilai
+   * 24 jam ke kita. Yang tersisa untuk kita periksa hanya URUTANNYA.
+   */
+  const jam = `${jamMulai}-${jamSelesai}`;
+  const jamTerbalik = Boolean(jamMulai && jamSelesai && jamSelesai <= jamMulai);
+  const rentangMenit = jamTerbalik || !jamMulai || !jamSelesai ? 0 : keMenit(jamSelesai) - keMenit(jamMulai);
+
   async function bayar(e: React.FormEvent) {
     e.preventDefault();
+    if (jamTerbalik) return;
     setGalat("");
     setProses(true);
     try {
@@ -149,16 +176,55 @@ export default function CheckoutPage() {
                   />
                 )}
               </Medan>
-              <Medan label="Jam terima" petunjuk="Kurir menyesuaikan jadwalnya dengan jam ini." wajib>
-                {(alat) => (
-                  <Masukan
-                    {...alat}
-                    value={jam}
-                    onChange={(e) => setJam(e.target.value)}
-                    placeholder="08:00-16:00"
-                  />
-                )}
-              </Medan>
+              <fieldset className="sm:col-span-2">
+                <Label as="legend" className="mb-1.5">
+                  Jam terima<span className="ml-1 text-jambu">*</span>
+                </Label>
+                <p className="mb-3 text-[12px] leading-snug text-tinta-samar">
+                  Kurir menyesuaikan jadwalnya dengan jendela ini — makin sempit jendelanya,
+                  makin sedikit rute yang muat, jadi beri rentang selebar yang benar-benar
+                  bisa Anda terima.
+                </p>
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Medan label="Mulai" wajib>
+                    {(alat) => (
+                      <Masukan
+                        {...alat}
+                        type="time"
+                        step={900}
+                        value={jamMulai}
+                        onChange={(e) => setJamMulai(e.target.value)}
+                        className="font-mono"
+                      />
+                    )}
+                  </Medan>
+                  <Medan
+                    label="Sampai"
+                    wajib
+                    galat={
+                      jamTerbalik
+                        ? "Jam selesai harus lebih malam dari jam mulai — jendela terima tidak boleh melewati tengah malam."
+                        : undefined
+                    }
+                  >
+                    {(alat) => (
+                      <Masukan
+                        {...alat}
+                        type="time"
+                        step={900}
+                        value={jamSelesai}
+                        onChange={(e) => setJamSelesai(e.target.value)}
+                        className="font-mono"
+                      />
+                    )}
+                  </Medan>
+                </div>
+                <Sunyi className="mt-2 text-[12px]">
+                  Tercatat di surat jalan sebagai{" "}
+                  <span className="font-mono text-tinta">{jam}</span>
+                  {rentangMenit > 0 ? ` — jendela ${lamaJendela(rentangMenit)}.` : "."}
+                </Sunyi>
+              </fieldset>
             </div>
           </Panel>
 
@@ -263,11 +329,17 @@ export default function CheckoutPage() {
               type="submit"
               penuh
               className="mt-5"
+              disabled={jamTerbalik}
               sibuk={proses}
               labelSibuk="Menerbitkan tagihan…"
             >
               Buat pesanan
             </Tombol>
+            {jamTerbalik ? (
+              <Prosa className="mt-3 text-[12px] font-semibold text-jambu">
+                Perbaiki jam terima dulu: jam selesai masih lebih awal dari jam mulai.
+              </Prosa>
+            ) : null}
             <Prosa className="mt-3 text-[12px]">
               Dana ditahan di escrow, bukan diteruskan ke produsen. Ia baru berpindah setelah
               barang Anda terima dan jendela klaim mutu berakhir.

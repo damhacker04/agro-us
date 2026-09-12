@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { SettlementService } from "./settlement.service";
-const regression = process.env["QA_ENFORCE_REGRESSIONS"] === "1" ? it : it.fails;
 
 function fixture() {
   const tx = { shipment: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) }, escrowLedgerEntry: { create: vi.fn() } };
@@ -70,9 +69,20 @@ describe("SettlementService escrow safety", () => {
     prisma.$queryRaw.mockResolvedValue([]);
     expect(await service.tenantBalance("t1")).toEqual({ tertahan: 0, totalDitahan: 0, totalDicairkan: 0, menungguPenyaluran: 0, totalPotonganKlaim: 0, totalRefund: 0, totalBiayaBatal: 0, totalAlihSubstitusi: 0, rincian: {} });
   });
-  regression("BUG-BE-03: a fully refunded shipment is settled, not held by a nonexistent claim", async () => {
-    const { service, prisma } = fixture();
+  it("settles a fully refunded shipment instead of reporting it held by a nonexistent claim (BE-03)", async () => {
+    const { service, prisma, tx } = fixture();
     prisma.$queryRaw.mockResolvedValue([]);
     expect(await service.settleExpiredClaimWindows()).toEqual({ settled: 1, totalAmount: 0, heldByPendingClaims: 0 });
+    // Ditutup, tetapi TANPA entri RELEASE: tidak ada sisa yang boleh dicairkan.
+    expect(tx.shipment.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.escrowLedgerEntry.create).not.toHaveBeenCalled();
+  });
+
+  it("separates a shipment lost to a competing worker from one held by a claim (BE-03)", async () => {
+    const { service, tx } = fixture();
+    tx.shipment.updateMany.mockResolvedValue({ count: 0 });
+    // Kalah balapan bukan "ditahan klaim": tidak ada klaim, dan tidak ada yang perlu
+    // ditindaklanjuti operator.
+    expect(await service.settleExpiredClaimWindows()).toEqual({ settled: 0, totalAmount: 0, heldByPendingClaims: 0 });
   });
 });

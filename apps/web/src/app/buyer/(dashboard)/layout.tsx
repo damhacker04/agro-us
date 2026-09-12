@@ -43,8 +43,17 @@ function IsiCangkangPembeli({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams();
   const [isiKeranjang, setIsiKeranjang] = useState(0);
 
+  /**
+   * Dibaca ulang pada tiap perubahan keranjang, bukan hanya saat pindah halaman. Sejak
+   * katalog menambah barang TANPA bernavigasi, `pathname` tidak lagi berubah saat isi
+   * keranjang bertambah — lencana yang hanya menyimak pathname akan membeku di angka lama
+   * dan menjadikan satu-satunya penanda global itu berbohong.
+   */
   useEffect(() => {
-    setIsiKeranjang(jumlahItem());
+    const baca = () => setIsiKeranjang(jumlahItem());
+    baca();
+    window.addEventListener("keranjang:ubah", baca);
+    return () => window.removeEventListener("keranjang:ubah", baca);
   }, [pathname]);
 
   /**

@@ -91,6 +91,20 @@ export class QrService {
       });
     }
 
+    /**
+     * Alamat halaman pindai diperiksa SEBELUM transaksi, bukan saat menyusun responsnya.
+     *
+     * `baseUrl()` dipanggil di `list()`, dan `list()` berjalan setelah transaksi selesai.
+     * Di produksi tanpa `SCAN_BASE_URL`, urutan itu berarti: token tersimpan, Kode Antar
+     * di-hash ke pengiriman — lalu panggilannya melempar. Kode Antar hanya ditampilkan
+     * satu kali di respons ini, jadi ia hilang untuk selamanya; dan `QR_ALREADY_ISSUED`
+     * menolak percobaan kedua karena token-nya sudah ada. Pengirimannya terkunci dalam
+     * keadaan yang tidak bisa dipulihkan lewat API mana pun.
+     *
+     * Memeriksanya lebih dulu membuat kegagalan yang sama menjadi tidak berakibat apa-apa.
+     */
+    this.baseUrl();
+
     // Satu QR per BOX, bukan per pesanan — tiap box fisik ditempeli QR unik (FR-3.6).
     const code = randomInt(0, 10 ** COURIER_PIN_LENGTH)
       .toString()
@@ -98,7 +112,22 @@ export class QrService {
 
     await this.prisma.$transaction(async (tx) => {
       for (const item of shipment.items) {
-        for (let i = 0; i < item.qtyBox; i++) {
+        /**
+         * Label mengikuti jumlah yang BENAR-BENAR DIKIRIM, bukan yang dipesan.
+         *
+         * `qtyBoxFulfilled` diisi saat panen kurang dari rencana: pesanan 2 box yang
+         * hanya terpenuhi 1 tetap berangkat, dengan 1 box. Sebelumnya perulangan ini
+         * memakai `qtyBox`, sehingga Tenant mencetak 2 stiker untuk 1 box nyata. Stiker
+         * berlebih itu bukan kertas terbuang: tiap token adalah kredensial sah yang
+         * menerima scan, jadi ada token beredar untuk box yang tidak pernah ada —
+         * dan pembeli yang menghitung QR menyimpulkan barangnya kurang diterima,
+         * padahal yang kurang memang tidak pernah dikirim (BUG-QR-01).
+         *
+         * `null` berarti belum ada penyesuaian panen — pesanannya utuh. `0` berarti
+         * item ini gagal panen seluruhnya: tidak ada box, jadi tidak ada label.
+         */
+        const dikirim = item.qtyBoxFulfilled ?? item.qtyBox;
+        for (let i = 0; i < dikirim; i++) {
           await tx.boxQrToken.create({
             data: {
               orderItemId: item.id,

@@ -390,7 +390,7 @@ export class TimelineService {
         exif: { lat: p.exifLat ? Number(p.exifLat) : null, lng: p.exifLng ? Number(p.exifLng) : null, ts: p.exifTs?.toISOString() ?? null },
         sha256: p.sha256,
       })),
-    })) as Array<Record<string, unknown> & { activityType: string }>;
+    }));
   }
 
   private async getNode(batchId: string, nodeId: string) {
@@ -435,7 +435,7 @@ export class TimelineService {
      */
     const recomputedHashes: string[] = [];
 
-    for (const n of nodes as Array<any>) {
+    for (const n of nodes) {
       const photoHashes = photosByNode.get(n.id) ?? [];
       const hitung = (urutan: string[]) =>
         computeNodeHash(

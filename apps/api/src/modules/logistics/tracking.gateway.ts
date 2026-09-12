@@ -11,6 +11,7 @@ import type { Server, Socket } from "socket.io";
 import { WS_EVENTS, type GpsCoordinate } from "@agro-os/shared";
 import { PrismaService } from "../../prisma/prisma.service";
 import { identifySocket } from "../auth/ws-auth";
+import { bolehPantauPengiriman } from "./watch-authz";
 
 /**
  * Pancaran posisi kurir ke pembeli (PRD §6.4).
@@ -65,32 +66,15 @@ export class TrackingGateway {
     return { ok: true, room: this.room(id) };
   }
 
-  /** Benar hanya bila pemanggil terbukti berhubungan dengan pengiriman ini. */
+  /**
+   * Benar hanya bila pemanggil terbukti berhubungan dengan pengiriman ini.
+   *
+   * Aturannya sendiri ada di `watch-authz.ts` dan dibagi dengan endpoint REST: identitas
+   * tetap diambil dari TOKEN di handshake, bukan dari payload yang dikirim klien.
+   */
   private async mayWatch(shipmentId: string, sessionId: string | undefined, client: Socket): Promise<boolean> {
     const user = await identifySocket(this.jwt, client);
-    if (user) {
-      if (user.role === "OPERATOR") return true;
-      const owned = await this.prisma.shipment.findFirst({
-        where: {
-          id: shipmentId,
-          OR: [
-            { order: { buyer: { userId: user.sub } } },
-            { items: { some: { batch: { product: { tenant: { userId: user.sub } } } } } },
-          ],
-        },
-        select: { id: true },
-      });
-      return owned !== null;
-    }
-
-    if (!sessionId) return false;
-    const session = await this.prisma.trackingSession.findFirst({
-      // shipmentId ikut disyaratkan di dalam kueri: sesi kurir hanya membuka room
-      // pengirimannya sendiri, bukan room mana pun yang id-nya ia sebutkan.
-      where: { id: sessionId, shipmentId, endedAt: null },
-      select: { id: true },
-    });
-    return session !== null;
+    return bolehPantauPengiriman(this.prisma, shipmentId, { user, sessionId });
   }
 
   emitPosition(shipmentId: string, position: GpsCoordinate, at: Date, distanceToDestM: number) {

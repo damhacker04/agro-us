@@ -136,8 +136,11 @@ async function ambil<T>(jalur: string, init?: RequestInit): Promise<T> {
     throw new GalatApi(res.status, kode, pesan);
   }
 
-  // 204/205 tidak berisi badan respons.
-  return (res.status === 204 ? undefined : await res.json()) as T;
+  // 204 DAN 205 sama-sama tanpa badan respons. Sebelumnya hanya 204 yang diperiksa
+  // meski komentarnya menyebut keduanya, sehingga 205 — jawaban sah untuk "berhasil,
+  // muat ulang tampilanmu" — masuk ke `res.json()` dan meledak sebagai galat parse yang
+  // dilaporkan ke pengguna sebagai kegagalan, padahal operasinya berhasil.
+  return (res.status === 204 || res.status === 205 ? undefined : await res.json()) as T;
 }
 
 const kirim = <T>(jalur: string, body: unknown, metode = "POST") =>
@@ -333,18 +336,36 @@ export const periksaToken = (token: string) =>
 export const verifikasiKodeAntar = (token: string, code: string) =>
   kirim<VerifyCourierCodeResponse>(`/scan/${encodeURIComponent(token)}/verify`, { code });
 
+/**
+ * Sesi kurir dikirim di HEADER, tidak lagi sebagai bagian dari URL.
+ *
+ * Kurir tidak punya akun, jadi `sessionId` adalah satu-satunya kredensialnya — setara
+ * kata sandi, bukan nomor resi. Di dalam path, ia ikut tercatat di access log, log
+ * proxy, dan header `Referer` setiap kali halaman kurir memuat sumber daya lain.
+ */
+const HEADER_SESI = "X-Tracking-Session";
+
 export const kirimPosisi = (sessionId: string, body: ReportPositionBody) =>
-  kirim<{ accepted: boolean; plausible: boolean; distanceToDestM: number; arrived: boolean }>(
-    `/scan/session/${sessionId}/position`,
-    body,
+  ambil<{ accepted: boolean; plausible: boolean; distanceToDestM: number; arrived: boolean }>(
+    "/scan/session/position",
+    { method: "POST", body: JSON.stringify(body), headers: { [HEADER_SESI]: sessionId } },
   );
 
 /** Kurir menolak/tidak punya izin lokasi — jalur konfirmasi manual tetap jalan. */
 export const tandaiTanpaGps = (sessionId: string) =>
-  kirim<{ noGpsMode: boolean }>(`/scan/session/${sessionId}/no-gps`, {});
+  ambil<{ noGpsMode: boolean }>("/scan/session/no-gps", {
+    method: "POST",
+    body: JSON.stringify({}),
+    headers: { [HEADER_SESI]: sessionId },
+  });
 
-export const ambilPelacakan = (shipmentId: string) =>
-  ambil<TrackingSnapshot>(`/shipments/${shipmentId}/track`);
+/**
+ * Snapshot pelacakan. `sessionId` diikutkan HANYA oleh halaman kurir, yang tidak punya
+ * token: pembeli, Tenant dan Operator sudah membuktikan haknya lewat `Authorization`.
+ * Endpoint-nya sekarang menolak pemanggil yang tidak bisa membuktikan keduanya.
+ */
+export const ambilPelacakan = (shipmentId: string, sessionId?: string) =>
+  ambil<TrackingSnapshot>(`/shipments/${shipmentId}/track`, sessionId ? { headers: { [HEADER_SESI]: sessionId } } : undefined);
 
 // ============================== SISI OPERATOR ==============================
 

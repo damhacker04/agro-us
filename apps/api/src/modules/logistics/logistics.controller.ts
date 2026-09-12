@@ -1,12 +1,27 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Headers,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
 import { CurrentUser, JwtAuthGuard } from "../auth/auth.guard";
 import { Roles, RolesGuard } from "../auth/roles.guard";
 import type { JwtPayload } from "../auth/auth.service";
 import { TenantService } from "../tenant/tenant.service";
+import { PrismaService } from "../../prisma/prisma.service";
 import { QrService } from "./qr.service";
 import { CourierService } from "./courier.service";
 import { PodService } from "./pod.service";
 import { ConfirmReceiptDto, ReportPositionDto, VerifyCourierCodeDto } from "./logistics.dto";
+import { HEADER_SESI_PELACAKAN, bolehPantauPengiriman } from "./watch-authz";
 
 /** Sisi Tenant — cetak QR box & kelola Kode Antar (FR-3.6, FR-6.1/6.3). */
 @Controller("tenant/shipments")
@@ -42,12 +57,31 @@ export class TenantLogisticsController {
 }
 
 /**
- * Sisi Kurir — TANPA autentikasi, TANPA akun (§5.6.2).
- * Kredensialnya adalah token QR lalu `sessionId`; keduanya acak dan tidak bisa ditebak.
+ * Sisi Kurir — TANPA akun (§5.6.2). Kredensialnya token QR lalu `sessionId`.
+ *
+ * `sessionId` DIBAWA DI HEADER, bukan di path. Sebelumnya ia bagian dari URL
+ * (`/scan/session/:sessionId/position`), dan URL tercatat utuh di access log, log proxy,
+ * dan header `Referer` — satu-satunya kredensial yang dimiliki kurir ikut tersimpan di
+ * setiap tempat yang mencatat lalu lintas. Berkas `ws-auth.ts` di modul auth sudah
+ * menolak alasan yang sama untuk kanal WebSocket ("token yang bocor ke log sama saja
+ * dengan kata sandi yang bocor ke log"); tidak ada alasan jalur HTTP diperlakukan lebih
+ * longgar untuk kredensial yang sama.
  */
 @Controller("scan")
 export class CourierController {
   constructor(private readonly courier: CourierService) {}
+
+  /** Kredensial sesi dari header, ditolak tegas kalau tidak ada. */
+  private sesi(header: string | undefined): string {
+    const id = header?.trim();
+    if (!id) {
+      throw new BadRequestException({
+        code: "SESSION_HEADER_MISSING",
+        message: `Sesi pelacakan wajib dikirim di header ${HEADER_SESI_PELACAKAN}.`,
+      });
+    }
+    return id;
+  }
 
   /** Halaman pertama setelah scan. TIDAK mengonsumsi token (FR-6.2). */
   @Get(":token")
@@ -62,23 +96,27 @@ export class CourierController {
     return this.courier.verifyCode(token, dto.code);
   }
 
-  @Post("session/:sessionId/position")
+  @Post("session/position")
   @HttpCode(200)
-  position(@Param("sessionId", ParseUUIDPipe) sessionId: string, @Body() dto: ReportPositionDto) {
-    return this.courier.reportPosition(sessionId, dto.lat, dto.lng, new Date(dto.deviceTs));
+  position(@Headers(HEADER_SESI_PELACAKAN) sesi: string | undefined, @Body() dto: ReportPositionDto) {
+    return this.courier.reportPosition(this.sesi(sesi), dto.lat, dto.lng, new Date(dto.deviceTs));
   }
 
-  @Post("session/:sessionId/no-gps")
+  @Post("session/no-gps")
   @HttpCode(200)
-  noGps(@Param("sessionId", ParseUUIDPipe) sessionId: string) {
-    return this.courier.flagNoGps(sessionId);
+  noGps(@Headers(HEADER_SESI_PELACAKAN) sesi: string | undefined) {
+    return this.courier.flagNoGps(this.sesi(sesi));
   }
 }
 
 /** Sisi Pembeli — Sinyal-2 PoD & data peta. */
 @Controller("shipments")
 export class ShipmentController {
-  constructor(private readonly pod: PodService) {}
+  constructor(
+    private readonly pod: PodService,
+    private readonly jwt: JwtService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Post(":id/receive")
   @HttpCode(200)
@@ -93,12 +131,43 @@ export class ShipmentController {
   }
 
   /**
-   * Posisi kurir untuk peta (BY-10a). Tanpa guard — sama seperti pelacakan resi
-   * kurir pada umumnya, dan shipmentId berupa UUID acak yang tidak bisa ditebak.
+   * Posisi kurir untuk peta (BY-10a).
+   *
+   * DIOTORISASI dengan aturan yang sama seperti room WebSocket-nya — lihat
+   * `watch-authz.ts`. Sebelumnya endpoint ini terbuka, dengan alasan "shipmentId berupa
+   * UUID acak yang tidak bisa ditebak"; padahal id itu beredar di tautan pesanan,
+   * tangkapan layar, dan percakapan dukungan, dan kanal WS di modul yang sama sudah
+   * berhenti mempercayai alasan tersebut. Selama jalur REST masih terbuka, memperketat
+   * kanal WS tidak menutup apa pun: posisi yang sama tinggal diambil lewat sini.
+   *
+   * `JwtAuthGuard` TIDAK dipakai karena kurir memang tidak punya akun: guard akan menolak
+   * pemanggil yang sah sebelum aturannya sempat dijalankan. Jadi identitas diperiksa di
+   * dalam handler — dari token, atau dari sesi pelacakan yang masih terbuka.
    */
   @Get(":id/track")
-  track(@Param("id", ParseUUIDPipe) id: string) {
+  async track(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Headers("authorization") authorization: string | undefined,
+    @Headers(HEADER_SESI_PELACAKAN) sesi: string | undefined,
+  ) {
+    const boleh = await bolehPantauPengiriman(this.prisma, id, {
+      user: await this.identitas(authorization),
+      sessionId: sesi?.trim() || undefined,
+    });
+    // Pesan sengaja sama untuk "pengiriman tidak ada" dan "bukan milik Anda": membedakan
+    // keduanya menjadikan endpoint ini alat memeriksa keberadaan pesanan orang lain.
+    if (!boleh) throw new ForbiddenException({ code: "AKSES_DITOLAK", message: "Pengiriman tidak dapat diakses." });
     return this.pod.snapshot(id);
+  }
+
+  /** `null` untuk tamu maupun token rusak — keduanya bukan identitas. */
+  private async identitas(authorization: string | undefined): Promise<JwtPayload | null> {
+    if (!authorization?.startsWith("Bearer ")) return null;
+    try {
+      return await this.jwt.verifyAsync<JwtPayload>(authorization.slice(7));
+    } catch {
+      return null;
+    }
   }
 }
 

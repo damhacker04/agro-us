@@ -17,7 +17,6 @@ import {
   Panel,
   Pilihan,
   Prosa,
-  Sunyi,
   TautanKembali,
   Tombol,
   Ubin,

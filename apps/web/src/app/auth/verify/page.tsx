@@ -6,7 +6,7 @@ import { GalatApi, mintaOtp, verifikasiOtp } from "@/lib/api";
 import { simpanSesi } from "@/lib/auth";
 import { tujuanSetelahMasuk } from "@/lib/rute-masuk";
 import { OTP_LENGTH } from "@agro-os/shared";
-import { Galat, Halaman, Label, Panel, Prosa, Sunyi, TautanKembali, Tombol } from "@/ui";
+import { Galat, Halaman, Label, Panel, Prosa, Sunyi, Tombol } from "@/ui";
 
 /**
  * Verifikasi kode masuk. Dipakai ketiga peran.
@@ -51,8 +51,24 @@ function VerifyContent() {
 
   function isi(i: number, nilai: string) {
     const bersih = nilai.replace(/\D/g, "");
-    if (!bersih) return;
     const baru = [...digit];
+
+    /**
+     * Kotak yang DIKOSONGKAN berarti dikosongkan — bukan perubahan yang diabaikan.
+     *
+     * Sebelumnya baris ini berbunyi `if (!bersih) return`, dan karena input-nya terkendali
+     * (`value={d}`), React langsung memulihkan angka lama. Akibatnya satu digit yang salah
+     * ketik TIDAK BISA dihapus sama sekali: Backspace memicu onChange dengan nilai kosong
+     * dan dibatalkan di sini, sementara `mundur()` hanya memindahkan fokus pada kotak yang
+     * sudah kosong. Satu-satunya jalan keluar adalah memuat ulang halaman — di gerbang
+     * masuk, sebelum orang itu pernah melihat isi aplikasinya (FE-REG-06).
+     */
+    if (!bersih) {
+      baru[i] = "";
+      setDigit(baru);
+      return;
+    }
+
     // Tempel seluruh kode sekaligus juga didukung — orang biasanya menyalin dari pesan.
     if (bersih.length > 1) {
       bersih

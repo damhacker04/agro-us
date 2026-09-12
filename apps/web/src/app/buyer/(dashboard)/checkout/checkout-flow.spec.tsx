@@ -82,7 +82,8 @@ describe("buyer checkout interactions", () => {
     await render();
     await recipient();
     await change("Patokan alamat", "Pagar hijau");
-    await change("Jam terima", "09:00-12:00");
+    await change("Mulai", "09:00");
+    await change("Sampai", "12:00");
     await change("Lintang", "-7.95");
     await change("Bujur", "112.61");
     await act(async () => {
@@ -129,6 +130,21 @@ describe("buyer checkout interactions", () => {
     expect(state.checkout).toHaveBeenCalledTimes(2);
     expect(host.querySelector('[role="alert"]')).toBeNull();
     expect(bacaKeranjang()).toEqual([]);
+  });
+
+  it("blocks an inverted receiving window and submits it as HH:MM-HH:MM once fixed", async () => {
+    await render();
+    await recipient();
+    await change("Sampai", "07:00");
+    const button = () => host.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    expect(button().disabled).toBe(true);
+    expect(host.textContent).toContain("jam selesai masih lebih awal dari jam mulai");
+    await submit();
+    expect(state.checkout).not.toHaveBeenCalled();
+    await change("Sampai", "17:30");
+    expect(button().disabled).toBe(false);
+    await submit();
+    expect(state.checkout.mock.calls[0][0].delivery.receivingHours).toBe("08:00-17:30");
   });
 
   it("prevents duplicate button submissions while reservation is pending", async () => {

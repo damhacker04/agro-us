@@ -3,7 +3,6 @@ import { toVerificationBadge, type CatalogItem } from "@agro-os/shared";
 import { PrismaService } from "../../prisma/prisma.service";
 import { DemandSignalService } from "../intelligence/demand-signal.service";
 import type { CatalogQueryDto } from "./catalog.dto";
-import type { VerificationStatus } from "../../../generated/prisma/enums";
 
 @Injectable()
 export class CatalogService {

@@ -155,8 +155,22 @@ export class LocalDiskStorageService extends StorageService {
         contentType: mimeDariEkstensi(path),
         bytes: info.size,
       };
-    } catch {
-      return null;
+    } catch (err) {
+      /**
+       * HANYA "berkasnya memang tidak ada" yang boleh menjadi `null`.
+       *
+       * Sebelumnya `catch` menelan semua galat, sehingga izin berkas yang salah, disk
+       * yang penuh, atau mount yang lepas semuanya dilaporkan sebagai foto bukti yang
+       * tidak ada. Di halaman timeline, keduanya terlihat persis sama — dan yang satu
+       * berarti "Tenant tidak pernah mengunggah bukti", yang lain berarti "buktinya ada,
+       * kami yang gagal membacanya". Menyamakan keduanya adalah menuduh Tenant atas
+       * kesalahan server, tanpa satu baris log pun yang menyanggah.
+       *
+       * Galat lain dilempar ulang supaya jadi 500 yang terlihat dan tercatat.
+       */
+      const kode = (err as NodeJS.ErrnoException)?.code;
+      if (kode === "ENOENT" || kode === "ENOTDIR") return null;
+      throw err;
     }
   }
 

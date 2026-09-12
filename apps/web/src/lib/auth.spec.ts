@@ -49,3 +49,32 @@ describe("browser session boundary", () => {
     expect(berandaPeran(role)).toBe(route);
   });
 });
+
+/**
+ * Cookie peran adalah SATU-SATUNYA bagian sesi yang bisa dilihat `middleware.ts`. Kalau ia
+ * tidak ditulis, penjagaan rute di sisi server tidak berjalan sama sekali; kalau ia tidak
+ * dihapus saat keluar, rute dasbor tetap lolos lalu halamannya memuat dengan seluruh
+ * datanya ditolak API — yang dilihat orang bukan "silakan masuk", tapi dasbor rusak.
+ */
+describe("cookie peran untuk penjaga rute", () => {
+  it("menulis peran saat sesi dimulai", () => {
+    const { cookies } = installBrowser();
+    simpanSesi("t", { id: "u1", phone: "+628111", role: "TENANT" });
+    expect(cookies.get("agrous.peran")).toBe("TENANT");
+  });
+
+  it("menghapus peran saat sesi diakhiri", () => {
+    const { cookies } = installBrowser();
+    simpanSesi("t", { id: "u1", phone: "+628111", role: "BUYER" });
+    akhiriSesi();
+    expect(cookies.has("agrous.peran")).toBe(false);
+  });
+
+  it("mengganti peran saat orang lain masuk di perangkat yang sama", () => {
+    const { cookies } = installBrowser();
+    simpanSesi("t", { id: "u1", phone: "+628111", role: "BUYER" });
+    hapusSesi();
+    simpanSesi("t2", { id: "u2", phone: "+628222", role: "OPERATOR" });
+    expect(cookies.get("agrous.peran")).toBe("OPERATOR");
+  });
+});

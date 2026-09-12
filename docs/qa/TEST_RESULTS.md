@@ -30,7 +30,7 @@ Angka API, shared dan worker di halaman ini tetap hasil pengukuran 11 September;
 | Fungsi | 67,88% — 186/274 | 69,09% — 199/288 |
 | Cabang | 91,35% — 507/555 | 91,90% — 579/630 |
 
-FE-REG-07 (rute tenant baru) dan FE-REG-08 (logout pembeli & operator, dua parameter) berhenti menjadi cacat dan kini test biasa. Yang masih expected failure: FE-REG-01 s.d. FE-REG-05 (validasi storage, kuantitas negatif, HTTP 205, keranjang antar-akun) serta FE-REG-06 dan FE-REG-09 (pengosongan digit OTP, penyegaran lencana keranjang). `pnpm --filter @agro-os/web test`, `type-check` dan `build` lulus pada 12 September; angka paket lain belum diukur ulang, sehingga total 814/785/29 di tabel atas kini kedaluwarsa untuk kolom frontend.
+FE-REG-07 (rute tenant baru) dan FE-REG-08 (logout pembeli & operator, dua parameter) berhenti menjadi cacat dan kini test biasa. Yang masih expected failure: FE-REG-01 s.d. FE-REG-05 (validasi storage, kuantitas negatif, HTTP 205, keranjang antar-akun) serta FE-REG-06 (pengosongan digit OTP). FE-REG-09 (penyegaran lencana keranjang) ikut berhenti menjadi cacat pada 12 September: lencana kini membaca ulang pada event `keranjang:ubah`, bukan hanya saat `pathname` berubah — perlu, karena katalog menambah barang tanpa bernavigasi. `pnpm --filter @agro-os/web test`, `type-check` dan `build` lulus pada 12 September; angka paket lain belum diukur ulang, sehingga total 814/785/29 di tabel atas kini kedaluwarsa untuk kolom frontend.
 
 ## Coverage seluruh sumber
 

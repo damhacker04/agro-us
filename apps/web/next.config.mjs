@@ -1,13 +1,17 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Pengecekan tipe saat build DIAKTIFKAN kembali.
+  // Kunci `eslint` DIHAPUS. Dua alasan, dan keduanya soal kejujuran konfigurasi:
   //
-  // Sempat dimatikan sementara saat halaman FE masih mockup dan menyimpan galat tipe
-  // yang menggagalkan `next build`. Sekarang seluruh halaman memanggil API lewat
-  // kontrak `@agro-os/shared`, dan justru di situlah pengecekan tipe paling berguna:
-  // perubahan bentuk respons di backend harus menggagalkan build FE, bukan diam-diam
-  // lolos lalu muncul sebagai layar kosong di hadapan pengguna.
-  eslint: { ignoreDuringBuilds: true },
+  // 1. Next 16 tidak lagi mengenalinya — `next dev` dan `next build` mencetak
+  //    "Unrecognized key(s) in object: 'eslint'" dan mengabaikannya. Jadi ia tidak
+  //    mengerjakan apa pun selain membuat orang percaya ada pengaturan yang berlaku.
+  // 2. Nilainya `ignoreDuringBuilds: true` sementara komentarnya berbicara tentang
+  //    PENGECEKAN TIPE yang "diaktifkan kembali" — dua hal yang berbeda. Komentar yang
+  //    menjelaskan pengaturan lain adalah cara tercepat menyesatkan pembaca berikutnya.
+  //
+  // Lint sekarang berjalan sebagai tahapnya sendiri (`pnpm lint` → ESLint flat config di
+  // `eslint.config.mjs`), dan pengecekan tipe di `pnpm type-check`. Keduanya lulus atau
+  // gagal secara terpisah dan terlihat, bukan menyelinap di dalam build.
 
   // `images.remotePatterns` untuk images.unsplash.com DIHAPUS bersama tiga foto stok di
   // halaman rincian batch. Satu-satunya gambar yang tersisa di aplikasi ini adalah foto

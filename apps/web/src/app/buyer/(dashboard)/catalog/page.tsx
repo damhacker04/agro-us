@@ -4,8 +4,8 @@ import React, { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ShoppingCart } from "lucide-react";
-import { ambilKatalog } from "@/lib/api";
-import { tambahKeKeranjang } from "@/lib/keranjang";
+import { GalatApi, ambilKatalog, ambilProfilPembeli } from "@/lib/api";
+import { bacaKeranjang, tambahKeKeranjang } from "@/lib/keranjang";
 import { rupiah, tanggalPendek } from "@/lib/format-id";
 import type { CatalogItem } from "@agro-os/shared";
 import { PilVerifikasi, STATUS_VERIFIKASI } from "@/components/tanda-verifikasi";
@@ -64,10 +64,50 @@ function CatalogContent() {
       router.replace("/buyer/region");
       return;
     }
-    ambilKatalog(zoneId)
-      .then(setItems)
-      .catch((e) => setGalat(e instanceof Error ? e.message : "Gagal memuat katalog"))
-      .finally(() => setMemuat(false));
+
+    /**
+     * Zona di URL HARUS sama dengan zona aktif di profil.
+     *
+     * Halaman pemilihan wilayah sudah memindahkan zona dengan benar: ia PATCH profil
+     * dulu, mengingatkan soal box dari zona lain, lalu membuka katalog. Tetapi seluruh
+     * penjagaan itu menempel pada KLIKNYA. `?zoneId=` adalah teks di bilah alamat —
+     * tautan yang dibagikan, tab yang dibuka ulang, atau penanda buku melewatinya
+     * seluruhnya, dan pembeli menelusuri zona Batu sementara profilnya masih Kota Malang.
+     * Checkout memakai profil, jadi ongkir, minimum pesanan, dan kecocokan pengiriman
+     * dihitung terhadap zona yang TIDAK ia lihat di layar.
+     *
+     * Karena itu yang dipercaya di sini adalah jawaban server, bukan query string. Kalau
+     * keduanya berbeda, perpindahannya dikembalikan ke halaman wilayah supaya dilakukan
+     * secara sadar — bersama konsekuensinya pada keranjang.
+     */
+    let batal = false;
+    ambilProfilPembeli()
+      .then((profil) => {
+        if (batal) return null;
+        if (profil.activeZone && profil.activeZone.id !== zoneId) {
+          router.replace("/buyer/region");
+          return null;
+        }
+        return ambilKatalog(zoneId);
+      })
+      .then((daftar) => {
+        if (!batal && daftar) setItems(daftar);
+      })
+      .catch((e) => {
+        if (batal) return;
+        // Profil yang belum ada bukan galat katalog — itu langkah onboarding yang terlewat.
+        if (e instanceof GalatApi && (e.kode === "BUYER_NOT_FOUND" || e.status === 404)) {
+          router.replace("/buyer/onboarding/profile");
+          return;
+        }
+        setGalat(e instanceof Error ? e.message : "Gagal memuat katalog");
+      })
+      .finally(() => {
+        if (!batal) setMemuat(false);
+      });
+    return () => {
+      batal = true;
+    };
   }, [zoneId, router]);
 
   const daftar = useMemo(() => {
@@ -154,10 +194,37 @@ function CatalogContent() {
  * bernavigasi, dan menyerahkan satu target tautan sebesar kartu ke pembaca layar yang
  * membacakan seluruh isinya sebagai nama tautan. Sekarang judulnya yang jadi tautan, dan
  * tombolnya berdiri sendiri — dua target, masing-masing menamai tujuannya.
+ *
+ * Tombolnya juga TIDAK lagi melempar pembeli ke halaman keranjang. Satu pesanan di sini
+ * hampir tidak pernah berisi satu komoditas — restoran memesan tomat, wortel, dan sawi
+ * sekaligus — dan minimum order pun dihitung per pengiriman, jadi pembeli justru didorong
+ * menambah baris sampai ambangnya terpenuhi. Berpindah halaman tiap penambahan memaksa
+ * mereka menempuh katalog → keranjang → katalog untuk tiap item, dan urutan sortir serta
+ * posisi gulir katalog hilang tiap kali. Yang menggantikan perpindahan itu adalah kartunya
+ * sendiri: ia melaporkan berapa box komoditas ini yang sudah di keranjang, dan menyediakan
+ * satu tautan ke sana untuk yang memang sudah selesai memilih.
  */
 function KartuKuota({ item, zoneId, kota }: { item: CatalogItem; zoneId: string; kota: string }) {
-  const router = useRouter();
   const status = STATUS_VERIFIKASI[item.badge];
+  const [diKeranjang, setDiKeranjang] = useState(0);
+  /** Naik tiap penambahan — sebuah boolean tidak bisa menyalakan ulang pesan yang masih menyala. */
+  const [tambahKe, setTambahKe] = useState(0);
+
+  useEffect(() => {
+    const baca = () =>
+      setDiKeranjang(bacaKeranjang().find((b) => b.batchId === item.batchId)?.qtyBox ?? 0);
+    baca();
+    window.addEventListener("keranjang:ubah", baca);
+    return () => window.removeEventListener("keranjang:ubah", baca);
+  }, [item.batchId]);
+
+  useEffect(() => {
+    if (!tambahKe) return;
+    const jeda = setTimeout(() => setTambahKe(0), 4000);
+    return () => clearTimeout(jeda);
+  }, [tambahKe]);
+
+  const penuh = diKeranjang >= item.quotaBoxAvailable;
 
   return (
     <Panel
@@ -192,26 +259,50 @@ function KartuKuota({ item, zoneId, kota }: { item: CatalogItem; zoneId: string;
         </div>
       </Deret>
 
-      <div className="mt-6 flex items-end justify-between gap-4 border-t border-tinta pt-4">
-        <div>
-          <Label className="mb-1.5">Harga terkunci</Label>
-          <Nilai ukuran="lg" className="text-tinta">
-            {rupiah(item.lockedPrice)}
-          </Nilai>
-          <span className="ml-2 text-[13px] text-tinta-samar">
-            / box · {item.qtyKgPerBox} kg
-          </span>
+      <div className="mt-6 border-t border-tinta pt-4">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <Label className="mb-1.5">Harga terkunci</Label>
+            <Nilai ukuran="lg" className="text-tinta">
+              {rupiah(item.lockedPrice)}
+            </Nilai>
+            <span className="ml-2 text-[13px] text-tinta-samar">
+              / box · {item.qtyKgPerBox} kg
+            </span>
+          </div>
+          <Tombol
+            ukuran="sm"
+            disabled={penuh}
+            onClick={() => {
+              tambahKeKeranjang(item, zoneId);
+              setTambahKe((n) => n + 1);
+            }}
+          >
+            <Ikon dari={ShoppingCart} ukuran="sm" />
+            {diKeranjang ? "Tambah 1 box" : "Ke keranjang"}
+          </Tombol>
         </div>
-        <Tombol
-          ukuran="sm"
-          onClick={() => {
-            tambahKeKeranjang(item, zoneId);
-            router.push("/buyer/cart");
-          }}
-        >
-          <Ikon dari={ShoppingCart} ukuran="sm" />
-          Ke keranjang
-        </Tombol>
+
+        {/**
+         * Satu wadah `aria-live` yang SELALU ada, bukan yang muncul-hilang: region yang baru
+         * disisipkan ke DOM sering tidak dibacakan sama sekali, dan justru penambahanlah yang
+         * perlu terdengar — karena tidak ada lagi perpindahan halaman yang menandainya.
+         */}
+        <p aria-live="polite" className="mt-3 min-h-[18px] text-[13px] leading-snug text-tinta-lembut">
+          {diKeranjang > 0 ? (
+            <>
+              {tambahKe > 0 ? <span className="font-semibold text-ungu">Ditambahkan · </span> : null}
+              <span className="font-mono text-tinta">{diKeranjang} box</span> di keranjang
+              {penuh ? " (seluruh sisa kuota)" : null} ·{" "}
+              <Link
+                href="/buyer/cart"
+                className="font-semibold text-ungu underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ungu"
+              >
+                Lihat keranjang
+              </Link>
+            </>
+          ) : null}
+        </p>
       </div>
     </Panel>
   );

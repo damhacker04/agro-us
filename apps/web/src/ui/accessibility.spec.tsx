@@ -55,7 +55,7 @@ describe("shared UI semantics", () => {
     expect(renderToStaticMarkup(<Tombol>Simpan</Tombol>)).not.toContain("disabled=");
   });
   it("renders navigation as links rather than nested interactive controls", () => {
-    for (const component of [<TombolTaut href="/buyer/orders">Pesanan</TombolTaut>, <TombolTaut href="/tenant" penuh ukuran="sm" rupa="kedua">Beranda</TombolTaut>, <TautanKembali href="/">Kembali</TautanKembali>]) {
+    for (const component of [<TombolTaut key="taut-pesanan" href="/buyer/orders">Pesanan</TombolTaut>, <TombolTaut key="taut-beranda" href="/tenant" penuh ukuran="sm" rupa="kedua">Beranda</TombolTaut>, <TautanKembali key="taut-kembali" href="/">Kembali</TautanKembali>]) {
       const html = renderToStaticMarkup(component);
       expect(html).toContain("<a ");
       expect(html).not.toContain("<button");

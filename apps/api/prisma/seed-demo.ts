@@ -50,7 +50,6 @@ const prisma = new PrismaClient({ adapter });
 const HARI = 86_400_000;
 const hariLalu = (n: number) => new Date(Date.now() - n * HARI);
 const hariDepan = (n: number) => new Date(Date.now() + n * HARI);
-const tanggal = (d: Date) => d.toISOString().slice(0, 10);
 
 /** Persegi ~2,7 ha di sekitar titik pusat — cukup di atas batas 0,1 ha (FR-1.6). */
 function petak(lat: number, lng: number, sisi = 0.0015) {

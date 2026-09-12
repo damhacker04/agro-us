@@ -1,5 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { NOTIF_KINDS, type AppNotification, type NotifKind, type NotifSeverity } from "@agro-os/shared";
+import { type AppNotification, type NotifKind, type NotifSeverity } from "@agro-os/shared";
 import { PrismaService } from "../../prisma/prisma.service";
 import { NotificationGateway } from "./notification.gateway";
 import { SmsService } from "./sms.service";

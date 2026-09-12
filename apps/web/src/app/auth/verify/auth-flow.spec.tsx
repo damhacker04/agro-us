@@ -28,7 +28,6 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   ambilProfilTenant: state.tenantProfile,
 }));
 
-const regression = process.env.QA_ENFORCE_REGRESSIONS === "1" ? it : it.fails;
 let container: HTMLDivElement;
 let root: Root;
 
@@ -135,12 +134,15 @@ describe("OTP form interactions", () => {
     expect(ambilToken()).toBe("test-access");
   });
 
-  regression("FE-REG-06: deleting an existing OTP digit must clear the controlled input", async () => {
+  it("clears an OTP digit that the person deletes, so a typo can be corrected (FE-REG-06)", async () => {
     await render(<VerifyPage />);
     const input = container.querySelector("input")!;
     expect(input.value).toBe("1");
     await change(input, "");
     expect(input.value).toBe("");
+    // Dan masih bisa diisi ulang sesudahnya — mengosongkan bukan mengunci.
+    await change(input, "7");
+    expect(input.value).toBe("7");
   });
 });
 
@@ -158,7 +160,12 @@ describe("authenticated shell interactions", () => {
     expect(ambilToken()).toBeNull();
   });
 
-  regression("FE-REG-09: cart badge must refresh after adding an item without navigating", async () => {
+  /**
+   * FE-REG-09, sekarang bukan lagi cacat: lencana membaca ulang pada event `keranjang:ubah`,
+   * bukan hanya saat `pathname` berubah. Katalog menambah barang tanpa bernavigasi, jadi
+   * pathname bukan lagi sinyal yang bisa dipakai.
+   */
+  it("refreshes the cart badge after an item is added without navigating", async () => {
     await render(<BuyerDashboardLayout><p>Katalog</p></BuyerDashboardLayout>);
     await act(async () => {
       tambahKeKeranjang({ batchId: "batch-test", quotaBoxAvailable: 5, tenant: { companyName: "Test" } } as CatalogItem, "zone-test", 2);

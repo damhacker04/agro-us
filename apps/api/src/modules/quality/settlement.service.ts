@@ -33,6 +33,19 @@ export class SettlementService {
 
     let released = 0;
     let totalAmount = 0;
+    /**
+     * Dihitung eksplisit, BUKAN sebagai `due.length - released`.
+     *
+     * Selisih itu menyamakan tiga hal yang berbeda: ditahan klaim, kalah balapan dengan
+     * proses lain, dan diselesaikan dengan nilai nol. Akibatnya yang paling mahal adalah
+     * yang terakhir: pengiriman yang seluruh dananya sudah dikembalikan ke pembeli tetap
+     * ditandai SELESAI oleh transaksi di bawah — dan itu benar, sisanya memang nol dan
+     * tidak ada yang perlu dicairkan — tetapi rekap job melaporkannya sebagai "ditahan
+     * klaim yang menunggu operator". Klaim itu tidak ada. Operator lalu mencari sengketa
+     * yang tidak pernah dibuka, sementara satu-satunya angka yang ia pakai untuk
+     * memutuskan apakah job berjalan benar sudah keliru sejak awal (BUG-BE-03).
+     */
+    let heldByPendingClaims = 0;
 
     for (const s of due) {
       // Klaim yang masih menunggu operator MENAHAN pencairan — mencairkan lebih dulu
@@ -42,11 +55,14 @@ export class SettlementService {
       });
       if (pending > 0) {
         this.log.log(`Pengiriman ${s.id.slice(0, 8)} ditahan — ${pending} klaim menunggu operator`);
+        heldByPendingClaims++;
         continue;
       }
 
-      const amount = await this.releaseForShipment(s.id, s.orderId);
-      if (amount > 0) {
+      // "Selesai" dan "ada uang yang cair" adalah dua fakta terpisah. Menyimpulkan yang
+      // pertama dari yang kedua adalah asal mula bug ini.
+      const { selesai, amount } = await this.releaseForShipment(s.id, s.orderId);
+      if (selesai) {
         released++;
         totalAmount += amount;
       }
@@ -55,11 +71,17 @@ export class SettlementService {
     if (released) {
       this.log.log(`${released} pengiriman dicairkan, total Rp${totalAmount.toLocaleString("id-ID")}`);
     }
-    return { settled: released, totalAmount, heldByPendingClaims: due.length - released };
+    return { settled: released, totalAmount, heldByPendingClaims };
   }
 
-  /** Cairkan sisa escrow satu pengiriman lalu tandai Selesai. */
-  private async releaseForShipment(shipmentId: string, orderId: string): Promise<number> {
+  /**
+   * Cairkan sisa escrow satu pengiriman lalu tandai Selesai.
+   *
+   * `selesai` menjawab "apakah proses INI yang menutup pengiriman ini", `amount` menjawab
+   * "berapa yang cair". Keduanya bisa berbeda: pengiriman yang sisanya nol ditutup tanpa
+   * satu rupiah pun berpindah.
+   */
+  private async releaseForShipment(shipmentId: string, orderId: string): Promise<{ selesai: boolean; amount: number }> {
     // HOLD adalah satu-satunya arus MASUK; jenis entri apa pun selain itu adalah uang
     // yang sudah keluar. Ditulis begini, bukan sebagai daftar putih jenis entri:
     // daftar putih membuat jenis entri baru diam-diam terhitung nol, dan `ALIH_SUBSTITUSI`
@@ -76,6 +98,7 @@ export class SettlementService {
     `;
 
     let total = 0;
+    let selesai = false;
     const dicairkan: Array<{ tenantId: string; amount: number }> = [];
     await this.prisma.$transaction(async (tx) => {
       // KLAIM pengirimannya LEBIH DULU, baru tulis ledger.
@@ -93,6 +116,7 @@ export class SettlementService {
         data: { status: "SELESAI", completedAt: new Date() },
       });
       if (klaim.count !== 1) return;
+      selesai = true;
 
       for (const r of rows) {
         const amount = Number(r.sisa);
@@ -128,7 +152,7 @@ export class SettlementService {
         { orderId, shipmentId },
       );
     }
-    return total;
+    return { selesai, amount: total };
   }
 
   /**

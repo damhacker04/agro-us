@@ -206,7 +206,21 @@ export class CourierService {
     `;
     const distance = Number(rows[0]?.dist ?? Number.POSITIVE_INFINITY);
 
-    this.gateway.emitPosition(session.shipmentId, { lat, lng }, deviceTs, distance);
+    /**
+     * HANYA posisi wajar yang disiarkan.
+     *
+     * Bacaan tidak wajar tetap DISIMPAN dengan `is_plausible = false` — ia bukti, dan
+     * membuangnya berarti menghapus jejak gangguan GPS maupun percobaan pemalsuan. Tetapi
+     * menyiarkannya adalah hal yang berbeda: peta langsung pembeli melompat ke titik yang
+     * sudah dinilai tidak masuk akal, lalu terhenyak kembali saat bacaan berikutnya
+     * datang. Padahal `snapshot()` — peta yang sama ketika dimuat ulang — sudah menyaring
+     * ke posisi wajar terakhir. Jadi selama ini kedua tampilan itu menjawab berbeda untuk
+     * pertanyaan yang sama, dan yang langsung justru yang lebih mudah dipercaya keliru.
+     *
+     * Yang dilihat pembeli saat GPS terganggu: penanda kurir diam di posisi wajar
+     * terakhir. Itu jawaban jujur — kami memang tidak tahu posisinya sekarang (BUG-BE-06).
+     */
+    if (plausible) this.gateway.emitPosition(session.shipmentId, { lat, lng }, deviceTs, distance);
 
     let arrived = false;
     if (plausible && distance <= GEOFENCE_RADIUS_M) {

@@ -59,7 +59,7 @@ export default function TenantDashboardLayout({ children }: { children: React.Re
         }
         /* Kegagalan lain: kepala cangkang bukan alasan menggagalkan halaman. */
       });
-  }, []);
+  }, [router]);
 
   return (
     <Cangkang

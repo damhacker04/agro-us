@@ -6,7 +6,6 @@ import { QrService } from "./qr.service";
 
 vi.mock("qrcode", () => ({ toDataURL: vi.fn(async (url: string) => `data:image/png;base64,${url}`) }));
 
-const regression = process.env["QA_ENFORCE_REGRESSIONS"] === "1" ? it : it.fails;
 const now = new Date("2026-09-10T03:00:00Z");
 const pepper = "courier-test-pepper-32-characters";
 
@@ -117,19 +116,38 @@ describe("QrService generation", () => {
     expect(QRCode.toDataURL).not.toHaveBeenCalled();
   });
 
-  regression("BUG-QR-01: partial fulfillment must create labels only for boxes actually shipped", async () => {
+  it("creates labels only for boxes actually shipped when harvest falls short (QR-01)", async () => {
     const { service, shipment, tx } = fixture();
     shipment.items[0]!.qtyBoxFulfilled = 1;
     shipment.items[1]!.qtyBoxFulfilled = 0;
     await service.generate("tenant-1", "shipment-1");
     expect(tx.boxQrToken.create).toHaveBeenCalledTimes(1);
+    // Item yang gagal panen seluruhnya tidak menyumbang satu label pun.
+    expect(tx.boxQrToken.create).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ orderItemId: "item-2" }) }));
   });
 
-  regression("BUG-QR-02: validate production scan URL before persisting tokens that cannot yet be returned", async () => {
+  it("treats an unset fulfilled count as a full order (QR-01)", async () => {
+    const { service, tx } = fixture();
+    // `null` bukan nol: belum ada penyesuaian panen berarti pesanannya utuh — 2 + 1 box.
+    await service.generate("tenant-1", "shipment-1");
+    expect(tx.boxQrToken.create).toHaveBeenCalledTimes(3);
+  });
+
+  it("creates no labels at all when nothing could be fulfilled (QR-01)", async () => {
+    const { service, shipment, tx } = fixture();
+    shipment.items[0]!.qtyBoxFulfilled = 0;
+    shipment.items[1]!.qtyBoxFulfilled = 0;
+    await service.generate("tenant-1", "shipment-1");
+    expect(tx.boxQrToken.create).not.toHaveBeenCalled();
+  });
+
+  it("validates the production scan URL before persisting tokens that cannot be returned (QR-02)", async () => {
     const { service, tx } = fixture();
     vi.stubEnv("SCAN_BASE_URL", undefined);
     vi.stubEnv("NODE_ENV", "production");
     await expect(service.generate("tenant-1", "shipment-1")).rejects.toMatchObject({ response: { code: "SCAN_BASE_URL_MISSING" } });
+    // Tidak ada token DAN tidak ada Kode Antar yang tersimpan: kegagalannya tidak
+    // meninggalkan pengiriman yang terkunci oleh QR_ALREADY_ISSUED.
     expect(tx.boxQrToken.create).not.toHaveBeenCalled();
     expect(tx.shipment.update).not.toHaveBeenCalled();
   });

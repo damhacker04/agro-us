@@ -14,6 +14,26 @@ import { StorageService, kenaliGambar, type BacaObjek, type StoredObject } from 
  * R2 dipilih sebagai acuan karena tidak menagih biaya keluar data (egress), sedangkan foto
  * timeline memang dirancang untuk dilihat publik tanpa login (§6.1).
  */
+/**
+ * Benar bila URL ini mengarah ke host `*.r2.dev`, dengan path apa pun.
+ *
+ * Pemeriksaan sebelumnya `/\.r2\.dev$/` menguji AKHIR string, bukan host — sehingga
+ * `https://bucket.r2.dev/proof` lolos dan dipakai apa adanya. Justru bentuk berprefiks
+ * itulah yang wajar ditulis orang saat foto ditaruh di satu folder, dan akibatnya bukan
+ * kesalahan kecil: seluruh foto bukti gagal tampil bagi pengguna di Indonesia sementara
+ * log tetap bersih. Yang diperiksa sekarang hostname-nya, lewat parser URL sungguhan.
+ */
+function hostnameR2Dev(url: string): boolean {
+  if (!url) return false;
+  try {
+    return /(^|\.)r2\.dev$/i.test(new URL(url).hostname);
+  } catch {
+    // Bukan URL yang sah: bukan urusan fungsi ini untuk memutuskan, dan nilai rusak
+    // akan gagal dengan sendirinya di tempat ia dipakai.
+    return false;
+  }
+}
+
 @Injectable()
 export class S3StorageService extends StorageService {
   private readonly logger = new Logger("Storage(s3)");
@@ -44,7 +64,7 @@ export class S3StorageService extends StorageService {
     // Tidak dibuat menggagalkan boot: alternatifnya (menyajikan lewat API) bekerja penuh,
     // jadi menjatuhkan layanan demi sebuah nilai konfigurasi yang bisa diabaikan dengan
     // aman adalah kerugian yang lebih besar. Peringatannya dibuat sekeras mungkin.
-    if (/\.r2\.dev$/i.test(publik)) {
+    if (hostnameR2Dev(publik)) {
       this.logger.warn(
         `S3_PUBLIC_URL menunjuk ${publik} — domain r2.dev diblokir di Indonesia, jadi nilai ini ` +
           "DIABAIKAN dan foto disajikan lewat API sendiri. Kosongkan variabelnya, atau isi " +

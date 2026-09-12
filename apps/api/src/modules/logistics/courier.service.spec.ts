@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { COURIER_PIN_MAX_ATTEMPTS, POSITION_INTERVAL_MS, POD_TIMEOUT_MS } from "@agro-os/shared";
 import { CourierService, haversineM } from "./courier.service";
-const regression = process.env["QA_ENFORCE_REGRESSIONS"] === "1" ? it : it.fails;
 const now = new Date("2026-09-09T00:00:00Z");
 function fixture() {
   const shipment = { id: "s1", courierPinHash: "valid-hash", pinAttempts: 0, destRadiusM: 100, zone: { name: "Malang" } };
@@ -121,10 +120,19 @@ describe("CourierService GPS plausibility and staged notifications", () => {
     expect(await service.reportPosition("session1", -7.98, 112.63, now)).toMatchObject({ distanceToDestM: Infinity, arrived: false });
     expect(gateway.emitStatus).not.toHaveBeenCalled();
   });
-  regression("BUG-BE-06: an implausible GPS jump must not be broadcast to the buyer's live map", async () => {
+  it("does not broadcast an implausible GPS jump to the buyer's live map (BE-06)", async () => {
     const { service, prisma, gateway } = fixture();
     prisma.$queryRaw.mockResolvedValueOnce([{ lat: -7.98, lng: 112.63, device_ts: new Date(now.getTime() - 10_000) }]).mockResolvedValueOnce([{ dist: 5 }]);
-    await service.reportPosition("session1", -8.1, 112.63, now);
+    const hasil = await service.reportPosition("session1", -8.1, 112.63, now);
     expect(gateway.emitPosition).not.toHaveBeenCalled();
+    // Tetap DITERIMA dan tetap disimpan sebagai bukti — yang ditahan hanya siarannya.
+    expect(hasil).toMatchObject({ accepted: true, plausible: false });
+  });
+
+  it("still broadcasts a plausible position (BE-06)", async () => {
+    const { service, prisma, gateway } = fixture();
+    prisma.$queryRaw.mockResolvedValueOnce([{ lat: -7.98, lng: 112.63, device_ts: new Date(now.getTime() - 10_000) }]).mockResolvedValueOnce([{ dist: 500 }]);
+    await service.reportPosition("session1", -7.9801, 112.6301, now);
+    expect(gateway.emitPosition).toHaveBeenCalledTimes(1);
   });
 });
