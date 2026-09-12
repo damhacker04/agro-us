@@ -14,7 +14,7 @@ Audit mencakup inventaris seluruh sumber milik proyek, hubungan FE–BE–worker
 | [Struktur proyek](PROJECT_STRUCTURE.md) | Peta folder, seluruh sumber, route aktif, modul, migration dan placeholder |
 | [Frontend dan UX](FRONTEND_AUDIT.md) | 20 kelompok temuan FE, penilaian tiap persona, bukti file/baris dan saran |
 | [Backend](BACKEND_AUDIT.md) | Integritas transaksi, akses, clean code/SOLID dan matriks requirement→implementasi |
-| [Worker satelit](SATELLITE_AUDIT.md) | Coverage 100%, empat cacat keputusan/citra, dan keterbatasan validasi lapangan |
+| [Worker satelit](SATELLITE_AUDIT.md) | Coverage 100%, empat cacat keputusan/citra (diperbaiki 12 Sep), dan keterbatasan validasi lapangan yang masih terbuka |
 | [Tutorial pengguna](USER_GUIDE.md) | Langkah tenant, pembeli, kurir dan operator berdasarkan layar yang ada |
 | [Diagram arsitektur aktual](../diagrams/06-architecture-as-built.md) | Komponen nyata, integrasi yang belum tersedia, dan alur transaksi |
 
@@ -71,7 +71,7 @@ Saat audit, pendaftaran baru belum tersambung penuh. Demo dapat memakai akun pen
 | Area | Yang ada | Gap / tindak lanjut |
 |---|---|---|
 | Build dan kontrak | pnpm lockfile, Turborepo, build shared/API/web, Prisma | Root type-check sebelumnya tidak memeriksa web; script sudah ditambahkan. Web masih `strict:false`. Pisahkan refactor strict bertahap |
-| QA dan CI | Test, coverage, gate regression dan workflow QA ditambahkan dalam audit ini | Workflow baru belum dijalankan GitHub. Gate acceptance dan target coverage100% akan merah sampai syaratnya terpenuhi. API lint placeholder dan `next lint` pada web masih gagal |
+| QA dan CI | Test, coverage, gate regression dan workflow QA ditambahkan dalam audit ini | Workflow baru belum dijalankan GitHub. Gate acceptance worker satelit kini hijau (SAT-01..04 diperbaiki); gate paket lain dan target coverage 100% masih merah sampai syaratnya terpenuhi. API lint placeholder dan `next lint` pada web masih gagal |
 | Database | PostgreSQL/PostGIS, FK/constraint, trigger, migration | Belum menjalankan suite integrasi SQL/concurrency; rollback/recovery migration, backup restore dan hak akses akun cloud belum diverifikasi |
 | Kesehatan layanan | `/health`, jadwal keepalive | Health hanya liveness, belum readiness database/storage. Uji cold start, dependency outage dan target latency |
 | Scheduler | Cron NestJS dengan lock satu proses; satelit via Actions | Lock tidak lintas replika; restart/duplikasi perlu idempotensi dan koordinasi database. Jadwal satelit dapat skip jika secret tidak ada; keberadaan secret aktual belum dicek |
@@ -96,14 +96,16 @@ Lihat [diagram Mermaid arsitektur aktual dan alur data](../diagrams/06-architect
 | Inovasi/solusi — 25% | Kepercayaan dan ketidakpastian panen dihubungkan dengan keputusan perdagangan | Wawancara petani dan pembeli, contoh masalah terukur, alasan metode, pembanding dan batas solusi; jangan mengarang hasil validasi |
 | UI/UX — 15% | Bahasa lokal, role-based navigation, status dan preview | Rekaman UAT tanpa bantuan, perbaikan onboarding/lokasi/offline, konsistensi mobile dan error state |
 
-Worker sekarang memakai deteksi fenologi berbasis aturan, bukan bukti model ML yang dilatih. Coverage 100% worker tidak membuktikan NDVI akurat mengidentifikasi tanggal panen pada semua komoditas. Empat defect yang direproduksi mencakup pencampuran musim, badge lama tertimpa, piksel luar poligon dihitung sebagai awan, dan kegagalan HTTP yang tidak terisolasi. Ini langsung memengaruhi janji inovasi sehingga harus diperbaiki sebelum menunjukkan status verifikasi sebagai kebenaran lapangan.
+Worker sekarang memakai deteksi fenologi berbasis aturan, bukan bukti model ML yang dilatih. Coverage 100% worker tidak membuktikan NDVI akurat mengidentifikasi tanggal panen pada semua komoditas.
+
+Empat defect yang direproduksi — pencampuran musim, badge lama tertimpa, piksel luar poligon dihitung sebagai awan, dan kegagalan HTTP yang tidak terisolasi — **sudah diperbaiki pada 12 September 2026** dan kini dijaga test biasa, bukan `xfail`. Perinciannya di [audit satelit](SATELLITE_AUDIT.md). Yang **tidak** berubah karenanya: baseline masih generik, ambang 7 hari masih tidak konsisten dengan PRD, dan belum ada ground truth lapangan. Perbaikan ini menghapus cacat yang membuat vonis salah secara mekanis; ia tidak memberi hak untuk menampilkan status verifikasi sebagai kebenaran lapangan.
 
 ### Urutan menuju 31 Oktober
 
 | Waktu usulan | Fokus dan syarat selesai |
 |---|---|
 | 10–20 September | Bekukan scope MVP dan state machine; perbaiki onboarding, zona, logout/OTP, akses privat dan cacat atomisitas pembayaran/panen/penerimaan. Acceptance terkait harus lulus |
-| 21–30 September | Selesaikan pilihan shortfall atau batasi opsi yang belum berjalan; perbaiki worker/QR/chain sesuai temuan; putuskan integrasi sandbox resmi versus simulasi yang terang. Tambah PostgreSQL/PostGIS integration tests |
+| 21–30 September | Selesaikan pilihan shortfall atau batasi opsi yang belum berjalan; perbaiki QR/chain sesuai temuan; putuskan integrasi sandbox resmi versus simulasi yang terang. Tambah PostgreSQL/PostGIS integration tests — termasuk menjalankan worker satelit sekali terhadap salinan database sungguhan, karena perbaikan SAT-01/SAT-02 mengubah kontrak SQL-nya dan baru diuji dengan koneksi dimock |
 | 1–10 Oktober | Lanjutkan coverage modul/halaman yang belum diuji sampai target yang diminta; e2e akun baru, kuota terakhir, callback berulang, gagal unggah, klaim dan settlement. Hilangkan lint placeholder |
 | 11–20 Oktober | UAT petani/pembeli/kurir pada Android dan jaringan buruk; uji lapangan citra/foto; perbaiki hambatan terbesar; verifikasi backup, restore dan observabilitas |
 | 21–27 Oktober | Freeze fitur, rehearsal demo, data fixture konsisten, laporan bug dan provenance AI; siapkan demo cadangan lokal/video dengan label yang jujur |
@@ -120,7 +122,7 @@ Jadwal ini usulan kerja, bukan estimasi terjamin; sesuaikan dengan tim dan hasil
 - Kekurangan panen memberi hasil nyata untuk setiap opsi yang ditampilkan; jumlah QR sesuai box fisik terpenuhi.
 - Penerimaan, auto-terima, klaim dan settlement memiliki satu transisi yang dapat diulang secara idempoten.
 - Pengguna lain tidak bisa membaca lokasi/notifikasi privat; logout menghapus sesi dan data pribadi yang relevan.
-- Worker tahan awan, HTTP gagal dan riwayat multi-musim; badge historis sesuai PRD dan limitasi agronominya dijelaskan.
+- Worker tahan awan, HTTP gagal dan riwayat multi-musim; badge historis sesuai PRD dan limitasi agronominya dijelaskan. *(Keempatnya sudah lulus di test offline sejak 12 September; yang belum adalah pembuktiannya terhadap katalog dan database nyata.)*
 - Semua regression acceptance lulus, laporan coverage menunjukkan denominator yang jujur, build/type-check/lint sah, serta e2e/UAT terpisah dari unit tests.
 
 Tidak ada dasar untuk menjamin “make no mistake” secara absolut. Yang bisa diberikan adalah temuan yang dapat ditelusuri, test yang dapat diulang, batas bukti yang dinyatakan, dan penolakan untuk mengubah coverage menjadi klaim fungsionalitas. Laporan ini mempertahankan perbedaan tersebut.

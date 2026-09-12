@@ -52,6 +52,13 @@ export const ENTRI_ESCROW: Record<
     jelas: "Dana pindah ke Tenant yang menggantikan pasokan saat panen Anda kurang.",
     arah: "keluar",
   },
+  ALIH_JADWAL: {
+    label: "Dipindah ke siklus berikutnya",
+    jelas:
+      "Pembeli memilih menunggu panen Anda berikutnya. Dananya tidak kembali kepadanya — " +
+      "tahanannya berpindah ke pengiriman siklus itu, dan cair setelah kiriman tersebut diterima.",
+    arah: "keluar",
+  },
 };
 
 /** Server boleh mengirim kunci yang belum dikenal FE — dinyatakan apa adanya, bukan disembunyikan. */

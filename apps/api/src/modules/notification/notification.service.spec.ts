@@ -56,28 +56,46 @@ describe("notification routing with offline adapters", () => {
   });
 });
 
+
 describe("notification gateway payload delivery", () => {
+  const jwt = (payload: unknown) => ({ verifyAsync: vi.fn().mockResolvedValue(payload) });
+  const rejectingJwt = () => ({ verifyAsync: vi.fn().mockRejectedValue(new Error("invalid signature")) });
+  const socket = (token?: string) => ({ id: "client", join: vi.fn(), handshake: { auth: token ? { token } : {}, headers: {} } });
+
   it("tolerates a disconnected adapter without breaking the caller", () => {
-    expect(() => new NotificationGateway().push("u1", {} as never)).not.toThrow();
+    expect(() => new NotificationGateway(jwt(null) as never).push("u1", {} as never)).not.toThrow();
   });
   it("delivers to the intended per-user room only", () => {
-    const gateway = new NotificationGateway(); const emit = vi.fn(); const to = vi.fn().mockReturnValue({ emit });
+    const gateway = new NotificationGateway(jwt(null) as never); const emit = vi.fn(); const to = vi.fn().mockReturnValue({ emit });
     gateway.server = { to } as never;
     const notification = { kind: "KURIR_TIBA", body: "Example" };
     gateway.push("u1", notification as never);
     expect(to).toHaveBeenCalledWith("user:u1");
     expect(emit).toHaveBeenCalledWith(NOTIF_EVENTS.PUSH, notification);
   });
-  it.each([undefined, {}, { userId: "" }])("rejects missing room identity %j", (body) => {
-    const join = vi.fn();
-    expect(new NotificationGateway().onSubscribe(body as never, { join } as never)).toMatchObject({ ok: false });
-    expect(join).not.toHaveBeenCalled();
+  it("subscribes an authenticated client to its own room without trusting the payload", async () => {
+    const gateway = new NotificationGateway(jwt({ sub: "u1", role: "BUYER" }) as never);
+    const client = socket("valid-token");
+    expect(await gateway.onSubscribe({}, client as never)).toEqual({ ok: true, room: "user:u1" });
+    expect(client.join).toHaveBeenCalledWith("user:u1");
   });
-  // The missing authorization is an acceptance defect, not a successful security test.
-  const regression = process.env.QA_ENFORCE_REGRESSIONS === "1" ? it : it.fails;
-  regression("KNOWN GAP: rejects subscribing to another user's notifications without authentication", () => {
-    const client = { id: "anonymous", join: vi.fn() };
-    new NotificationGateway().onSubscribe({ userId: "another-user" }, client as never);
+  it.each([undefined, "", "not-a-bearer"])("refuses to open a room without a verifiable token %j", async (token) => {
+    const client = socket(token as string | undefined);
+    const gateway = new NotificationGateway(rejectingJwt() as never);
+    expect(await gateway.onSubscribe({ userId: "u1" }, client as never)).toMatchObject({ ok: false });
+    expect(client.join).not.toHaveBeenCalled();
+  });
+  // The identity comes from the signed token; the payload may only name the caller itself.
+  it("rejects subscribing to another user's notifications", async () => {
+    const gateway = new NotificationGateway(jwt({ sub: "u1", role: "BUYER" }) as never);
+    const client = socket("valid-token");
+    expect(await gateway.onSubscribe({ userId: "another-user" }, client as never)).toMatchObject({ ok: false, error: "AKSES_DITOLAK" });
+    expect(client.join).not.toHaveBeenCalled();
+  });
+  it("rejects an anonymous client even when it knows a real user id", async () => {
+    const gateway = new NotificationGateway(jwt({ sub: "u1", role: "BUYER" }) as never);
+    const client = { id: "anonymous", join: vi.fn(), handshake: { auth: {}, headers: {} } };
+    expect(await gateway.onSubscribe({ userId: "u1" }, client as never)).toMatchObject({ ok: false });
     expect(client.join).not.toHaveBeenCalled();
   });
 });

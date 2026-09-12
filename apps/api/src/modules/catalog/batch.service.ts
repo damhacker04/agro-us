@@ -6,6 +6,15 @@ import type { OpenQuotaDto } from "./catalog.dto";
 /** Batch yang masih "hidup" — menahan kapasitas lahan dan masih boleh dijual. */
 const ACTIVE_PRODUCTION = ["PLANNING", "GROWING"] as const;
 
+/**
+ * Pelanggaran unique constraint dari Prisma. Dikenali lewat kode galatnya, bukan lewat
+ * `instanceof`: yang dikenali adalah KONTRAK Prisma, dan pemeriksaan kelas membuat
+ * service ini gagal dipakai di bawah test double mana pun.
+ */
+function isUniqueViolation(e: unknown): boolean {
+  return typeof e === "object" && e !== null && (e as { code?: unknown }).code === "P2002";
+}
+
 @Injectable()
 export class BatchService {
   constructor(private readonly prisma: PrismaService) {}
@@ -120,18 +129,37 @@ export class BatchService {
       });
     }
 
-    const batch = await this.prisma.batch.create({
-      data: {
-        productId: product.id,
-        landPlotId: dto.landPlotId,
-        quotaBoxTotal: dto.quotaBoxTotal,
-        lockedPrice: dto.lockedPrice,
-        claimedPlantDate: plantDate,
-        claimedHarvestDate: harvestDate,
-        productionStatus: plantDate ? "GROWING" : "PLANNING",
-      },
-    });
-    return this.toResponse(batch);
+    try {
+      const batch = await this.prisma.batch.create({
+        data: {
+          productId: product.id,
+          landPlotId: dto.landPlotId,
+          quotaBoxTotal: dto.quotaBoxTotal,
+          lockedPrice: dto.lockedPrice,
+          claimedPlantDate: plantDate,
+          claimedHarvestDate: harvestDate,
+          productionStatus: plantDate ? "GROWING" : "PLANNING",
+        },
+      });
+      return this.toResponse(batch);
+    } catch (e) {
+      // Pemeriksaan `cap.available` di atas terjadi SEBELUM insert, jadi dua permintaan
+      // yang datang bersamaan sama-sama melihat petak kosong. Yang benar-benar menjaga
+      // adalah partial unique index `batches_land_plot_aktif_uniq` (migration
+      // 20260912000000): pemenangnya menyimpan, yang kalah ditolak database. Di sini
+      // penolakan itu diterjemahkan ke jawaban yang sama dengan jalur pemeriksaan biasa
+      // supaya Tenant melihat satu pesan, bukan galat 500 yang membingungkan.
+      if (!isUniqueViolation(e)) throw e;
+      const blocking = await this.prisma.batch.findFirst({
+        where: { landPlotId: dto.landPlotId, productionStatus: { in: [...ACTIVE_PRODUCTION] } },
+        select: { id: true },
+      });
+      throw new ConflictException({
+        code: "LAND_PLOT_BUSY",
+        message: "Lahan ini masih dipakai batch yang berjalan. Selesaikan panennya dulu, atau pilih lahan lain.",
+        ...(blocking && { blockingBatchId: blocking.id }),
+      });
+    }
   }
 
   /**

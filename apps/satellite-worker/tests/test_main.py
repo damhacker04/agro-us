@@ -52,18 +52,39 @@ def test_future_harvest_window_stops_today(batch):
     assert main.observation_window(item)[1] == date.today()
 
 
+@pytest.fixture
+def no_imagery(monkeypatch):
+    monkeypatch.setattr(main, "build_provider", Mock(side_effect=AssertionError("Imagery must not be fetched")))
+
+
 @pytest.mark.parametrize("tier,subscription,photo,status", [
     ("TERBATAS", True, True, "TIDAK_DAPAT"),
-    ("NORMAL", False, True, "FOTO_SAJA"),
     ("NORMAL", False, False, "TIDAK_DAPAT"),
 ])
-def test_ineligible_batches_skip_imagery(repo, batch, tier, subscription, photo, status, monkeypatch):
-    build = Mock(side_effect=AssertionError("Imagery must not be fetched"))
-    monkeypatch.setattr(main, "build_provider", build)
+def test_ineligible_batches_record_status_without_imagery(repo, batch, no_imagery, tier, subscription, photo, status):
     item = replace(batch, verification_tier=tier, subscription_active=subscription, has_photo_evidence=photo)
     assert main.process_batch(repo, item) == status
     repo.update_batch_verification.assert_called_once_with(item.batch_id, status, None, None)
     repo.load_observations.assert_not_called()
+
+
+def test_unchanged_status_is_not_rewritten_every_run(repo, batch, no_imagery):
+    """A daily job that changes nothing must not write anything."""
+    item = replace(batch, subscription_active=False, has_photo_evidence=True, verification_status="FOTO_SAJA")
+    assert main.process_batch(repo, item) == "FOTO_SAJA"
+    repo.update_batch_verification.assert_not_called()
+
+
+@pytest.mark.parametrize("issued", ["TERVERIFIKASI", "PERLU_DITINJAU", "TIDAK_SESUAI"])
+@pytest.mark.parametrize("tier,subscription", [("TERBATAS", True), ("NORMAL", False)])
+def test_issued_badge_survives_lapsed_subscription_and_downgraded_tier(
+    repo, batch, no_imagery, issued, tier, subscription
+):
+    """FR-9.2 — a run that reads no imagery brings no evidence, so it revokes nothing."""
+    item = replace(batch, verification_tier=tier, subscription_active=subscription,
+                   has_photo_evidence=False, verification_status=issued)
+    assert main.process_batch(repo, item) == issued
+    repo.update_batch_verification.assert_not_called()
 
 
 @pytest.mark.parametrize("failure", [RuntimeError("unavailable"), NotImplementedError("not implemented")])
@@ -95,7 +116,7 @@ def test_no_new_scene_reuses_persisted_history_without_fetch(repo, batch, monkey
     monkeypatch.setattr(main, "build_provider", lambda _: provider)
     assert main.process_batch(repo, batch) == "TIDAK_DAPAT"
     provider.fetch.assert_not_called()
-    repo.load_observations.assert_called_once_with(batch.land_plot_id)
+    repo.load_observations.assert_called_once_with(batch.land_plot_id, *main.observation_window(batch))
 
 
 def test_duplicate_day_prefers_clearer_scene_and_null_ndvi_cannot_be_usable(repo, batch, make_scene, monkeypatch):
@@ -139,6 +160,21 @@ def test_main_processes_each_active_batch_and_returns_success(batch, count, synt
     factory.assert_called_once_with("postgresql://test/db")
     assert ("MODE SINTETIS" in caplog.text) is synthetic
     assert ("TERVERIFIKASI=2" if count else "tidak ada batch") in caplog.text
+
+
+def test_one_failing_batch_does_not_abort_the_daily_job(batch, monkeypatch, caplog):
+    """SAT-04 at job level: isolate the failure, keep going, then report PARSIAL."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test/db")
+    repository = Mock()
+    repository.fetch_active_batches.return_value = [batch, batch, batch]
+    monkeypatch.setattr(main, "Repository", Mock(return_value=repository))
+    processor = Mock(side_effect=["TERVERIFIKASI", MemoryError("out of memory"), "TERVERIFIKASI"])
+    monkeypatch.setattr(main, "process_batch", processor)
+    with caplog.at_level("INFO"):
+        assert main.main() == 2
+    assert processor.call_count == 3
+    assert "GAGAL=1" in caplog.text and "TERVERIFIKASI=2" in caplog.text
+    assert "PARSIAL" in caplog.text
 
 
 def test_main_missing_dsn_returns_configuration_error():

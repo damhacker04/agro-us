@@ -91,30 +91,49 @@ export class PaymentService {
   async handleWebhook(invoiceRef: string, status: "PAID" | "FAILED") {
     const payment = await this.prisma.payment.findUnique({
       where: { invoiceRef },
-      include: { order: { include: { items: true } } },
+      select: { id: true, orderId: true, invoiceRef: true, status: true },
     });
     if (!payment) throw new NotFoundException({ code: "INVOICE_NOT_FOUND", message: "Tagihan tidak ditemukan." });
 
-    // Idempoten — gateway lazim mengirim callback berkali-kali.
+    // Penolakan cepat untuk callback berulang yang lazim dikirim gateway. Ini HANYA
+    // penghematan; yang benar-benar menjaga adalah klaim bersyarat di dalam transaksi
+    // di bawah — pemeriksaan di sini terjadi sebelum transaksi dan karenanya tidak
+    // dapat menghalangi dua callback yang tiba bersamaan.
     if (payment.status !== "PENDING") {
       return { invoiceRef, status: payment.status, alreadyProcessed: true };
     }
 
-    if (status === "FAILED") {
-      await this.prisma.$transaction(async (tx) => {
-        await tx.payment.update({ where: { id: payment.id }, data: { status: "FAILED" } });
+    const claimed = await this.prisma.$transaction(async (tx) => {
+      // KLAIM STATUS DULU, baru kerjakan akibatnya. `updateMany` dengan syarat
+      // `status: PENDING` adalah satu pernyataan UPDATE … WHERE: pemenangnya
+      // mendapat count 1, callback kembar mendapat 0 dan tidak mengerjakan apa pun.
+      // Membaca status lalu menulisnya tanpa syarat — bentuk sebelumnya — membuat dua
+      // callback sama-sama lolos dan menerbitkan DUA entri HOLD untuk satu tagihan.
+      const { count } = await tx.payment.updateMany({
+        where: { id: payment.id, status: "PENDING" },
+        data: status === "PAID" ? { status: "PAID", paidAt: new Date() } : { status: "FAILED" },
+      });
+      if (count !== 1) return false;
+
+      if (status === "FAILED") {
         await this.releaseQuota(tx, payment.orderId);
         await tx.order.update({ where: { id: payment.orderId }, data: { orderStatus: "CLOSED" } });
-      });
-      return { invoiceRef, status: "FAILED" as const, alreadyProcessed: false };
-    }
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.payment.update({ where: { id: payment.id }, data: { status: "PAID", paidAt: new Date() } });
+        return true;
+      }
       await tx.order.update({ where: { id: payment.orderId }, data: { orderStatus: "PAID" } });
       await this.escrow.holdForOrder(tx, payment.orderId, payment.invoiceRef);
+      return true;
     });
 
+    if (!claimed) {
+      // Kalah balapan: tagihan sudah diproses panggilan lain. Jawaban tetap sukses —
+      // gateway yang mengulang callback tidak sedang melakukan kesalahan — tetapi
+      // statusnya dibaca ulang supaya yang dilaporkan adalah yang benar-benar tersimpan.
+      const current = await this.prisma.payment.findUnique({ where: { invoiceRef }, select: { status: true } });
+      return { invoiceRef, status: current?.status ?? payment.status, alreadyProcessed: true };
+    }
+
+    if (status === "FAILED") return { invoiceRef, status: "FAILED" as const, alreadyProcessed: false };
     this.logger.log(`Tagihan ${invoiceRef} LUNAS — dana ditahan di escrow`);
     return { invoiceRef, status: "PAID" as const, alreadyProcessed: false };
   }
@@ -130,15 +149,27 @@ export class PaymentService {
     });
     if (!stale.length) return { expired: 0 };
 
+    let expired = 0;
     for (const p of stale) {
-      await this.prisma.$transaction(async (tx) => {
-        await tx.payment.update({ where: { id: p.id }, data: { status: "EXPIRED" } });
+      // Sama seperti callback: kedaluwarsa harus KALAH dari pembayaran yang tiba
+      // sedetik sebelumnya. Tanpa syarat `status: PENDING`, cron ini bisa menimpa
+      // tagihan yang baru saja LUNAS — melepas kuota yang sudah terjual dan menutup
+      // pesanan yang uangnya sudah masuk escrow.
+      const released = await this.prisma.$transaction(async (tx) => {
+        const { count } = await tx.payment.updateMany({
+          where: { id: p.id, status: "PENDING" },
+          data: { status: "EXPIRED" },
+        });
+        if (count !== 1) return false;
         await this.releaseQuota(tx, p.orderId);
         await tx.order.update({ where: { id: p.orderId }, data: { orderStatus: "CLOSED" } });
+        return true;
       });
+      if (!released) continue;
+      expired += 1;
       this.logger.log(`Tagihan ${p.invoiceRef} kedaluwarsa — kuota dilepas`);
     }
-    return { expired: stale.length };
+    return { expired };
   }
 
   /** Kembalikan kuota yang sempat direservasi order ini. */

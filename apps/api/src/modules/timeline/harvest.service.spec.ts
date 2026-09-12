@@ -1,13 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 import { HarvestService } from "./harvest.service";
-const regression = process.env["QA_ENFORCE_REGRESSIONS"] === "1" ? it : it.fails;
 
+/**
+ * `appendNode` di sini meniru kontrak aslinya: pekerjaan tambahan milik pemanggil
+ * dijalankan DI DALAM transaksi node. Kalau append gagal, pekerjaan itu tidak pernah
+ * dijalankan — itulah yang membuat `confirmedAt` tidak bisa tertinggal sendirian.
+ */
 function fixture() {
+  const tx = { yieldAssessment: { update: vi.fn() } };
   const prisma = { batch: { findFirst: vi.fn().mockResolvedValue({ id: "b1", quotaBoxSold: 10, productionStatus: "GROWING" }) }, yieldAssessment: { findFirst: vi.fn().mockResolvedValue({ reportedBox: 8 }), update: vi.fn() } };
   const assessment = { nilai: vi.fn().mockResolvedValue({ verdict: "WAJAR" }) };
   const allocation = { preview: vi.fn().mockResolvedValue({ fullyFulfilled: [] }) };
-  const timeline = { appendNode: vi.fn().mockResolvedValue({ nodeId: "node1" }) };
-  return { prisma, assessment, allocation, timeline, service: new HarvestService(prisma as never, assessment as never, allocation as never, timeline as never) };
+  const timeline = { appendNode: vi.fn(async (_t, _b, _d, _p, dalamTransaksi?: (t: unknown) => Promise<void>) => { await dalamTransaksi?.(tx); return { nodeId: "node1" }; }) };
+  return { prisma, tx, assessment, allocation, timeline, service: new HarvestService(prisma as never, assessment as never, allocation as never, timeline as never) };
 }
 describe("HarvestService two-step confirmation", () => {
   it.each([[8, 8], [20, 10], [0, 0]])("previews %i reported boxes capped at sold quota (%i) without committing a harvest", async (reported, allocatable) => {
@@ -53,24 +58,34 @@ describe("HarvestService two-step confirmation", () => {
     expect(timeline.appendNode).not.toHaveBeenCalled();
   });
   it("commits exactly the previewed quantity and forwards the original evidence", async () => {
-    const { service, prisma, timeline } = fixture();
+    const { service, tx, timeline } = fixture();
     const dto = { activityType: "PANEN", assessmentId: "a1", fulfilledBox: 8 };
     const photos = [{ buffer: Buffer.from("proof"), originalname: "proof.jpg", mimetype: "image/jpeg", size: 5 }];
     expect(await service.confirm("t1", "b1", dto as never, photos)).toEqual({ nodeId: "node1" });
-    expect(prisma.yieldAssessment.update).toHaveBeenCalledWith({ where: { id: "a1" }, data: { confirmedAt: expect.any(Date) } });
-    expect(timeline.appendNode).toHaveBeenCalledWith("t1", "b1", dto, photos);
+    // Penandaan memakai klien transaksi node, bukan koneksi terpisah.
+    expect(tx.yieldAssessment.update).toHaveBeenCalledWith({ where: { id: "a1" }, data: { confirmedAt: expect.any(Date) } });
+    expect(timeline.appendNode).toHaveBeenCalledWith("t1", "b1", dto, photos, expect.any(Function));
   });
   it("allows failed harvest without a prior yield assessment", async () => {
-    const { service, prisma, timeline } = fixture();
+    const { service, prisma, tx, timeline } = fixture();
     const dto = { activityType: "GAGAL_PANEN" };
     await service.confirm("t1", "b1", dto as never, []);
     expect(prisma.yieldAssessment.findFirst).not.toHaveBeenCalled();
-    expect(timeline.appendNode).toHaveBeenCalledWith("t1", "b1", dto, []);
+    expect(tx.yieldAssessment.update).not.toHaveBeenCalled();
+    expect(timeline.appendNode).toHaveBeenCalledWith("t1", "b1", dto, [], expect.any(Function));
   });
-  regression("BUG-BE-02: failed evidence validation must not permanently mark the assessment confirmed", async () => {
-    const { service, prisma, timeline } = fixture();
+  it("does not mark the assessment confirmed when evidence validation fails (BE-02)", async () => {
+    const { service, prisma, tx, timeline } = fixture();
     timeline.appendNode.mockRejectedValue(new Error("GPS outside parcel"));
     await expect(service.confirm("t1", "b1", { activityType: "PANEN", assessmentId: "a1", fulfilledBox: 8 } as never, [])).rejects.toThrow("GPS outside parcel");
+    expect(tx.yieldAssessment.update).not.toHaveBeenCalled();
+    expect(prisma.yieldAssessment.update).not.toHaveBeenCalled();
+  });
+  it("never confirms an assessment outside the harvest transaction (BE-02)", async () => {
+    const { service, prisma } = fixture();
+    await service.confirm("t1", "b1", { activityType: "PANEN", assessmentId: "a1", fulfilledBox: 8 } as never, []);
+    // Satu-satunya penulis `confirmedAt` adalah klien transaksi; koneksi biasa tidak
+    // boleh dipakai, karena tulisannya akan selamat dari rollback panen.
     expect(prisma.yieldAssessment.update).not.toHaveBeenCalled();
   });
 });

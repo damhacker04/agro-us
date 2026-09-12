@@ -3,7 +3,8 @@
 import React, { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { GalatApi, mintaOtp, verifikasiOtp } from "@/lib/api";
-import { berandaPeran, simpanSesi } from "@/lib/auth";
+import { simpanSesi } from "@/lib/auth";
+import { tujuanSetelahMasuk } from "@/lib/rute-masuk";
 import { OTP_LENGTH } from "@agro-os/shared";
 import { Galat, Halaman, Label, Panel, Prosa, Sunyi, TautanKembali, Tombol } from "@/ui";
 
@@ -86,7 +87,10 @@ function VerifyContent() {
         ...(peran === "OPERATOR" ? {} : { role: peran }),
       });
       simpanSesi(res.accessToken, res.user);
-      router.push(berandaPeran(res.user.role));
+      // Tujuan dihitung SETELAH sesi tersimpan: pemeriksaan profilnya memakai token yang
+      // baru saja terbit. Nomor baru berakhir di onboarding, bukan di dasbor yang akan
+      // menjawab "profil belum dibuat".
+      router.push(await tujuanSetelahMasuk(res.user));
     } catch (err) {
       setGalat(err instanceof GalatApi ? err.message : "Kode tidak sesuai.");
       setProses(false);

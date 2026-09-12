@@ -14,6 +14,16 @@ def test_all_scl_classes_are_classified_and_empty_scene_is_unusable():
     assert cloud_fraction(np.array([])) == 100
 
 
+def test_polygon_domain_is_excluded_from_the_cloud_fraction():
+    """Bounding-box padding is not sky: it must leave both numerator and denominator."""
+    scl = np.array([[0, 0], [4, 9]])
+    inside = np.array([[False, False], [True, True]])
+    assert cloud_fraction(scl, inside) == 50
+    assert valid_mask(scl, inside).tolist() == [[False, False], [True, False]]
+    # A window that misses the polygon entirely has nothing to judge, not a clear sky.
+    assert cloud_fraction(scl, np.zeros((2, 2), dtype=bool)) == 100
+
+
 def test_ratios_use_signed_float_and_handle_zero_denominator():
     red = np.array([1000, 3000, 0], dtype=np.uint16)
     nir = np.array([3000, 1000, 0], dtype=np.uint16)

@@ -42,6 +42,11 @@ class ActiveBatch:
     commodity_name: str
     has_photo_evidence: bool
     subscription_active: bool
+    # Badge yang SEDANG tersimpan. Worker perlu tahu apa yang akan ditimpanya:
+    # FR-9.2 menyatakan badge yang sudah terbit bersifat permanen, jadi job yang
+    # tidak melihat citra apa pun tidak boleh menurunkannya. Default mengikuti
+    # default kolomnya di schema Prisma.
+    verification_status: str = "FOTO_SAJA"
 
 
 class Repository:
@@ -68,6 +73,7 @@ class Repository:
                 b.claimed_plant_date,
                 b.claimed_harvest_date,
                 b.production_status::text               AS production_status,
+                b.verification_status::text             AS verification_status,
                 c.name                                  AS commodity_name,
                 EXISTS (
                     SELECT 1 FROM timeline_nodes tn
@@ -109,6 +115,7 @@ class Repository:
                     commodity_name=r["commodity_name"],
                     has_photo_evidence=bool(r["has_photo_evidence"]),
                     subscription_active=effective_sub,
+                    verification_status=r["verification_status"],
                 )
             )
         return out
@@ -152,15 +159,23 @@ class Repository:
             row = cur.fetchone()
         return row["d"] if row else None
 
-    def load_observations(self, land_plot_id: str) -> list[dict]:
+    def load_observations(self, land_plot_id: str, start: date, end: date) -> list[dict]:
+        """Amatan lahan DALAM jendela satu batch — bukan seluruh riwayat lahan.
+
+        Satu lahan bisa dipakai beberapa musim tanam berturut-turut, sedangkan
+        detektor fenologi mengambil tajuk PERTAMA pada deret yang diberikan. Tanpa
+        batas jendela, batch musim ini divonis memakai siklus musim lalu dan puncak
+        NDVI untuk pita kewajaran diambil dari tanaman yang salah.
+        """
         sql = """
             SELECT scene_date, ndvi_mean::float, ndmi_mean::float, cloud_pct::float, usable
             FROM satellite_observations
             WHERE land_plot_id = %s::uuid
+              AND scene_date BETWEEN %s AND %s
             ORDER BY scene_date
         """
         with self._connect() as conn, conn.cursor() as cur:
-            cur.execute(sql, (land_plot_id,))
+            cur.execute(sql, (land_plot_id, start, end))
             return cur.fetchall()
 
     def update_batch_verification(

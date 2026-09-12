@@ -1,6 +1,6 @@
 # Panduan pengguna AgroUs
 
-Panduan berdasarkan implementasi yang diaudit 9–11 September 2026. Hambatan dan simulasi ditandai agar langkah demo tidak dianggap layanan produksi yang sudah lengkap. Lihat [laporan QA](AUDIT_TCC_2026.md) untuk daftar perbaikan.
+Panduan berdasarkan implementasi yang diaudit 9–11 September 2026, dengan jalur pendaftaran, zona dan keluar diperbarui setelah perbaikan P1 pada 12 September 2026. Hambatan dan simulasi ditandai agar langkah demo tidak dianggap layanan produksi yang sudah lengkap. Lihat [laporan QA](AUDIT_TCC_2026.md) untuk daftar perbaikan.
 
 ## Tutorial sesuai implementasi saat audit
 
@@ -9,7 +9,7 @@ Panduan ini membedakan alur yang tersedia dengan hambatan yang perlu diperbaiki.
 ### Petani/pengelola lahan (Tenant)
 
 1. Buka beranda → **Masuk sebagai Tenant** / `/auth/tenant`. Masukkan nomor WhatsApp dan verifikasi OTP enam digit. Kode demo terisi otomatis hanya bila API mengembalikan `devOtp`.
-2. **Akun baru saat ini terhenti pada profil yang belum dibuat.** Sebagai workaround demo, setelah login buka `/tenant/onboarding/profile` secara langsung, isi nama usaha dan pilih satu/lebih zona layanan. Ini workaround, bukan flow onboarding yang sudah beres.
+2. Nomor baru diarahkan sendiri ke `/tenant/onboarding/profile`: isi nama usaha dan pilih satu atau lebih zona layanan. Onboarding yang ditinggalkan di tengah dilanjutkan saat masuk lagi — profil tanpa satu pun petak dibawa ke langkah pemetaan, bukan ke dasbor.
 3. Di pemetaan, pilih **Kelilingi lahan**. Berdiri pada tiap sudut petak lalu tekan **Tandai sudut di titik ini**; minimal tiga sudut. Alternatifnya ketik koordinat yang benar. Periksa bentuk dan luas, lalu simpan. Peta dasar tidak tersedia.
 4. Lanjutkan konfirmasi petak dan unggah foto NIB/KTP untuk tinjauan operator. JPG/PNG/WebP; PDF tidak diterima endpoint foto. Pembukaan kuota menunggu legalitas disetujui.
 5. Di **Katalog produk**, tambah produk: komoditas, grade, ukuran kg per box, harga dan keterangan. Produk dapat diedit; batch PO yang sudah terbit memiliki harga terkunci sendiri.
@@ -21,8 +21,8 @@ Panduan ini membedakan alur yang tersedia dengan hambatan yang perlu diperbaiki.
 
 ### Pembeli restoran/cafe/distributor
 
-1. Buka **Masuk sebagai Pembeli** / `/auth/buyer`, lalu OTP. **Akun baru belum mempunyai layar profil usaha**, sehingga untuk demo perlu akun yang profil dan `activeZoneId`-nya telah disiapkan; tidak ada workaround UI lengkap saat ini.
-2. Pilih zona layanan. **Gunakan zona yang sama dengan profil demo**, karena perubahan zona di layar belum disimpan ke database.
+1. Buka **Masuk sebagai Pembeli** / `/auth/buyer`, lalu OTP. Nomor baru diarahkan ke `/buyer/onboarding/profile`: isi nama usaha dan pilih satu zona layanan. Profilnya dibuat di server saat itu juga, dan katalog zona tersebut langsung terbuka.
+2. Zona bisa diganti kapan saja lewat **Ganti wilayah**. Pilihannya disimpan ke profil lebih dulu, jadi ongkir, minimum pesanan dan kecocokan pesanan dihitung dengan zona yang sedang Anda lihat. Bila keranjang berisi batch dari zona lain, halaman menyatakan lebih dulu bahwa perpindahan akan mengosongkannya.
 3. Telusuri katalog, cari nama produk dan urutkan grade/harga/tanggal. Buka produk untuk melihat harga per box, kg per box, kuota, mutu, foto timeline, status verifikasi dan kurva NDVI. Status tidak dapat dinilai tidak sama dengan tuduhan curang.
 4. Isi jumlah box lalu tambah ke keranjang. Beberapa tenant dapat digabung; lihat rencana pengiriman dan minimum per pengiriman. Kuota belum direservasi hanya dengan masuk keranjang.
 5. Lanjut checkout: nama/telepon penerima, patokan, jam terima, dan **koordinat tujuan yang benar**. Default Malang harus diperiksa. Pilih QRIS/VA/e-wallet. Opsi PDF ada, tetapi unduh hasilnya belum lengkap; hindari menjadikannya janji layanan pada demo.
@@ -30,7 +30,7 @@ Panduan ini membedakan alur yang tersedia dengan hambatan yang perlu diperbaiki.
 7. Pada halaman pembayaran demo, baca invoice dan klik **Saya sudah bayar** untuk simulasi. Ini bukan cara membayar sungguhan melalui bank.
 8. Buka **Pesanan saya** → detail. Pantau status, item, bukti budidaya dan tracking berkala. Jika shortfall, buka resolusi dan periksa opsi yang server tawarkan: substitusi, jadwal ulang, refund atau menerima sebagian. **Jadwal ulang belum benar-benar membuat alokasi baru, meskipun respons mengklaim berhasil**; jangan menjanjikan pemenuhan berikutnya dari aksi ini. Halaman resolusi sekarang memuat keputusan tertunda dari seluruh pesanan akun, bukan hanya order pada URL.
 9. Saat barang datang, unggah foto kondisi dan konfirmasi terima. Jika mutu/berat tidak sesuai, ajukan klaim dengan foto dan hasil timbang dalam waktu yang ditunjukkan countdown; jangan memakai angka toleransi/jendela di luar respons aplikasi sebagai asumsi universal.
-10. Selesai bekerja pada perangkat bersama, ketahui bahwa tombol keluar pembeli **belum menghapus sesi**. Perbaiki ini sebelum uji pengguna sungguhan; logout visual saja bukan perlindungan akun.
+10. Selesai bekerja pada perangkat bersama, tekan **Keluar**: token, data pengguna dan keranjang dihapus sebelum halaman berpindah. Yang belum ada: entri history tidak diganti, dan 401 belum ditangani terpusat (FE-17) — jadi jangan perlakukan ini sebagai pengerasan sesi yang lengkap.
 
 ### Kurir
 
@@ -46,5 +46,5 @@ Panduan ini membedakan alur yang tersedia dengan hambatan yang perlu diperbaiki.
 2. Buka antrean legalitas, periksa dokumen dan putuskan beserta alasan. Persetujuan memungkinkan tenant melanjutkan pembukaan PO.
 3. Buka antrean klaim dan tinjau foto, berat/nilai klaim serta usia kasus sebelum memutuskan. Ikuti hak keputusan server, jangan mengubah angka lewat browser.
 4. Periksa antrean satelit/kewajaran; bedakan tidak ada data/awan dengan bukti yang bertentangan. Angka kalibrasi yang masih indikatif memerlukan penjelasan dalam demo.
-5. Pantau umur simpan, escrow dan hash anchor. Atur zona/komoditas hanya pada lingkungan yang memang ingin diubah. Tombol keluar operator juga masih memiliki gap sesi FE-04.
+5. Pantau umur simpan, escrow dan hash anchor. Atur zona/komoditas hanya pada lingkungan yang memang ingin diubah. Tombol keluar operator kini menghapus sesi lewat jalur yang sama dengan peran lain (FE-04).
 

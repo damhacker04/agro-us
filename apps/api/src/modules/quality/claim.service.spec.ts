@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClaimFinalStatus, CLAIM_REVIEW_SLA_HOURS } from "@agro-os/shared";
 import { ClaimService } from "./claim.service";
 
-const regression = process.env["QA_ENFORCE_REGRESSIONS"] === "1" ? it : it.fails;
 const now = new Date("2026-09-10T03:00:00Z");
 
 function fixture() {
@@ -25,7 +24,13 @@ function fixture() {
   const tx = {
     claim: {
       create: vi.fn(async ({ data }) => { Object.assign(record, data); return record; }),
-      update: vi.fn(async ({ data }) => { Object.assign(record, data); return record; }),
+      // Meniru UPDATE bersyarat: putusan hanya menempel selama klaimnya MASIH menunggu
+      // operator, sehingga operator kedua benar-benar mendapat count 0.
+      updateMany: vi.fn(async ({ where, data }: { where: { finalStatus?: string }; data: Record<string, unknown> }) => {
+        if (where.finalStatus !== undefined && record.finalStatus !== where.finalStatus) return { count: 0 };
+        Object.assign(record, data);
+        return { count: 1 };
+      }),
     },
     escrowLedgerEntry: { create: vi.fn().mockResolvedValue({ id: "ledger-1" }) },
   };
@@ -216,7 +221,7 @@ describe("ClaimService operator decisions", () => {
       finalStatus: ClaimFinalStatus.DISETUJUI_OPERATOR, settledValue: amount,
       reviewNote: "Bukti timbang valid", resolvedAt: now.toISOString(),
     });
-    expect(tx.claim.update).toHaveBeenCalledWith({ where: { id: "claim-1" }, data: {
+    expect(tx.claim.updateMany).toHaveBeenCalledWith({ where: { id: "claim-1", finalStatus: ClaimFinalStatus.MENUNGGU_OPERATOR }, data: {
       reviewedById: "operator-1", settledValue: amount, reviewNote: "Bukti timbang valid",
       finalStatus: ClaimFinalStatus.DISETUJUI_OPERATOR, resolvedAt: now,
     } });
@@ -235,25 +240,28 @@ describe("ClaimService operator decisions", () => {
 
   it("does not notify the buyer if the approval transaction fails", async () => {
     const { service, tx, notif, prisma } = fixture();
-    tx.claim.update.mockRejectedValue(new Error("database offline"));
+    tx.claim.updateMany.mockRejectedValue(new Error("database offline"));
     await expect(service.decide("operator-1", "claim-1", 10_000, "Catatan")).rejects.toThrow("database offline");
     expect(tx.escrowLedgerEntry.create).not.toHaveBeenCalled();
     expect(prisma.tenant.update).not.toHaveBeenCalled();
     expect(notif.kirimKePembeliPengiriman).not.toHaveBeenCalled();
   });
 
-  regression("BUG-CLAIM-01: concurrent reviews must deduct escrow only once", async () => {
-    const { service, prisma, record, tx } = fixture();
+  it("deducts escrow only once when two operators review concurrently (BE-12)", async () => {
+    const { service, prisma, record, tx, notif } = fixture();
     // Both requests observe the same pending row before either transaction updates it.
     prisma.claim.findUnique.mockImplementation(async () => ({ ...record, finalStatus: ClaimFinalStatus.MENUNGGU_OPERATOR }));
     const decisions = await Promise.allSettled([
       service.decide("operator-1", "claim-1", 50_000, "Setuju"),
-      service.decide("operator-2", "claim-1", 50_000, "Setuju"),
+      service.decide("operator-2", "claim-1", 30_000, "Setuju sebagian"),
     ]);
     expect(tx.escrowLedgerEntry.create).toHaveBeenCalledTimes(1);
-    // A duplicate can return the same idempotent result or a conflict; either is
-    // acceptable as long as at least one succeeds and the balance changes once.
-    expect(decisions.some(result => result.status === "fulfilled")).toBe(true);
+    // The loser gets a conflict, not a silent second deduction, and the buyer is told
+    // about the decision that was actually recorded exactly once.
+    expect(decisions.filter(result => result.status === "fulfilled")).toHaveLength(1);
+    expect(decisions.find(result => result.status === "rejected")).toMatchObject({ reason: { response: { code: "ALREADY_DECIDED" } } });
+    expect(notif.kirimKePembeliPengiriman).toHaveBeenCalledTimes(1);
+    expect(record.settledValue).toBe(tx.escrowLedgerEntry.create.mock.calls[0][0].data.amount);
   });
 });
 

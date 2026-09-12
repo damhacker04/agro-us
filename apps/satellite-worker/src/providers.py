@@ -25,6 +25,11 @@ class SceneBands:
     nir: np.ndarray   # B08
     swir: np.ndarray  # B11
     scl: np.ndarray   # Scene Classification Layer
+    # Domain poligon: True = piksel benar-benar di atas lahan. Dibawa TERPISAH dari
+    # `scl` karena "di luar batas lahan" dan "tertutup awan" adalah dua hal berbeda;
+    # menggabungkannya membuat lahan cerah tampak berawan (lihat indices.cloud_fraction).
+    # None = seluruh jendela memang milik lahan itu (provider sintetis / uji).
+    inside: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -38,8 +43,8 @@ class SceneStats:
 
 def summarize(bands: SceneBands, max_cloud_pct: float) -> SceneStats:
     """Ubah band mentah menjadi statistik per-poligon (satu baris satellite_observations)."""
-    cloud = cloud_fraction(bands.scl)
-    mask = valid_mask(bands.scl)
+    cloud = cloud_fraction(bands.scl, bands.inside)
+    mask = valid_mask(bands.scl, bands.inside)
 
     if cloud > max_cloud_pct:
         # Scene dibuang seluruhnya — tetap dicatat agar jejak "kenapa tidak ada data" ada.

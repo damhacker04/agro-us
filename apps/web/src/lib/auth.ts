@@ -9,6 +9,7 @@
  * cookie httpOnly + SameSite yang diterbitkan server.
  */
 import type { AuthUser } from "@agro-os/shared";
+import { kosongkanKeranjang } from "./keranjang";
 
 const KUNCI_TOKEN = "agrous.token";
 const KUNCI_USER = "agrous.user";
@@ -44,4 +45,20 @@ export function berandaPeran(peran: AuthUser["role"]): string {
   if (peran === "TENANT") return "/tenant";
   if (peran === "OPERATOR") return "/operator";
   return "/buyer/region";
+}
+
+/**
+ * Keluar sungguhan, satu pintu untuk ketiga peran.
+ *
+ * Sebelumnya tiap cangkang menafsirkan "keluar" sendiri: Tenant menghapus sesi, Pembeli
+ * dan Operator hanya berpindah halaman. Tokennya tetap di `localStorage` dan tetap
+ * dikirim di header `Authorization` — pada ponsel yang dipakai bergantian, orang
+ * berikutnya melanjutkan sesi orang sebelumnya sambil melihat halaman masuk.
+ *
+ * Keranjang ikut dibuang karena isinya milik pembeli yang barusan keluar: batch yang
+ * dipilih, jumlah box, dan zona tempat ia berbelanja.
+ */
+export function akhiriSesi() {
+  hapusSesi();
+  kosongkanKeranjang();
 }

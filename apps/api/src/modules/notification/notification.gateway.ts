@@ -1,4 +1,5 @@
 import { Logger } from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
 import {
   ConnectedSocket,
   MessageBody,
@@ -8,6 +9,7 @@ import {
 } from "@nestjs/websockets";
 import type { Server, Socket } from "socket.io";
 import { NOTIF_EVENTS, NOTIF_NAMESPACE, type AppNotification } from "@agro-os/shared";
+import { identifySocket } from "../auth/ws-auth";
 
 /**
  * Kanal notifikasi in-app (FR-10.3).
@@ -17,9 +19,10 @@ import { NOTIF_EVENTS, NOTIF_NAMESPACE, type AppNotification } from "@agro-os/sh
  * meski sedang tidak membuka peta pelacakan — kalau ditumpangkan ke room pengiriman,
  * justru kejadian terpentingnya yang tidak sampai.
  *
- * ⚠️ Sama seperti /tracking, room BELUM diautentikasi: siapa pun yang tahu userId bisa
- * ikut mendengarkan. userId berupa UUID acak sehingga tidak bisa ditebak, tetapi sebelum
- * produksi handshake wajib memverifikasi JWT.
+ * Room diikat ke TOKEN, bukan ke `userId` yang dikirim klien. Versi sebelumnya menerima
+ * userId apa pun dari payload `subscribe`, sehingga penyadap yang tahu satu UUID pengguna
+ * bisa mendengarkan putusan klaim dan kabar escrow milik orang lain. Payload `userId`
+ * sekarang hanya boleh menyebut diri sendiri; selain itu ditolak.
  */
 @WebSocketGateway({
   namespace: NOTIF_NAMESPACE,
@@ -27,6 +30,8 @@ import { NOTIF_EVENTS, NOTIF_NAMESPACE, type AppNotification } from "@agro-os/sh
 })
 export class NotificationGateway {
   private readonly log = new Logger(NotificationGateway.name);
+
+  constructor(private readonly jwt: JwtService) {}
 
   @WebSocketServer()
   server!: Server;
@@ -36,12 +41,19 @@ export class NotificationGateway {
   }
 
   @SubscribeMessage(NOTIF_EVENTS.SUBSCRIBE)
-  onSubscribe(@MessageBody() body: { userId?: string }, @ConnectedSocket() client: Socket) {
-    const id = body?.userId;
-    if (!id) return { ok: false, error: "userId wajib" };
-    void client.join(this.room(id));
-    this.log.debug(`klien ${client.id.slice(0, 6)} mendengarkan notifikasi ${id.slice(0, 8)}`);
-    return { ok: true, room: this.room(id) };
+  async onSubscribe(@MessageBody() body: { userId?: string }, @ConnectedSocket() client: Socket) {
+    const user = await identifySocket(this.jwt, client);
+    if (!user) return { ok: false, error: "TOKEN_WAJIB" };
+    // Menyebut userId lain bukan sekadar diabaikan, melainkan ditolak: diam-diam
+    // memindahkan langganan ke room sendiri membuat klien mengira ia berhasil
+    // mendengarkan orang lain, dan menyembunyikan percobaan itu dari log.
+    if (body?.userId && body.userId !== user.sub) {
+      this.log.debug(`klien ${client.id?.slice(0, 6)} ditolak mendengarkan room pengguna lain`);
+      return { ok: false, error: "AKSES_DITOLAK" };
+    }
+    void client.join(this.room(user.sub));
+    this.log.debug(`klien ${client.id?.slice(0, 6)} mendengarkan notifikasi ${user.sub.slice(0, 8)}`);
+    return { ok: true, room: this.room(user.sub) };
   }
 
   push(userId: string, notif: AppNotification) {

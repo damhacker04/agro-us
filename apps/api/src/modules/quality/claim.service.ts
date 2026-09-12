@@ -179,9 +179,14 @@ export class ClaimService {
     const tenantId = claim.orderItem?.batch.product.tenantId;
     if (!tenantId) throw new ConflictException({ code: "ITEM_MISSING", message: "Item klaim tidak lengkap." });
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.claim.update({
-        where: { id: claimId },
+    const decided = await this.prisma.$transaction(async (tx) => {
+      // Putusan DIKLAIM dulu lewat UPDATE bersyarat, baru uangnya dipindahkan.
+      // Pemeriksaan `finalStatus` di atas terjadi di luar transaksi: dua operator yang
+      // membuka antrean bersamaan sama-sama melihat MENUNGGU_OPERATOR, dan pada bentuk
+      // sebelumnya keduanya menulis putusan lalu masing-masing memotong escrow —
+      // pembeli menerima dua kali potongan untuk satu klaim.
+      const { count } = await tx.claim.updateMany({
+        where: { id: claimId, finalStatus: ClaimFinalStatus.MENUNGGU_OPERATOR },
         data: {
           reviewedById: operatorUserId,
           settledValue: approvedValue,
@@ -191,10 +196,18 @@ export class ClaimService {
           resolvedAt: new Date(),
         },
       });
+      if (count !== 1) return false;
       if (approvedValue > 0) {
         await this.deductEscrow(tx, claim.shipment.orderId, claim.shipmentId, tenantId, approvedValue, claimId);
       }
+      return true;
     });
+
+    // Kalah balapan: putusan operator lain sudah tercatat. Jangan menimpanya, dan jangan
+    // mengirim notifikasi kedua yang menyebut angka yang tidak jadi dipakai.
+    if (!decided) {
+      throw new ConflictException({ code: "ALREADY_DECIDED", message: "Klaim sudah diputus." });
+    }
 
     await this.refreshClaimRatio(tenantId);
 

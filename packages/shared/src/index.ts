@@ -179,6 +179,14 @@ export const EscrowEntryType = {
   BIAYA_BATAL10: "BIAYA_BATAL10",
   /** Dana pindah ke Tenant pengganti saat pembeli memilih SUBSTITUSI (FR-7.4). */
   ALIH_SUBSTITUSI: "ALIH_SUBSTITUSI",
+  /**
+   * Tahanan dana berpindah ke pengiriman siklus berikutnya saat pembeli memilih
+   * JADWAL_ULANG (FR-7.4). Bukan REFUND — uangnya tidak kembali ke pembeli — dan bukan
+   * ALIH_SUBSTITUSI, karena Tenant-nya tidak berganti, hanya waktunya yang mundur.
+   * Pencairan escrow dihitung per pengiriman, jadi tanpa perpindahan ini dana pembeli
+   * menggantung di pengiriman yang tidak akan pernah selesai.
+   */
+  ALIH_JADWAL: "ALIH_JADWAL",
 } as const;
 export type EscrowEntryType = (typeof EscrowEntryType)[keyof typeof EscrowEntryType];
 
@@ -1006,6 +1014,16 @@ export interface PendingAssurance {
   /** Kosong bila substitusi tidak ditawarkan (lihat `substitutionBlockedReason`). */
   substitutes: SubstituteOption[];
   substitutionBlockedReason?: string;
+  /**
+   * Siklus panen berikutnya milik Tenant YANG SAMA, bila ada kuotanya (FR-7.4).
+   *
+   * Ada isinya = opsi JADWAL_ULANG benar-benar mengikat porsi gagal ke batch ini.
+   * Kosong = tidak ada yang bisa dijanjikan, dan `rescheduleBlockedReason` menjelaskan
+   * sebabnya. Menawarkan tombol jadwal ulang tanpa batch tujuan berarti meminta pembeli
+   * memilih sesuatu yang pasti ditolak, sementara tenggat pilihannya terus berjalan.
+   */
+  rescheduleTo?: { batchId: string; claimedHarvestDate: string; availableBox: number };
+  rescheduleBlockedReason?: string;
 }
 
 export interface SubstituteOption {
@@ -1034,6 +1052,9 @@ export interface ResolveAssuranceResponse {
   refundedValue: Rupiah;
   priceGapBorneByTenant: Rupiah;
   message: string;
+  /** Terisi untuk JADWAL_ULANG: batch siklus berikutnya yang porsinya sudah dikunci. */
+  rescheduledToBatchId?: string;
+  rescheduledHarvestDate?: string;
 }
 
 /** POST /orders/:id/cancel — FR-7.5, hanya selama Menunggu Panen. */

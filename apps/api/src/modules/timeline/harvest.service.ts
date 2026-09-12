@@ -73,9 +73,23 @@ export class HarvestService {
     }
 
     await this.batchMilikTenant(tenantId, batchId);
-    await this.cocokkanPenilaian(batchId, dto);
+    const assessmentId = await this.cocokkanPenilaian(batchId, dto);
 
-    return this.timeline.appendNode(tenantId, batchId, dto, photos);
+    // `confirmedAt` ditulis DI DALAM transaksi yang menulis node panen dan alokasinya.
+    // Sebelumnya ia ditulis lebih dulu, di luar transaksi: ketika bukti ditolak (GPS di
+    // luar poligon, foto hilang) atau alokasi gagal, penilaian tetap tertinggal dengan
+    // tanda "dikonfirmasi" untuk panen yang tidak pernah tercatat — dan karena riwayat
+    // kewajaran inilah yang dibaca saat sengketa, jejak palsu itu mahal.
+    return this.timeline.appendNode(tenantId, batchId, dto, photos, async (tx) => {
+      if (!assessmentId) return;
+      // Tandai penilaian MANA yang menjadi panen (TN-35). Bukan sekadar yang terakhir:
+      // Tenant bisa meminta pratinjau beberapa kali lalu mengonfirmasi memakai yang
+      // pertama, dan justru pola itulah yang riwayat kewajaran ada untuk perlihatkan.
+      await tx.yieldAssessment.update({
+        where: { id: assessmentId },
+        data: { confirmedAt: new Date() },
+      });
+    });
   }
 
   /**
@@ -84,11 +98,16 @@ export class HarvestService {
    * Tanpa pemeriksaan ini seluruh langkah pertama bisa dilewati: minta pratinjau dengan
    * angka yang aman, lalu kirim konfirmasi dengan angka lain. Layar peringatan TN-19b
    * akan tetap muncul di layar Tenant dan tetap tidak berarti apa-apa.
+   *
+   * Hanya MEMERIKSA — tidak menulis apa pun. Penandaan `confirmedAt` menjadi urusan
+   * transaksi panen, supaya keduanya berhasil atau gagal bersama-sama.
+   *
+   * @returns id penilaian yang harus ditandai, atau null untuk GAGAL_PANEN.
    */
-  private async cocokkanPenilaian(batchId: string, dto: CreateNodeDto) {
+  private async cocokkanPenilaian(batchId: string, dto: CreateNodeDto): Promise<string | null> {
     // GAGAL_PANEN berarti nol box. Tidak ada yang perlu dinilai kewajarannya, dan
     // memaksa penilaian di sini hanya menambah langkah pada hari terburuk Tenant.
-    if (dto.activityType === "GAGAL_PANEN") return;
+    if (dto.activityType === "GAGAL_PANEN") return null;
 
     if (!dto.assessmentId) {
       throw new BadRequestException({
@@ -117,13 +136,7 @@ export class HarvestService {
       });
     }
 
-    // Tandai penilaian MANA yang menjadi panen (TN-35). Bukan sekadar yang terakhir:
-    // Tenant bisa meminta pratinjau beberapa kali lalu mengonfirmasi memakai yang pertama,
-    // dan justru pola itulah yang riwayat kewajaran ada untuk perlihatkan.
-    await this.prisma.yieldAssessment.update({
-      where: { id: dto.assessmentId },
-      data: { confirmedAt: new Date() },
-    });
+    return dto.assessmentId;
   }
 
   private async batchMilikTenant(tenantId: string, batchId: string) {

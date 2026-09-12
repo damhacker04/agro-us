@@ -4,7 +4,10 @@ import React, { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ClipboardList, Search, SearchCode, ShoppingCart } from "lucide-react";
+import { GalatApi, ambilProfilPembeli } from "@/lib/api";
+import { akhiriSesi } from "@/lib/auth";
 import { jumlahItem } from "@/lib/keranjang";
+import { RUTE_ONBOARDING_PEMBELI } from "@/lib/rute-masuk";
 import { Cangkang, Ikon, Label, Pil, type ItemMenu } from "@/ui";
 
 /**
@@ -44,6 +47,24 @@ function IsiCangkangPembeli({ children }: { children: React.ReactNode }) {
     setIsiKeranjang(jumlahItem());
   }, [pathname]);
 
+  /**
+   * Onboarding yang belum selesai dilanjutkan di sini, bukan hanya tepat setelah OTP.
+   * Orang menutup tab di tengah jalan, menyimpan tautan katalog, atau membuka aplikasi
+   * dari riwayat peramban — dan tanpa profil, setiap halaman di bawah cangkang ini
+   * berakhir pada BUYER_NOT_FOUND. `replace`, bukan `push`: layar yang tidak bisa dipakai
+   * tidak layak menempati satu langkah di tombol kembali.
+   */
+  useEffect(() => {
+    let batal = false;
+    ambilProfilPembeli().catch((err) => {
+      const belumAda = err instanceof GalatApi && (err.kode === "BUYER_NOT_FOUND" || err.status === 404);
+      if (belumAda && !batal) router.replace(RUTE_ONBOARDING_PEMBELI);
+    });
+    return () => {
+      batal = true;
+    };
+  }, [router]);
+
   function cari(e: React.ChangeEvent<HTMLInputElement>) {
     const params = new URLSearchParams(searchParams);
     if (e.target.value) params.set("q", e.target.value);
@@ -58,7 +79,13 @@ function IsiCangkangPembeli({ children }: { children: React.ReactNode }) {
       peran="Pembeli"
       beranda="/buyer/catalog"
       menu={MENU}
-      keluar={() => router.push("/auth/buyer/login")}
+      keluar={() => {
+        // Keluar menghapus token DAN keranjang lebih dulu; pindah halaman saja hanya
+        // menyembunyikan sesi yang masih dipakai setiap permintaan API berikutnya.
+        akhiriSesi();
+        setIsiKeranjang(0);
+        router.push("/auth/buyer/login");
+      }}
       aksi={
         <>
           {diKatalog ? (

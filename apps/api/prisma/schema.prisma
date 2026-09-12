@@ -180,6 +180,11 @@ enum EscrowEntryType {
   // Dana pindah ke Tenant pengganti saat pembeli memilih SUBSTITUSI (FR-7.4).
   // Bukan REFUND: pembeli tidak menerima uang, barangnya yang diganti.
   ALIH_SUBSTITUSI
+  // Tahanan dana pindah ke pengiriman siklus BERIKUTNYA saat pembeli memilih
+  // JADWAL_ULANG (FR-7.4). Tenant-nya sama; yang mundur hanya waktunya. Pencairan
+  // escrow dihitung per pengiriman, jadi tanpa perpindahan ini dana pembeli tertinggal
+  // di pengiriman yang tidak akan pernah selesai.
+  ALIH_JADWAL
 }
 
 enum SessionEndReason {
@@ -431,6 +436,12 @@ model TimelineNode {
 model NodePhoto {
   id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   nodeId        String        @map("node_id") @db.Uuid
+  /// Urutan unggahan, dan karenanya urutan yang dipakai menghitung `node_hash`.
+  /// WAJIB ada: verifikasi rantai harus membaca foto dalam urutan yang sama dengan
+  /// saat di-hash. Sebelum kolom ini, verifikasi mengurutkan menurut UUID acak dan
+  /// node dengan lebih dari satu foto bisa dilaporkan rusak padahal utuh (BE-11).
+  /// Baris lama semuanya bernilai 0 — urutan aslinya memang tidak pernah tersimpan.
+  ordinal       Int           @default(0)
   objectUrl     String        @map("object_url")
   photoType     PhotoType     @map("photo_type")
   captureSource CaptureSource @map("capture_source")

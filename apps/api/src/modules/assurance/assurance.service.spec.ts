@@ -1,11 +1,30 @@
 import { describe, expect, it, vi } from "vitest";
 import { AssuranceService } from "./assurance.service";
-const regression = process.env["QA_ENFORCE_REGRESSIONS"] === "1" ? it : it.fails;
+
+/**
+ * Dua kueri berbeda memakai `batch.findMany`: pencarian Tenant PENGGANTI dan pencarian
+ * SIKLUS BERIKUTNYA milik Tenant yang sama. Fixture memilahnya lewat syarat
+ * `claimedHarvestDate`, supaya satu tes bisa menyiapkan salah satunya tanpa mengacaukan
+ * yang lain.
+ */
 function fixture() {
-  const item = { id: "i1", orderId: "o1", shipmentId: "s1", batchId: "b1", qtyBox: 10, qtyBoxFulfilled: 4, unitPriceLocked: 100_000, assuranceResolution: null, shipment: { id: "s1", zoneId: "z1", zone: { minOrderValue: 500_000 } }, batch: { id: "b1", verificationStatus: "TERVERIFIKASI", yieldAssessments: [{ verdict: "WAJAR", finalVerdict: null }], product: { name: "Cabai", commodityId: "c1", tenant: { id: "t1", companyName: "Kebun" } } } };
-  const tx = { orderItem: { update: vi.fn(), create: vi.fn() }, escrowLedgerEntry: { create: vi.fn() }, assuranceResolution: { create: vi.fn() }, $executeRaw: vi.fn().mockResolvedValue(1), $queryRaw: vi.fn().mockResolvedValue([{ id: "s2" }]), shipment: { updateMany: vi.fn() }, order: { update: vi.fn() } };
-  const prisma = { orderItem: { findFirst: vi.fn().mockResolvedValue(item), findMany: vi.fn().mockResolvedValue([item]) }, batch: { findMany: vi.fn().mockResolvedValue([]) }, order: { findFirst: vi.fn().mockResolvedValue(null) }, $transaction: vi.fn(async work => work(tx)) };
-  return { prisma, tx, item, service: new AssuranceService(prisma as never, {} as never) };
+  const item = { id: "i1", orderId: "o1", shipmentId: "s1", batchId: "b1", qtyBox: 10, qtyBoxFulfilled: 4, unitPriceLocked: 100_000, assuranceResolution: null, shipment: { id: "s1", zoneId: "z1", zone: { minOrderValue: 500_000 } }, batch: { id: "b1", claimedHarvestDate: new Date("2026-09-01"), verificationStatus: "TERVERIFIKASI", yieldAssessments: [{ verdict: "WAJAR", finalVerdict: null }], product: { name: "Cabai", commodityId: "c1", tenant: { id: "t1", companyName: "Kebun" } } } };
+  const siklusBerikutnya: Array<Record<string, unknown>> = [];
+  const substitusi: Array<Record<string, unknown>> = [];
+  const cariBatch = vi.fn(async ({ where }: { where: Record<string, unknown> }) => (where["claimedHarvestDate"] ? siklusBerikutnya : substitusi));
+  const tx = { orderItem: { update: vi.fn(), create: vi.fn() }, escrowLedgerEntry: { create: vi.fn() }, assuranceResolution: { create: vi.fn() }, batch: { findMany: cariBatch }, $executeRaw: vi.fn().mockResolvedValue(1), $queryRaw: vi.fn().mockResolvedValue([{ id: "s2" }]), shipment: { updateMany: vi.fn() }, order: { update: vi.fn() } };
+  const prisma = { orderItem: { findFirst: vi.fn().mockResolvedValue(item), findMany: vi.fn().mockResolvedValue([item]) }, batch: { findMany: cariBatch }, order: { findFirst: vi.fn().mockResolvedValue(null) }, $transaction: vi.fn(async work => work(tx)) };
+  /** Tenant yang sama membuka siklus tanam berikutnya. */
+  const bukaSiklusBerikutnya = (overrides: Record<string, unknown> = {}) => {
+    siklusBerikutnya.length = 0;
+    siklusBerikutnya.push({ id: "b-next", claimedHarvestDate: new Date("2026-11-15"), quotaBoxTotal: 50, quotaBoxSold: 0, ...overrides });
+  };
+  /** Tenant LAIN di zona yang sama menawarkan pengganti. */
+  const tawarkanPengganti = (...rows: Array<Record<string, unknown>>) => {
+    substitusi.length = 0;
+    substitusi.push(...rows);
+  };
+  return { prisma, tx, item, bukaSiklusBerikutnya, tawarkanPengganti, service: new AssuranceService(prisma as never, {} as never) };
 }
 describe("AssuranceService compensation", () => {
   it("shows shortfall and a useful supply-gap reason", async () => {
@@ -51,29 +70,63 @@ describe("AssuranceService compensation", () => {
     await expect(service.resolve("u1", "i1", "SUBSTITUSI", "b2")).rejects.toMatchObject({ response: { code: "REPLACEMENT_UNAVAILABLE" } });
   });
   it("hides a replacement beyond the cap for a reasonable harvest", async () => {
-    const { service, prisma } = fixture();
-    prisma.batch.findMany.mockResolvedValue([{ id: "b2", quotaBoxTotal: 10, quotaBoxSold: 0, lockedPrice: 120_000 }]);
+    const { service, tawarkanPengganti } = fixture();
+    tawarkanPengganti({ id: "b2", quotaBoxTotal: 10, quotaBoxSold: 0, lockedPrice: 120_000, claimedHarvestDate: new Date("2026-09-20") });
     expect((await service.pendingForBuyer("u1"))[0]).toMatchObject({ substitutes: [], capWaived: false, substitutionBlockedReason: expect.stringContaining("melampaui batas") });
   });
   it.each(["TIDAK_WAJAR", "TIDAK_SESUAI"])("waives the cap for %s and carries price gap to the failing tenant", async evidence => {
-    const { service, prisma, item, tx } = fixture();
+    const { service, tawarkanPengganti, item, tx } = fixture();
     if (evidence === "TIDAK_WAJAR") item.batch.yieldAssessments[0]!.verdict = evidence;
     else item.batch.verificationStatus = evidence;
-    prisma.batch.findMany.mockResolvedValue([{ id: "b2", quotaBoxTotal: 10, quotaBoxSold: 0, lockedPrice: 120_000, claimedHarvestDate: new Date("2026-09-20"), product: { name: "Cabai pengganti", tenant: { id: "t2", companyName: "Kebun 2" } } }]);
+    tawarkanPengganti({ id: "b2", quotaBoxTotal: 10, quotaBoxSold: 0, lockedPrice: 120_000, claimedHarvestDate: new Date("2026-09-20"), product: { name: "Cabai pengganti", tenant: { id: "t2", companyName: "Kebun 2" } } });
     expect(await service.resolve("u1", "i1", "SUBSTITUSI", "b2")).toMatchObject({ refundedValue: 0, priceGapBorneByTenant: 120_000 });
     expect(tx.orderItem.create).toHaveBeenCalledWith({ data: { orderId: "o1", shipmentId: "s2", batchId: "b2", qtyBox: 6, unitPriceLocked: 100_000, subtotal: 600_000 } });
     expect(tx.escrowLedgerEntry.create.mock.calls.map(([arg]) => [arg.data.entryType, arg.data.amount, arg.data.tenantId])).toEqual([["ALIH_SUBSTITUSI", 600_000, "t1"], ["POTONG_KLAIM", 120_000, "t1"], ["HOLD", 720_000, "t2"]]);
   });
-  it("records rescheduling without releasing escrow", async () => {
-    const { service, tx } = fixture();
-    expect(await service.resolve("u1", "i1", "JADWAL_ULANG")).toMatchObject({ refundedValue: 0 });
-    expect(tx.escrowLedgerEntry.create).not.toHaveBeenCalled();
-    expect(tx.assuranceResolution.create).toHaveBeenCalledTimes(1);
+  it("commits the shortfall to the next harvest cycle without refunding the buyer (BE-05)", async () => {
+    const { service, tx, bukaSiklusBerikutnya } = fixture();
+    bukaSiklusBerikutnya();
+    expect(await service.resolve("u1", "i1", "JADWAL_ULANG")).toMatchObject({ refundedValue: 0, rescheduledToBatchId: "b-next", rescheduledHarvestDate: "2026-11-15" });
+    // Kuota siklus berikutnya direservasi atomik, lalu porsinya menjadi item pesanan
+    // sungguhan — tanpa itu alokasi FIFO panen berikutnya tidak menemukan pemiliknya.
+    expect(tx.$executeRaw.mock.calls[0]!.slice(1)).toEqual([6, "b-next", 6]);
+    expect(tx.orderItem.create).toHaveBeenCalledWith({ data: { orderId: "o1", shipmentId: "s2", batchId: "b-next", qtyBox: 6, unitPriceLocked: 100_000, subtotal: 600_000 } });
+    expect(tx.assuranceResolution.create.mock.calls[0]![0].data).toMatchObject({ chosenOption: "JADWAL_ULANG", shortfallBox: 6, replacementBatchId: "b-next" });
   });
-  regression("BUG-BE-05: rescheduling must create or move an order allocation into a next harvest cycle", async () => {
-    const { service, tx } = fixture();
+  it("moves the escrow hold onto the rescheduled shipment (BE-05)", async () => {
+    const { service, tx, bukaSiklusBerikutnya } = fixture();
+    bukaSiklusBerikutnya();
     await service.resolve("u1", "i1", "JADWAL_ULANG");
-    expect(tx.orderItem.create.mock.calls.length + tx.orderItem.update.mock.calls.length).toBeGreaterThan(0);
+    // Pencairan dihitung per pengiriman, jadi tahanan dana harus ikut pindah alih-alih
+    // tertinggal di pengiriman lama yang tidak akan pernah selesai.
+    expect(tx.escrowLedgerEntry.create.mock.calls.map(([arg]) => [arg.data.entryType, arg.data.amount, arg.data.shipmentId, arg.data.tenantId])).toEqual([
+      ["ALIH_JADWAL", 600_000, "s1", "t1"],
+      ["HOLD", 600_000, "s2", "t1"],
+    ]);
+  });
+  it("refuses to promise a schedule when the tenant has no next cycle open (BE-05)", async () => {
+    const { service, tx } = fixture();
+    await expect(service.resolve("u1", "i1", "JADWAL_ULANG")).rejects.toMatchObject({ response: { code: "NO_NEXT_CYCLE" } });
+    expect(tx.assuranceResolution.create).not.toHaveBeenCalled();
+    expect(tx.orderItem.create).not.toHaveBeenCalled();
+  });
+  it("reports a lost race for next-cycle quota instead of overbooking it (BE-05)", async () => {
+    const { service, tx, bukaSiklusBerikutnya } = fixture();
+    bukaSiklusBerikutnya();
+    tx.$executeRaw.mockResolvedValue(0);
+    await expect(service.resolve("u1", "i1", "JADWAL_ULANG")).rejects.toMatchObject({ response: { code: "NEXT_CYCLE_QUOTA_GONE" } });
+    expect(tx.assuranceResolution.create).not.toHaveBeenCalled();
+  });
+  it("skips a next cycle whose remaining quota cannot cover the shortfall (BE-05)", async () => {
+    const { service, bukaSiklusBerikutnya } = fixture();
+    bukaSiklusBerikutnya({ quotaBoxTotal: 10, quotaBoxSold: 6 });
+    await expect(service.resolve("u1", "i1", "JADWAL_ULANG")).rejects.toMatchObject({ response: { code: "NO_NEXT_CYCLE" } });
+  });
+  it("tells the buyer up front whether rescheduling is actually available (BE-05)", async () => {
+    const { service, bukaSiklusBerikutnya } = fixture();
+    expect((await service.pendingForBuyer("u1"))[0]).toMatchObject({ rescheduleBlockedReason: expect.stringContaining("belum membuka siklus tanam berikutnya") });
+    bukaSiklusBerikutnya();
+    expect((await service.pendingForBuyer("u1"))[0]).toMatchObject({ rescheduleTo: { batchId: "b-next", claimedHarvestDate: "2026-11-15", availableBox: 50 } });
   });
   it("rejects cancellation for an unknown order", async () => {
     const { service } = fixture();

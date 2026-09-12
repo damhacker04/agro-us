@@ -2,9 +2,12 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowRight } from "lucide-react";
-import { ambilZona } from "@/lib/api";
+import { GalatApi, ambilZona, ubahProfilPembeli } from "@/lib/api";
+import { bacaKeranjang, kosongkanKeranjang } from "@/lib/keranjang";
 import { rupiah } from "@/lib/format-id";
+import { RUTE_ONBOARDING_PEMBELI } from "@/lib/rute-masuk";
 import type { ZoneSummary } from "@agro-os/shared";
 import {
   Galat,
@@ -17,6 +20,7 @@ import {
   Prosa,
   Sunyi,
   TautanKembali,
+  Tombol,
 } from "@/ui";
 
 /**
@@ -39,11 +43,27 @@ import {
  * nilai yang harus disembunyikan di balik kendali. Minimum order tampil pada masing-masing
  * — pembeli lebih baik tahu sekarang daripada ditolak setelah keranjangnya penuh — dan
  * memilih zona langsung membuka katalognya, tanpa tombol "Lanjutkan" kedua.
+ *
+ * ZONANYA KINI BENAR-BENAR PINDAH. Sebelumnya memilih zona hanya mengganti `zoneId` di
+ * query katalog, sementara checkout membaca `buyer.activeZoneId` dari basis data. Pembeli
+ * bisa menelusuri zona Batu sepanjang sore, lalu ongkir, minimum pesanan, dan kecocokan
+ * pesanannya dihitung terhadap zona Kota Malang yang tersimpan — tanpa satu pun layar
+ * yang menyebutkan perbedaan itu. Pilihan di sini sekarang di-PATCH ke profil dulu;
+ * katalog baru dibuka setelah servernya setuju.
+ *
+ * Keranjang ikut jadi urusan halaman ini. Barisnya menyimpan `zoneId` asal, dan batch
+ * dari zona lain tidak bisa dikirim ke alamat di zona baru — jadi perpindahannya
+ * dinyatakan lebih dulu sebagai konsekuensi, bukan sebagai keranjang yang diam-diam
+ * kosong di layar berikutnya.
  */
 export default function BuyerRegionPage() {
+  const router = useRouter();
   const [zona, setZona] = useState<ZoneSummary[]>([]);
   const [galat, setGalat] = useState<string | null>(null);
   const [memuat, setMemuat] = useState(true);
+  const [menyimpan, setMenyimpan] = useState<string | null>(null);
+  const [galatSimpan, setGalatSimpan] = useState("");
+  const [konfirmasi, setKonfirmasi] = useState<ZoneSummary | null>(null);
 
   useEffect(() => {
     ambilZona()
@@ -51,6 +71,40 @@ export default function BuyerRegionPage() {
       .catch((e) => setGalat(e instanceof Error ? e.message : "Gagal memuat zona layanan"))
       .finally(() => setMemuat(false));
   }, []);
+
+  /** Box di keranjang yang berasal dari zona LAIN — yang akan gugur bila zona diganti. */
+  function boxLuarZona(zoneId: string) {
+    return bacaKeranjang()
+      .filter((b) => b.zoneId !== zoneId)
+      .reduce((s, b) => s + b.qtyBox, 0);
+  }
+
+  function pilih(e: React.MouseEvent, z: ZoneSummary) {
+    e.preventDefault();
+    setGalatSimpan("");
+    if (boxLuarZona(z.id) > 0) return setKonfirmasi(z);
+    void pindah(z);
+  }
+
+  async function pindah(z: ZoneSummary) {
+    setKonfirmasi(null);
+    setMenyimpan(z.id);
+    try {
+      await ubahProfilPembeli({ activeZoneId: z.id });
+      if (boxLuarZona(z.id) > 0) kosongkanKeranjang();
+      router.push(`/buyer/catalog?zoneId=${z.id}&city=${encodeURIComponent(z.name)}`);
+    } catch (err) {
+      // Pembeli yang belum punya profil tidak bisa menyimpan zona apa pun. Itu bukan
+      // galat untuk dibaca — itu langkah yang terlewat, dan halamannya sudah ada.
+      if (err instanceof GalatApi && (err.kode === "BUYER_NOT_FOUND" || err.status === 404)) {
+        return router.push(RUTE_ONBOARDING_PEMBELI);
+      }
+      setGalatSimpan(
+        err instanceof GalatApi ? err.message : "Zona gagal disimpan. Coba lagi sebentar.",
+      );
+      setMenyimpan(null);
+    }
+  }
 
   return (
     <Halaman
@@ -75,14 +129,53 @@ export default function BuyerRegionPage() {
         </Kosong>
       ) : null}
 
+      {galatSimpan ? (
+        <Galat judul="Zona belum berpindah">
+          {galatSimpan} Selama zonanya belum tersimpan, ongkos kirim dan minimum pesanan
+          masih dihitung dengan zona sebelumnya — jadi katalognya sengaja tidak dibuka.
+        </Galat>
+      ) : null}
+
+      {konfirmasi ? (
+        <Panel
+          label="Keranjang berisi zona lain"
+          judul={`Pindah ke ${konfirmasi.name} akan mengosongkan keranjang`}
+          nada="kabar"
+          className="mb-8"
+        >
+          <Prosa className="text-[14px]">
+            {boxLuarZona(konfirmasi.id)} box di keranjang Anda berasal dari kebun di zona lain.
+            Kebun itu tidak mengirim ke {konfirmasi.name}, jadi barisnya tidak bisa ikut
+            berpindah — kuotanya juga belum direservasi, dan tetap tersedia untuk pembeli lain.
+          </Prosa>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Tombol
+              type="button"
+              onClick={() => void pindah(konfirmasi)}
+              sibuk={menyimpan === konfirmasi.id}
+              labelSibuk="Memindahkan…"
+            >
+              Pindah dan kosongkan keranjang
+            </Tombol>
+            <Tombol type="button" rupa="sunyi" onClick={() => setKonfirmasi(null)}>
+              Batal — tetap di zona sekarang
+            </Tombol>
+          </div>
+        </Panel>
+      ) : null}
+
       {zona.length > 0 ? (
         <>
           <Label className="mb-4">{zona.length} zona tersedia</Label>
           <ul className="space-y-5">
             {zona.map((z) => (
               <li key={z.id}>
+                {/* Tetap `<a href>` supaya tujuannya terbaca di status bar dan bisa dibuka
+                    di tab baru; kliknya dicegat karena zonanya harus tersimpan lebih dulu. */}
                 <Link
                   href={`/buyer/catalog?zoneId=${z.id}&city=${encodeURIComponent(z.name)}`}
+                  onClick={(e) => pilih(e, z)}
+                  aria-busy={menyimpan === z.id}
                   className="group block focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ungu"
                 >
                   <div className="border-t-2 border-tinta bg-kertas-terang p-5 transition-colors duration-150 group-hover:border-ungu">
@@ -90,11 +183,15 @@ export default function BuyerRegionPage() {
                       <span className="text-[17px] font-bold text-tinta transition-colors duration-150 group-hover:text-ungu">
                         {z.name}
                       </span>
-                      <Ikon
-                        dari={ArrowRight}
-                        ukuran="md"
-                        className="text-tinta-samar transition-colors duration-150 group-hover:text-ungu"
-                      />
+                      {menyimpan === z.id ? (
+                        <Label className="shrink-0 text-ungu">Menyimpan zona…</Label>
+                      ) : (
+                        <Ikon
+                          dari={ArrowRight}
+                          ukuran="md"
+                          className="text-tinta-samar transition-colors duration-150 group-hover:text-ungu"
+                        />
+                      )}
                     </div>
                     {/* Minimum order ditampilkan SEJAK AWAL: nilainya berbeda tiap zona dan
                         menentukan apakah checkout nanti bisa dilanjutkan. */}

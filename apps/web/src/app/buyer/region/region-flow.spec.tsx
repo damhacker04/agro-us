@@ -5,9 +5,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import BuyerRegionPage from "./page";
 import type { ZoneSummary } from "@agro-os/shared";
 import { rupiah } from "@/lib/format-id";
+import { GalatApi } from "@/lib/api";
+import { bacaKeranjang, tambahKeKeranjang } from "@/lib/keranjang";
+import type { CatalogItem } from "@agro-os/shared";
 
-const state = vi.hoisted(() => ({ zones: vi.fn() }));
-vi.mock("@/lib/api", () => ({ ambilZona: state.zones }));
+const state = vi.hoisted(() => ({ zones: vi.fn(), patchProfile: vi.fn(), push: vi.fn(), replace: vi.fn() }));
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/api")>(),
+  ambilZona: state.zones,
+  ubahProfilPembeli: state.patchProfile,
+}));
+const router = { push: state.push, replace: state.replace };
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
 vi.mock("next/link", () => ({ default: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a {...props} /> }));
 const zones: ZoneSummary[] = [
   { id: "zone-1", name: "Kota Malang", city: "Malang", minOrderValue: 150000 },
@@ -18,7 +27,9 @@ let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
+  localStorage.clear();
   state.zones.mockResolvedValue(zones);
+  state.patchProfile.mockResolvedValue({ id: "buyer-1", companyName: "Kafe QA", activeZone: zones[0] });
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -69,5 +80,73 @@ describe("buyer service-region selection", () => {
     expect(host.textContent).toContain("Muat ulang halaman ini");
     expect(host.textContent).not.toContain("Belum ada zona layanan yang dibuka");
     expect(host.querySelector('a[href^="/buyer/catalog"]')).toBeNull();
+  });
+
+  async function chooseZone(index = 1) {
+    const link = [...host.querySelectorAll<HTMLAnchorElement>('a[href^="/buyer/catalog"]')][index];
+    await act(async () => { link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })); });
+    return link;
+  }
+
+  function fillCart(zoneId: string, qtyBox = 2) {
+    tambahKeKeranjang(
+      { batchId: `batch-${zoneId}`, productName: "Sawi", quotaBoxAvailable: 10, tenant: { companyName: "Kebun QA" } } as CatalogItem,
+      zoneId,
+      qtyBox,
+    );
+  }
+
+  it("persists the chosen zone to the buyer profile before opening its catalog", async () => {
+    await render();
+    await chooseZone(1);
+    expect(state.patchProfile).toHaveBeenCalledWith({ activeZoneId: "zone-2" });
+    expect(state.push).toHaveBeenCalledWith("/buyer/catalog?zoneId=zone-2&city=Batu%20%26%20Sekitarnya");
+  });
+
+  it("does not open a catalog the order pipeline would price against the previous zone", async () => {
+    state.patchProfile.mockRejectedValueOnce(new GalatApi(503, null, "Layanan sementara tidak tersedia"));
+    await render();
+    await chooseZone(1);
+    expect(state.push).not.toHaveBeenCalled();
+    expect(host.querySelector('[role="alert"]')!.textContent).toContain("Layanan sementara tidak tersedia");
+  });
+
+  it("sends a buyer without a business profile to onboarding instead of showing a stored-zone error", async () => {
+    state.patchProfile.mockRejectedValueOnce(new GalatApi(404, "BUYER_NOT_FOUND", "Profil pembeli belum dibuat."));
+    await render();
+    await chooseZone(0);
+    expect(state.push).toHaveBeenCalledWith("/buyer/onboarding/profile");
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("states the cart consequence before moving a buyer whose cart belongs to another zone", async () => {
+    fillCart("zone-1");
+    await render();
+    await chooseZone(1);
+    expect(state.patchProfile).not.toHaveBeenCalled();
+    expect(state.push).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("akan mengosongkan keranjang");
+    expect(host.textContent).toContain("2 box");
+    expect(bacaKeranjang()).toHaveLength(1);
+  });
+
+  it("empties only a confirmed cross-zone cart once the new zone is stored", async () => {
+    fillCart("zone-1");
+    await render();
+    await chooseZone(1);
+    const konfirmasi = [...host.querySelectorAll("button")].find((b) => b.textContent?.includes("Pindah dan kosongkan"))!;
+    await act(async () => { konfirmasi.click(); });
+    expect(state.patchProfile).toHaveBeenCalledWith({ activeZoneId: "zone-2" });
+    expect(bacaKeranjang()).toEqual([]);
+    expect(state.push).toHaveBeenCalledWith("/buyer/catalog?zoneId=zone-2&city=Batu%20%26%20Sekitarnya");
+  });
+
+  it("keeps a same-zone cart intact and asks nothing", async () => {
+    fillCart("zone-2");
+    await render();
+    await chooseZone(1);
+    expect(host.textContent).not.toContain("akan mengosongkan keranjang");
+    expect(bacaKeranjang()).toHaveLength(1);
+    expect(state.push).toHaveBeenCalledWith("/buyer/catalog?zoneId=zone-2&city=Batu%20%26%20Sekitarnya");
   });
 });

@@ -10,14 +10,15 @@ cp .env.example .env                                 # samakan DATABASE_URL dgn 
 
 SYNTHETIC_SCENES=1 python -m src.main                # mode pengembangan (tanpa kredensial)
 python -m src.main                                   # mode nyata (butuh Copernicus)
-pytest                                               # 105 lulus + 4 known regressions (xfail)
+pytest                                               # 119 lulus, tanpa xfail
 ```
 
-Suite offline mengukur seluruh `src` dengan **100% statement dan branch coverage**;
-105 test yang lulus sendiri mencapai angka itu. Empat acceptance test tetap `xfail`
-karena defect yang ditemukan belum diperbaiki. Set `QA_ENFORCE_REGRESSIONS=1` untuk
-menjalankannya sebagai acceptance gate yang merah. Coverage tidak membuktikan
-akurasi deteksi pada lahan nyata. Lihat [audit satelit](../../docs/qa/SATELLITE_AUDIT.md).
+Suite offline mengukur seluruh `src` dengan **100% statement dan branch coverage**.
+Empat defect P1 dari audit 10 September 2026 (SAT-01..SAT-04) sudah diperbaiki pada
+12 September 2026; `tests/test_known_regressions.py` kini berisi test biasa yang
+menjaga perbaikan itu — tidak ada lagi `xfail`, sehingga `QA_ENFORCE_REGRESSIONS=1`
+tidak lagi mengubah hasil paket ini. Coverage tetap **bukan** bukti akurasi deteksi
+pada lahan nyata. Lihat [audit satelit](../../docs/qa/SATELLITE_AUDIT.md).
 Untuk menjalankan worker tanpa tooling test, cukup pasang `requirements.txt`.
 
 ## Alur

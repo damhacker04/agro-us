@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 from typing import Any
@@ -65,6 +66,13 @@ GDAL_ENV = {
 # efektif daripada proses. Satu scene = 4 band; paralel antar-scene memberi
 # percepatan terbesar.
 DEFAULT_WORKERS = 6
+
+# Retry terbatas untuk pencarian katalog. Katalog publik sesekali mengembalikan 5xx
+# atau memutus koneksi; tanpa pengulangan, satu hiccup membuat lahan itu kehilangan
+# jatah verifikasi sehari penuh. Dibatasi supaya job harian tidak menggantung —
+# kegagalan yang menetap tetap harus terlihat sebagai kegagalan.
+SEARCH_ATTEMPTS = 3
+RETRY_BACKOFF_SECONDS = 2.0
 
 
 class StacCogProvider(SceneProvider):
@@ -112,9 +120,7 @@ class StacCogProvider(SceneProvider):
         feats: list[dict[str, Any]] = []
         url, payload = self.stac_url, body
         while url and len(feats) < self.max_scenes:
-            resp = requests.post(url, json=payload, timeout=self.timeout)
-            resp.raise_for_status()
-            page = resp.json()
+            page = self._post(url, payload)
             feats.extend(page.get("features", []))
 
             nxt = next((l for l in page.get("links", []) if l.get("rel") == "next"), None)
@@ -135,6 +141,21 @@ class StacCogProvider(SceneProvider):
         # Jaring pengaman: jangan bergantung pada server menghormati sortby.
         feats.sort(key=lambda f: f["properties"]["datetime"])
         return feats
+
+    def _post(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Satu halaman katalog, dengan pengulangan hanya untuk gangguan sementara."""
+        attempt = 1
+        while True:
+            try:
+                resp = requests.post(url, json=payload, timeout=self.timeout)
+                resp.raise_for_status()
+                return resp.json()
+            except requests.RequestException as e:
+                if attempt >= SEARCH_ATTEMPTS or not _is_transient(e):
+                    raise
+                log.warning("    katalog gagal (%s) — percobaan %d/%d", e, attempt, SEARCH_ATTEMPTS)
+                time.sleep(RETRY_BACKOFF_SECONDS * attempt)
+                attempt += 1
 
     @staticmethod
     def _asset_href(feature: dict, key: str) -> str | None:
@@ -203,10 +224,11 @@ class StacCogProvider(SceneProvider):
             log.warning("    scene %s gagal dibaca: %s", feature.get("id"), e)
             return None
 
-        # Piksel di luar poligon ditandai kelas 0 (no-data) agar ikut dibuang oleh
-        # penyaring SCL — sekaligus memenuhi "clip ke poligon" PRD §6.2 poin 2.
-        scl = np.where(outside, 0, scl)
-        return SceneBands(scene_date, red, nir, swir, scl)
+        # Domain poligon dibawa TERPISAH, bukan dilebur ke kelas SCL 0 (no-data).
+        # Meleburnya membuat padding bounding box ikut dihitung sebagai piksel awan:
+        # lahan cerah yang hanya mengisi separuh bounding box mendapat cloud 50% dan
+        # ditolak. Clip ke poligon (PRD §6.2 poin 2) tetap terjadi lewat mask ini.
+        return SceneBands(scene_date, red, nir, swir, scl, inside=~outside)
 
     def fetch(self, polygon_geojson: dict, start: date, end: date) -> list[SceneBands]:
         features = self.search(polygon_geojson, start, end)
@@ -228,6 +250,18 @@ class StacCogProvider(SceneProvider):
         scenes.sort(key=lambda s: s.scene_date)
         log.info("    terbaca: %d/%d scene", len(scenes), len(features))
         return scenes
+
+
+def _is_transient(error: requests.RequestException) -> bool:
+    """Hanya gangguan sementara yang layak diulang.
+
+    4xx berarti permintaan kita sendiri yang salah (koleksi keliru, filter tak dikenal);
+    mengulanginya hanya membuang waktu job dan menyembunyikan bug konfigurasi.
+    """
+    response = getattr(error, "response", None)
+    if response is None:
+        return True  # koneksi putus / timeout — belum ada jawaban server sama sekali
+    return response.status_code >= 500
 
 
 def _bbox(geojson: dict) -> tuple[float, float, float, float]:

@@ -1,13 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PAYMENT_EXPIRY_MS } from "@agro-os/shared";
 import { PaymentService } from "./payment.service";
-const regression = process.env["QA_ENFORCE_REGRESSIONS"] === "1" ? it : it.fails;
 
+/**
+ * `payment.updateMany` di sini meniru satu hal yang membuat perbaikan BE-01 bermakna:
+ * UPDATE bersyarat di Postgres hanya mengenai baris yang status-nya MASIH cocok. Status
+ * disimpan di satu peta bersama, jadi pemanggil kedua benar-benar mendapat count 0 —
+ * bukan sekadar mock yang selalu mengaku berhasil.
+ */
 function fixture() {
-  const tx = { payment: { update: vi.fn() }, order: { update: vi.fn() }, $executeRaw: vi.fn() };
+  const state = new Map<string, string>([["p1", "PENDING"], ["p2", "PENDING"]]);
+  const tx = {
+    payment: {
+      updateMany: vi.fn(async ({ where, data }: { where: { id: string; status?: string }; data: { status: string } }) => {
+        if (where.status !== undefined && state.get(where.id) !== where.status) return { count: 0 };
+        state.set(where.id, data.status);
+        return { count: 1 };
+      }),
+    },
+    order: { update: vi.fn() },
+    $executeRaw: vi.fn(),
+  };
   const prisma = { payment: { create: vi.fn(({ data }) => Promise.resolve({ id: "p1", ...data })), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([]) }, $transaction: vi.fn(async (work) => work(tx)) };
   const escrow = { holdForOrder: vi.fn() };
-  return { prisma, tx, escrow, service: new PaymentService(prisma as never, escrow as never) };
+  return { prisma, tx, state, escrow, service: new PaymentService(prisma as never, escrow as never) };
 }
 const pending = { id: "p1", orderId: "o1", invoiceRef: "INV-1", status: "PENDING", order: { items: [] } };
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-09-09T00:00:00Z")); });
@@ -76,7 +92,7 @@ describe("PaymentService invoice and accounting boundaries", () => {
     prisma.payment.findMany.mockResolvedValue([pending, { ...pending, id: "p2", orderId: "o2" }]);
     expect(await service.expireStale()).toEqual({ expired: 2 });
     expect(prisma.$transaction).toHaveBeenCalledTimes(2);
-    expect(tx.payment.update).toHaveBeenNthCalledWith(2, { where: { id: "p2" }, data: { status: "EXPIRED" } });
+    expect(tx.payment.updateMany).toHaveBeenNthCalledWith(2, { where: { id: "p2", status: "PENDING" }, data: { status: "EXPIRED" } });
     expect(tx.$executeRaw.mock.calls[1]!.slice(1)).toEqual(["o2"]);
   });
   it("propagates an escrow write failure rather than reporting a successful payment", async () => {
@@ -86,12 +102,24 @@ describe("PaymentService invoice and accounting boundaries", () => {
     await expect(service.handleWebhook("INV-1", "PAID")).rejects.toThrow("ledger unavailable");
   });
 
-  // Expected failures document requirements currently violated. They turn into failures
-  // if code is fixed, prompting conversion to ordinary regression tests; never skipped.
-  regression("BUG-BE-01: simultaneous duplicate callbacks must create exactly one HOLD", async () => {
-    const { service, prisma, escrow } = fixture();
+  it("creates exactly one HOLD when duplicate callbacks arrive simultaneously (BE-01)", async () => {
+    const { service, prisma, escrow, tx } = fixture();
     prisma.payment.findUnique.mockResolvedValue({ ...pending });
-    await Promise.all([service.handleWebhook("INV-1", "PAID"), service.handleWebhook("INV-1", "PAID")]);
+    const results = await Promise.all([service.handleWebhook("INV-1", "PAID"), service.handleWebhook("INV-1", "PAID")]);
     expect(escrow.holdForOrder).toHaveBeenCalledTimes(1);
+    expect(tx.order.update).toHaveBeenCalledTimes(1);
+    // Keduanya tetap dijawab sukses — gateway yang mengulang tidak sedang bersalah —
+    // tetapi hanya satu yang benar-benar memproses pembayarannya.
+    expect(results.filter((r) => r.alreadyProcessed === false)).toHaveLength(1);
+  });
+  it("lets a payment that lands first win over the expiry sweeper (BE-01)", async () => {
+    const { service, prisma, tx, state } = fixture();
+    prisma.payment.findUnique.mockResolvedValue({ ...pending });
+    prisma.payment.findMany.mockResolvedValue([pending]);
+    await service.handleWebhook("INV-1", "PAID");
+    expect(await service.expireStale()).toEqual({ expired: 0 });
+    expect(state.get("p1")).toBe("PAID");
+    // Kuota TIDAK boleh dilepas: barangnya sudah terjual dan dananya sudah ditahan.
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
   });
 });

@@ -19,17 +19,26 @@ SCL_INVALID = (0, 1, 3, 8, 9, 10)
 MAX_CLOUD_PCT = 40.0
 
 
-def cloud_fraction(scl: np.ndarray) -> float:
-    """Persentase piksel tak terpakai di dalam poligon (0-100)."""
-    if scl.size == 0:
+def cloud_fraction(scl: np.ndarray, inside: np.ndarray | None = None) -> float:
+    """Persentase piksel tak terpakai DI DALAM poligon (0-100).
+
+    `inside` adalah domain poligon; piksel di luarnya tidak ikut penyebut maupun
+    pembilang. Tanpa pemisahan ini, padding bounding box terhitung sebagai awan dan
+    lahan cerah yang bentuknya memanjang atau miring ditolak walau langitnya bersih.
+    `None` berarti seluruh array memang berada di dalam poligon.
+    """
+    domain = np.ones(scl.shape, dtype=bool) if inside is None else inside
+    total = int(domain.sum())
+    if total == 0:
         return 100.0
-    invalid = np.isin(scl, SCL_INVALID)
-    return float(invalid.sum()) / float(scl.size) * 100.0
+    invalid = np.isin(scl, SCL_INVALID) & domain
+    return float(invalid.sum()) / float(total) * 100.0
 
 
-def valid_mask(scl: np.ndarray) -> np.ndarray:
-    """True untuk piksel yang layak dipakai."""
-    return ~np.isin(scl, SCL_INVALID)
+def valid_mask(scl: np.ndarray, inside: np.ndarray | None = None) -> np.ndarray:
+    """True untuk piksel yang layak dipakai: kelas SCL sah DAN di dalam poligon."""
+    usable = ~np.isin(scl, SCL_INVALID)
+    return usable if inside is None else usable & inside
 
 
 def _safe_ratio(a: np.ndarray, b: np.ndarray) -> np.ndarray:

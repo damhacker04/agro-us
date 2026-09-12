@@ -36,7 +36,7 @@ const lines = [
   "## Rute halaman yang benar-benar ada", "", "| URL route | Sumber |", "|---|---|",
   ...pages.map((file) => {
     const route = "/" + file.replace("apps/web/src/app/", "").replace(/(^|\/)\([^/]+\)/g, "").replace(/\/page\.tsx$/, "").replace(/^page\.tsx$/, "").replace(/^\//, "");
-    return `| \`${route}\` | [${file}](../../${file}) |`;
+    return `| \`${route}\` | [${file}](<../../${file}>) |`;
   }), "", "## Berkas kosong", "", ...empty.map((file) => `- \`${file}\``), "",
   "File kosong seperti manifest, service worker, atau hook tidak membuktikan fitur tersebut diimplementasikan. `__init__.py` kosong dapat normal untuk paket Python.", "",
   "## Inventaris lengkap aplikasi, paket, dokumen, dan skrip", "", "```text", ...owned, "```", "",

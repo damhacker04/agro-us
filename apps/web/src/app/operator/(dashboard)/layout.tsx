@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Timer,
 } from "lucide-react";
+import { akhiriSesi } from "@/lib/auth";
 import { Cangkang, type ItemMenu } from "@/ui";
 
 /**
@@ -44,7 +45,13 @@ export default function OperatorDashboardLayout({ children }: { children: React.
       peran="Operator"
       beranda="/operator"
       menu={MENU}
-      keluar={() => router.push("/auth/operator/login")}
+      keluar={() => {
+        // Konsol operator memegang antrean legalitas, klaim, dan escrow. Tombol keluar
+        // yang hanya berpindah halaman meninggalkan token dengan wewenang itu di
+        // peramban kantor yang dipakai bergantian.
+        akhiriSesi();
+        router.push("/auth/operator/login");
+      }}
     >
       {children}
     </Cangkang>

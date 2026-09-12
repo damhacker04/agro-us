@@ -71,12 +71,53 @@ def test_search_next_link_missing_href_uses_catalog(monkeypatch, polygon):
     assert post.call_args_list[0].args == post.call_args_list[1].args
 
 
-def test_search_http_failure_is_propagated(monkeypatch, polygon):
+@pytest.fixture
+def no_backoff(monkeypatch):
+    """Keep retry timing out of the test run without disabling the retry itself."""
+    sleep = Mock()
+    monkeypatch.setattr(stac.time, "sleep", sleep)
+    return sleep
+
+
+def failing(error):
     resp = response({})
-    resp.raise_for_status.side_effect = requests.HTTPError("503")
-    monkeypatch.setattr(stac.requests, "post", Mock(return_value=resp))
-    with pytest.raises(requests.HTTPError, match="503"):
+    resp.raise_for_status.side_effect = error
+    return resp
+
+
+def http_error(status):
+    resp = Mock()
+    resp.status_code = status
+    return requests.HTTPError(str(status), response=resp)
+
+
+def test_persistent_catalog_outage_is_propagated_after_bounded_retries(monkeypatch, polygon, no_backoff, caplog):
+    post = Mock(return_value=failing(requests.ConnectionError("catalog down")))
+    monkeypatch.setattr(stac.requests, "post", post)
+    with pytest.raises(requests.ConnectionError, match="catalog down"):
         StacCogProvider().search(polygon, date(2025, 1, 1), date(2025, 2, 1))
+    # Bounded: a catalog that stays down must not hold the daily job open indefinitely.
+    assert post.call_count == stac.SEARCH_ATTEMPTS
+    assert no_backoff.call_count == stac.SEARCH_ATTEMPTS - 1
+    assert "percobaan 1/3" in caplog.text
+
+
+def test_transient_catalog_error_is_retried_and_recovers(monkeypatch, polygon, no_backoff):
+    post = Mock(side_effect=[failing(http_error(503)), response({"features": [feature()]})])
+    monkeypatch.setattr(stac.requests, "post", post)
+    scenes = StacCogProvider().search(polygon, date(2025, 1, 1), date(2025, 2, 1))
+    assert [scene["id"] for scene in scenes] == ["2025-01-01"]
+    assert post.call_count == 2
+
+
+def test_client_error_is_not_retried(monkeypatch, polygon, no_backoff):
+    """A 404 means our own request is wrong; repeating it only hides the misconfiguration."""
+    post = Mock(return_value=failing(http_error(404)))
+    monkeypatch.setattr(stac.requests, "post", post)
+    with pytest.raises(requests.HTTPError, match="404"):
+        StacCogProvider().search(polygon, date(2025, 1, 1), date(2025, 2, 1))
+    assert post.call_count == 1
+    no_backoff.assert_not_called()
 
 
 @pytest.mark.parametrize("key,alias", [("red", "red"), ("red", "B04"), ("red", "b04"),
@@ -150,7 +191,7 @@ def test_scene_raster_and_network_failures_are_skipped(polygon, monkeypatch, err
     assert provider._read_scene(feature(), polygon) is None
 
 
-def test_scene_aligns_bands_and_masks_outside_polygon(polygon, monkeypatch):
+def test_scene_aligns_bands_and_carries_polygon_domain_separately(polygon, monkeypatch):
     provider = StacCogProvider()
     values = np.full((2, 2), 4)
     outside = np.array([[True, False], [False, False]])
@@ -158,7 +199,10 @@ def test_scene_aligns_bands_and_masks_outside_polygon(polygon, monkeypatch):
     monkeypatch.setattr(provider, "_read_clipped", reader)
     scene = provider._read_scene(feature(), polygon)
     assert scene.scene_date == date(2025, 1, 1)
-    assert scene.scl.tolist() == [[0, 4], [4, 4]]
+    # SCL keeps the classes the satellite actually reported; the polygon domain is a
+    # separate mask. Folding one into the other is what made clear plots read as cloudy.
+    assert scene.scl.tolist() == [[4, 4], [4, 4]]
+    assert scene.inside.tolist() == [[False, True], [True, True]]
     assert [call.args[2] for call in reader.call_args_list] == [None, (2, 2), (2, 2), (2, 2)]
     assert reader.call_args_list[-1].kwargs == {"categorical": True}
 

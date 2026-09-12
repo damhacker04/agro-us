@@ -67,6 +67,7 @@ export class AssuranceService {
     shipment: { zoneId: string; zone: { minOrderValue: number } };
     batch: {
       id: string;
+      claimedHarvestDate: Date;
       verificationStatus: string;
       yieldAssessments: { verdict: string; finalVerdict: string | null }[];
       product: {
@@ -91,6 +92,11 @@ export class AssuranceService {
       item.unitPriceLocked,
     );
 
+    // Jadwal ulang hanya boleh ditawarkan bila siklus berikutnya benar-benar ada. Kalau
+    // tombolnya tetap muncul padahal Tenant belum membuka siklus baru, pembeli memilih
+    // sesuatu yang pasti ditolak — dan tenggat pilihannya keburu habis.
+    const berikutnya = await this.cariSiklusBerikutnya(this.prisma, item.batch, shortfallBox);
+
     return {
       orderItemId: item.id,
       shipmentId: item.shipmentId,
@@ -105,6 +111,19 @@ export class AssuranceService {
       capWaived,
       substitutes,
       ...(blockedReason ? { substitutionBlockedReason: blockedReason } : {}),
+      ...(berikutnya
+        ? {
+            rescheduleTo: {
+              batchId: berikutnya.id,
+              claimedHarvestDate: berikutnya.claimedHarvestDate.toISOString().slice(0, 10),
+              availableBox: berikutnya.availableBox,
+            },
+          }
+        : {
+            rescheduleBlockedReason:
+              `${item.batch.product.tenant.companyName} belum membuka siklus tanam berikutnya ` +
+              "untuk komoditas ini dengan kuota yang cukup.",
+          }),
     };
   }
 
@@ -265,7 +284,11 @@ export class AssuranceService {
     // berubah retroaktif. Kolom ini juga yang dipakai CHECK aturan integritas #8.
     let capGugur = false;
 
-    await this.prisma.$transaction(async (tx) => {
+    // Batch tujuan jadwal ulang DIKEMBALIKAN oleh transaksi, bukan disimpan ke variabel
+    // luar seperti nilai lain di atas: TypeScript tidak melacak penugasan di dalam
+    // callback, sehingga variabel luar bertipe `T | null` selalu terbaca `null` sesudahnya.
+    const dijadwalkanKe = await this.prisma.$transaction(async (tx) => {
+      let jadwal: { id: string; claimedHarvestDate: Date } | null = null;
       switch (option) {
         case "TERIMA_SEBAGIAN":
           // Terima porsi tersedia, sisanya dikembalikan.
@@ -280,10 +303,83 @@ export class AssuranceService {
           await this.refund(tx, item.orderId, item.shipmentId, tenantId, refunded, orderItemId);
           break;
 
-        case "JADWAL_ULANG":
-          // Dana TETAP ditahan di escrow untuk siklus berikutnya — tidak ada
-          // pergerakan uang, jadi tidak ada entri ledger.
+        case "JADWAL_ULANG": {
+          // Menjadwalkan ulang berarti MENGIKAT porsi yang gagal ke siklus panen
+          // berikutnya milik Tenant yang sama. Versi sebelumnya hanya `break`: tidak ada
+          // kuota yang direservasi, tidak ada item pesanan baru, tidak ada jadwal — tetapi
+          // pembeli tetap dijawab "pesanan dijadwalkan". Ketika panen berikutnya tiba,
+          // alokasi FIFO tidak menemukan siapa pun yang berhak atas porsi itu.
+          const berikutnya = await this.cariSiklusBerikutnya(tx, item.batch, shortfallBox);
+          if (!berikutnya) {
+            throw new ConflictException({
+              code: "NO_NEXT_CYCLE",
+              message:
+                `${item.batch.product.tenant.companyName} belum membuka siklus tanam berikutnya ` +
+                "untuk komoditas ini, jadi belum ada jadwal yang bisa dijanjikan. " +
+                "Pilih substitusi atau pengembalian dana.",
+            });
+          }
+
+          // Direservasi ATOMIK, sama seperti checkout: dua pembeli yang terdampak gagal
+          // panen yang sama bisa memilih jadwal ulang pada detik yang sama.
+          const terkunci = await tx.$executeRaw`
+            UPDATE batches SET quota_box_sold = quota_box_sold + ${shortfallBox}
+            WHERE id = ${berikutnya.id}::uuid
+              AND quota_box_sold + ${shortfallBox} <= quota_box_total
+          `;
+          if (terkunci !== 1) {
+            throw new ConflictException({
+              code: "NEXT_CYCLE_QUOTA_GONE",
+              message: "Kuota siklus berikutnya keburu penuh. Pilih opsi lain.",
+            });
+          }
+
+          const shipmentBaru = await this.salinPengiriman(tx, item.shipmentId);
+          await tx.orderItem.create({
+            data: {
+              orderId: item.orderId,
+              shipmentId: shipmentBaru,
+              batchId: berikutnya.id,
+              qtyBox: shortfallBox,
+              // Harga tetap harga kunci semula — menundanya bukan alasan menaikkan harga.
+              unitPriceLocked: item.unitPriceLocked,
+              subtotal: shortfallBox * item.unitPriceLocked,
+            },
+          });
+
+          // Dana memang tidak kembali ke pembeli, tetapi tahanannya HARUS ikut pindah:
+          // pencairan escrow dihitung per pengiriman (`settle:<shipmentId>`). Bila HOLD
+          // tertinggal di pengiriman lama yang tidak akan pernah selesai, uang pembeli
+          // menggantung dan Tenant tidak pernah dibayar untuk kiriman siklus berikutnya.
+          const nilaiDitunda = shortfallBox * item.unitPriceLocked;
+          await tx.escrowLedgerEntry.create({
+            data: {
+              orderId: item.orderId,
+              shipmentId: item.shipmentId,
+              tenantId,
+              entryType: "ALIH_JADWAL",
+              amount: nilaiDitunda,
+              gatewayRef: `jadwal:${orderItemId}`,
+            },
+          });
+          await tx.escrowLedgerEntry.create({
+            data: {
+              orderId: item.orderId,
+              shipmentId: shipmentBaru,
+              tenantId,
+              entryType: "HOLD",
+              settlementStatus: "SUCCESS",
+              amount: nilaiDitunda,
+              gatewayRef: `jadwal:${orderItemId}`,
+            },
+          });
+
+          // Senioritas TIDAK diterbitkan di sini: alokasi yang melahirkan shortfall ini
+          // sudah menerbitkannya untuk pasangan (pembeli, Tenant) yang sama (FR-7.13),
+          // dan menambah satu lagi justru ditolak indeks "satu hak aktif per pasangan".
+          jadwal = berikutnya;
           break;
+        }
 
         case "SUBSTITUSI": {
           if (!replacementBatchId) {
@@ -322,20 +418,7 @@ export class AssuranceService {
           // Mengunci kuota saja TIDAK cukup: tanpa item pesanan pada batch pengganti,
           // alokasi FIFO di panen berikutnya tidak menemukan siapa pun sebagai pemilik
           // kuota itu, dan pembeli yang sudah membayar tidak pernah menerima barang.
-          // Identitas penerima IKUT disalin. Barangnya berganti Tenant, tetapi tujuannya
-          // tidak berubah — dan `recipient_name`/`recipient_phone` NOT NULL, jadi
-          // melewatkannya membuat seluruh opsi substitusi gagal dengan galat 500.
-          const ship = await tx.$queryRaw<Array<{ id: string }>>`
-            INSERT INTO shipments (order_id, zone_id, dest_point, dest_radius_m,
-                                   recipient_name, recipient_phone, landmark,
-                                   receiving_hours, status)
-            SELECT order_id, zone_id, dest_point, dest_radius_m,
-                   recipient_name, recipient_phone, landmark,
-                   receiving_hours, 'MENUNGGU_PANEN'::"ShipmentStatus"
-            FROM shipments WHERE id = ${item.shipmentId}::uuid
-            RETURNING id::text
-          `;
-          const newShipmentId = ship[0]!.id;
+          const newShipmentId = await this.salinPengiriman(tx, item.shipmentId);
 
           // Harga TETAP harga kunci semula — selisihnya urusan Tenant yang gagal,
           // bukan urusan pembeli (FR-7.11).
@@ -399,9 +482,14 @@ export class AssuranceService {
           shortfallBox,
           priceGapBorneByTenant: priceGap,
           capWaived: capGugur,
-          replacementBatchId: option === "SUBSTITUSI" ? replacementBatchId! : null,
+          // Batch tujuan dicatat untuk KEDUA opsi yang memindahkan porsi ke batch lain.
+          // Jadwal ulang tanpa batch tujuan tercatat adalah janji yang tidak bisa
+          // ditelusuri ke apa pun saat pembeli menanyakannya dua bulan kemudian.
+          replacementBatchId:
+            option === "SUBSTITUSI" ? replacementBatchId! : (jadwal?.id ?? null),
         },
       });
+      return jadwal;
     });
 
     this.log.log(`Assurance ${orderItemId.slice(0, 8)}: ${option}, refund Rp${refunded.toLocaleString("id-ID")}`);
@@ -412,7 +500,67 @@ export class AssuranceService {
       refundedValue: refunded,
       priceGapBorneByTenant: priceGap,
       message: MESSAGES[option],
+      ...(dijadwalkanKe && {
+        rescheduledToBatchId: dijadwalkanKe.id,
+        rescheduledHarvestDate: dijadwalkanKe.claimedHarvestDate.toISOString().slice(0, 10),
+      }),
     };
+  }
+
+  /**
+   * Siklus panen berikutnya milik TENANT YANG SAMA untuk komoditas yang sama.
+   *
+   * Tenant yang sama, karena itulah bedanya jadwal ulang dengan substitusi: pembeli
+   * memilih menunggu orang yang sama, bukan berpindah pemasok. Tanggal panennya harus
+   * SESUDAH batch yang gagal — batch yang panennya lebih dulu bukan "siklus berikutnya",
+   * dan menjadwalkan ke sana berarti menjanjikan barang yang antreannya sudah berjalan.
+   */
+  private async cariSiklusBerikutnya(
+    db: Tx | PrismaService,
+    failed: { id: string; claimedHarvestDate: Date; product: { commodityId: string; tenant: { id: string } } },
+    shortfallBox: number,
+  ): Promise<{ id: string; claimedHarvestDate: Date; availableBox: number } | null> {
+    const kandidat = await db.batch.findMany({
+      where: {
+        id: { not: failed.id },
+        productionStatus: { in: ["PLANNING", "GROWING"] },
+        claimedHarvestDate: { gt: failed.claimedHarvestDate },
+        product: { commodityId: failed.product.commodityId, tenantId: failed.product.tenant.id },
+      },
+      orderBy: { claimedHarvestDate: "asc" },
+      select: { id: true, claimedHarvestDate: true, quotaBoxTotal: true, quotaBoxSold: true },
+      take: 10,
+    });
+
+    for (const b of kandidat) {
+      const tersedia = b.quotaBoxTotal - b.quotaBoxSold;
+      // Sisa kuota dibaca di sini hanya untuk MEMILIH; yang menjaga dari perebutan
+      // adalah UPDATE bersyarat saat reservasi.
+      if (tersedia >= shortfallBox) {
+        return { id: b.id, claimedHarvestDate: b.claimedHarvestDate, availableBox: tersedia };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Salin rencana pengiriman ke pengiriman baru untuk batch pengganti/siklus berikutnya.
+   *
+   * Identitas penerima IKUT disalin: tujuannya tidak berubah, dan `recipient_name`/
+   * `recipient_phone` NOT NULL — melewatkannya membuat seluruh opsi gagal dengan galat 500.
+   */
+  private async salinPengiriman(tx: Tx, shipmentId: string): Promise<string> {
+    const rows = await tx.$queryRaw<Array<{ id: string }>>`
+      INSERT INTO shipments (order_id, zone_id, dest_point, dest_radius_m,
+                             recipient_name, recipient_phone, landmark,
+                             receiving_hours, status)
+      SELECT order_id, zone_id, dest_point, dest_radius_m,
+             recipient_name, recipient_phone, landmark,
+             receiving_hours, 'MENUNGGU_PANEN'::"ShipmentStatus"
+      FROM shipments WHERE id = ${shipmentId}::uuid
+      RETURNING id::text
+    `;
+    return rows[0]!.id;
   }
 
   /**
@@ -524,6 +672,8 @@ export class AssuranceService {
 const MESSAGES: Record<string, string> = {
   TERIMA_SEBAGIAN: "Porsi yang tersedia tetap dikirim; sisanya dikembalikan ke rekening Anda.",
   REFUND: "Seluruh nilai item dikembalikan ke rekening Anda.",
-  JADWAL_ULANG: "Pesanan dijadwalkan ke siklus panen berikutnya. Dana tetap aman di escrow.",
+  JADWAL_ULANG:
+    "Porsi yang gagal dikunci pada siklus panen berikutnya milik Tenant yang sama, " +
+    "dengan harga yang sama. Dana tetap ditahan di escrow sampai kiriman itu diterima.",
   SUBSTITUSI: "Pengganti telah dikunci dengan harga yang sama seperti pesanan semula.",
 };

@@ -1,10 +1,11 @@
-"""Acceptance checks for confirmed defects, deliberately not represented as fixed.
+"""Regression guards for SAT-01..SAT-04, the four P1 defects found in the 10 Sep 2026 audit.
 
-Set QA_ENFORCE_REGRESSIONS=1 to turn these into red release gates. The default
-strict xfail records known broken behavior and requires cleanup when it is fixed.
+These were recorded as strict xfail while the defects stood. They are now plain tests:
+each one fails the moment the corresponding fix is undone. Do not weaken them into
+xfail again — a red test here means a shipped verdict is wrong, not that a marker
+needs updating.
 """
 
-import os
 from dataclasses import replace
 from datetime import date
 from unittest.mock import Mock
@@ -19,12 +20,8 @@ from src.stac_provider import StacCogProvider
 from tests.test_phenology import series
 
 
-def known_defect(reason):
-    return pytest.mark.xfail(os.getenv("QA_ENFORCE_REGRESSIONS") != "1", reason=reason, strict=True)
-
-
-@known_defect("SAT-01: all historical plot cycles contaminate the current batch verdict")
 def test_current_batch_is_classified_only_against_its_own_observation_window(batch, monkeypatch):
+    """SAT-01: an earlier season on the same plot must not drive this batch's verdict."""
     current = series(batch.claimed_plant_date, batch.claimed_harvest_date, cloudy=set())
     old = series(date(2024, 1, 15), date(2024, 4, 15), cloudy=set())
     repository = Mock()
@@ -37,10 +34,13 @@ def test_current_batch_is_classified_only_against_its_own_observation_window(bat
     provider.fetch.return_value = []
     monkeypatch.setattr(main, "build_provider", lambda _: provider)
     assert main.process_batch(repository, batch) == "TERVERIFIKASI"
+    # The window is also pushed down to storage, so the whole history is never fetched.
+    window = main.observation_window(batch)
+    repository.load_observations.assert_called_once_with(batch.land_plot_id, *window)
 
 
-@known_defect("SAT-02: FR-9.2 permanent verification badge is revoked when subscription lapses")
 def test_lapsed_subscription_does_not_revoke_previously_issued_badge(batch):
+    """SAT-02: FR-9.2 — a badge already issued survives a lapsed subscription."""
     current_status = {"value": "TERVERIFIKASI"}
     repository = Mock()
     def update(batch_id, status, *args):
@@ -50,8 +50,8 @@ def test_lapsed_subscription_does_not_revoke_previously_issued_badge(batch):
     assert current_status["value"] == "TERVERIFIKASI"
 
 
-@known_defect("SAT-03: pixels outside polygon are counted as clouds inside the plot")
 def test_clear_irregular_plot_is_not_rejected_due_to_bounding_box_padding(polygon, monkeypatch):
+    """SAT-03: bounding-box padding is outside the plot, not cloud over the plot."""
     provider = StacCogProvider()
     outside = np.array([[True, True], [False, False]])
     band = np.ones((2, 2))
@@ -62,10 +62,11 @@ def test_clear_irregular_plot_is_not_rejected_due_to_bounding_box_padding(polygo
                                  "assets": {key: {"href": f"{key}.tif"} for key in ("red", "nir", "swir16", "scl")}}, polygon)
     stats = summarize(scene, 40)
     assert stats.usable and stats.cloud_pct == 0
+    assert stats.ndvi_mean == pytest.approx(0.5)
 
 
-@known_defect("SAT-04: an HTTP catalog outage escapes process_batch instead of returning SKIPPED")
 def test_catalog_http_outage_preserves_batch_and_allows_next_batch(batch, monkeypatch):
+    """SAT-04: a catalog outage yields SKIPPED for that plot, not a dead daily job."""
     repository = Mock()
     repository.last_observation_date.return_value = None
     provider = Mock()

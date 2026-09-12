@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ambilToken, ambilUser, berandaPeran, hapusSesi, simpanSesi } from "./auth";
+import type { CatalogItem } from "@agro-os/shared";
+import { akhiriSesi, ambilToken, ambilUser, berandaPeran, hapusSesi, simpanSesi } from "./auth";
+import { bacaKeranjang, tambahKeKeranjang } from "./keranjang";
 import { installBrowser } from "../test/browser";
 
 describe("browser session boundary", () => {
@@ -26,6 +28,19 @@ describe("browser session boundary", () => {
   it("treats malformed persisted JSON as no user", () => {
     localStorage.setItem("agrous.user", "broken-json");
     expect(ambilUser()).toBeNull();
+  });
+
+  it("leaves nothing of the previous person behind when a session ends", () => {
+    simpanSesi("test-token", { id: "buyer-1", phone: "+628123456789", role: "BUYER" });
+    tambahKeKeranjang(
+      { batchId: "batch-1", productName: "Sawi", quotaBoxAvailable: 4, tenant: { companyName: "Kebun QA" } } as CatalogItem,
+      "zone-1",
+      2,
+    );
+    akhiriSesi();
+    expect(ambilToken()).toBeNull();
+    expect(ambilUser()).toBeNull();
+    expect(bacaKeranjang()).toEqual([]);
   });
 
   it.each([

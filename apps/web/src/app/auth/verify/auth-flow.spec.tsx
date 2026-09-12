@@ -5,13 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import VerifyPage from "./page";
 import BuyerDashboardLayout from "../../buyer/(dashboard)/layout";
 import OperatorDashboardLayout from "../../operator/(dashboard)/layout";
+import { GalatApi } from "../../../lib/api";
 import { ambilToken, simpanSesi } from "../../../lib/auth";
 import { tambahKeKeranjang } from "../../../lib/keranjang";
 import type { CatalogItem } from "@agro-os/shared";
 
 const state = vi.hoisted(() => ({
   push: vi.fn(), replace: vi.fn(), back: vi.fn(),
-  verify: vi.fn(), request: vi.fn(),
+  verify: vi.fn(), request: vi.fn(), buyerProfile: vi.fn(), tenantProfile: vi.fn(),
   search: new URLSearchParams(), pathname: "/buyer/catalog",
 }));
 vi.mock("next/navigation", () => ({
@@ -23,6 +24,8 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../../lib/api")>(),
   verifikasiOtp: state.verify,
   mintaOtp: state.request,
+  ambilProfilPembeli: state.buyerProfile,
+  ambilProfilTenant: state.tenantProfile,
 }));
 
 const regression = process.env.QA_ENFORCE_REGRESSIONS === "1" ? it : it.fails;
@@ -37,6 +40,8 @@ beforeEach(() => {
   state.search = new URLSearchParams({ phone: "08123456789", peran: "BUYER", kode: "123456" });
   state.verify.mockResolvedValue({ accessToken: "test-access", isNewUser: false, user: { id: "buyer-test", phone: "+628123456789", role: "BUYER" } });
   state.request.mockResolvedValue({ resendAfterSec: 60 });
+  state.buyerProfile.mockResolvedValue({ id: "buyer-test", companyName: "Kafe QA", activeZone: null });
+  state.tenantProfile.mockResolvedValue({ id: "tenant-test", companyName: "Kebun QA", landPlotCount: 2 });
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -97,6 +102,39 @@ describe("OTP form interactions", () => {
     expect(ambilToken()).toBeNull();
   });
 
+  it("sends a newly registered tenant to profile onboarding instead of an empty dashboard", async () => {
+    state.search.set("peran", "TENANT");
+    state.tenantProfile.mockRejectedValueOnce(new GalatApi(404, "TENANT_NOT_FOUND", "Profil tenant belum dibuat."));
+    state.verify.mockResolvedValueOnce({ accessToken: "tenant-token", isNewUser: true, user: { id: "new-tenant", phone: "+628123456789", role: "TENANT" } });
+    await render(<VerifyPage />);
+    await submit();
+    expect(state.push).toHaveBeenCalledWith("/tenant/onboarding/profile");
+  });
+
+  it("resumes an unfinished tenant onboarding at land mapping, not at the dashboard", async () => {
+    state.search.set("peran", "TENANT");
+    state.tenantProfile.mockResolvedValueOnce({ id: "tenant-test", companyName: "Kebun QA", landPlotCount: 0 });
+    state.verify.mockResolvedValueOnce({ accessToken: "tenant-token", isNewUser: false, user: { id: "returning-tenant", phone: "+628123456789", role: "TENANT" } });
+    await render(<VerifyPage />);
+    await submit();
+    expect(state.push).toHaveBeenCalledWith("/tenant/onboarding/mapping");
+  });
+
+  it("sends a buyer without a business profile to buyer onboarding", async () => {
+    state.buyerProfile.mockRejectedValueOnce(new GalatApi(404, "BUYER_NOT_FOUND", "Profil pembeli belum dibuat."));
+    await render(<VerifyPage />);
+    await submit();
+    expect(state.push).toHaveBeenCalledWith("/buyer/onboarding/profile");
+  });
+
+  it("falls back to the role home when the profile check itself fails", async () => {
+    state.buyerProfile.mockRejectedValueOnce(new Error("network failed"));
+    await render(<VerifyPage />);
+    await submit();
+    expect(state.push).toHaveBeenCalledWith("/buyer/region");
+    expect(ambilToken()).toBe("test-access");
+  });
+
   regression("FE-REG-06: deleting an existing OTP digit must clear the controlled input", async () => {
     await render(<VerifyPage />);
     const input = container.querySelector("input")!;
@@ -104,21 +142,13 @@ describe("OTP form interactions", () => {
     await change(input, "");
     expect(input.value).toBe("");
   });
-
-  regression("FE-REG-07: a newly registered tenant must proceed to profile onboarding", async () => {
-    state.search.set("peran", "TENANT");
-    state.verify.mockResolvedValueOnce({ accessToken: "tenant-token", isNewUser: true, user: { id: "new-tenant", phone: "+628123456789", role: "TENANT" } });
-    await render(<VerifyPage />);
-    await submit();
-    expect(state.push).toHaveBeenCalledWith("/tenant/onboarding/profile");
-  });
 });
 
 describe("authenticated shell interactions", () => {
-  regression.each([
+  it.each([
     ["BUYER", BuyerDashboardLayout, "/auth/buyer/login"],
     ["OPERATOR", OperatorDashboardLayout, "/auth/operator/login"],
-  ] as const)("FE-REG-08: %s logout must remove credentials before redirect", async (role, Layout, destination) => {
+  ] as const)("%s logout removes the stored credentials before redirecting", async (role, Layout, destination) => {
     simpanSesi("private-token", { id: "user-test", phone: "+628123456789", role });
     await render(<Layout><p>Dashboard</p></Layout>);
     const logout = [...container.querySelectorAll("button")].find((el) => el.textContent?.includes("Keluar"))!;

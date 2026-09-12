@@ -1,4 +1,5 @@
 import { Logger } from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
 import {
   ConnectedSocket,
   MessageBody,
@@ -8,6 +9,8 @@ import {
 } from "@nestjs/websockets";
 import type { Server, Socket } from "socket.io";
 import { WS_EVENTS, type GpsCoordinate } from "@agro-os/shared";
+import { PrismaService } from "../../prisma/prisma.service";
+import { identifySocket } from "../auth/ws-auth";
 
 /**
  * Pancaran posisi kurir ke pembeli (PRD §6.4).
@@ -15,9 +18,15 @@ import { WS_EVENTS, type GpsCoordinate } from "@agro-os/shared";
  * Satu "room" per pengiriman: pembeli berlangganan `shipment:subscribe` dengan id
  * pengiriman, lalu menerima `shipment:position` dan `shipment:status`.
  *
- * ⚠️ Room BELUM diautentikasi — siapa pun yang tahu shipmentId bisa ikut memantau.
- * ID-nya UUID acak sehingga tidak bisa ditebak, tetapi sebelum produksi tetap perlu
- * verifikasi JWT pada handshake agar hanya pembeli pemilik pesanan yang bisa masuk.
+ * Room DIOTORISASI. Sebelumnya cukup tahu shipmentId untuk ikut memantau; UUID acak
+ * memang sulit ditebak, tetapi id pengiriman beredar di tautan, tangkapan layar dan
+ * dukungan pelanggan, dan "sulit ditebak" bukan kontrol akses. Sekarang ada dua jalan
+ * masuk yang sah, keduanya membuktikan hubungan dengan pengiriman ini:
+ *
+ *   1. JWT di handshake — pembeli pemilik pesanan, tenant pemilik barang, atau operator.
+ *   2. `sessionId` sesi pelacakan yang MASIH terbuka untuk pengiriman itu — kurir tidak
+ *      punya akun (§5.6.2), jadi kredensialnya adalah sesi yang lahir dari scan QR + Kode
+ *      Antar. Sesi yang sudah ditutup tidak lagi membuka pintu.
  */
 @WebSocketGateway({
   namespace: "/tracking",
@@ -25,6 +34,11 @@ import { WS_EVENTS, type GpsCoordinate } from "@agro-os/shared";
 })
 export class TrackingGateway {
   private readonly log = new Logger(TrackingGateway.name);
+
+  constructor(
+    private readonly jwt: JwtService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @WebSocketServer()
   server!: Server;
@@ -34,12 +48,49 @@ export class TrackingGateway {
   }
 
   @SubscribeMessage(WS_EVENTS.SUBSCRIBE)
-  onSubscribe(@MessageBody() body: { shipmentId?: string }, @ConnectedSocket() client: Socket) {
+  async onSubscribe(
+    @MessageBody() body: { shipmentId?: string; sessionId?: string },
+    @ConnectedSocket() client: Socket,
+  ) {
     const id = body?.shipmentId;
     if (!id) return { ok: false, error: "shipmentId wajib" };
+    if (!(await this.mayWatch(id, body?.sessionId, client))) {
+      // Pesan galat sengaja sama untuk "pengiriman tidak ada" dan "bukan milik Anda":
+      // membedakan keduanya menjadikan kanal ini alat memeriksa keberadaan pesanan orang.
+      this.log.debug(`klien ${client.id?.slice(0, 6)} ditolak memantau ${id.slice(0, 8)}`);
+      return { ok: false, error: "AKSES_DITOLAK" };
+    }
     void client.join(this.room(id));
-    this.log.debug(`klien ${client.id.slice(0, 6)} memantau ${id.slice(0, 8)}`);
+    this.log.debug(`klien ${client.id?.slice(0, 6)} memantau ${id.slice(0, 8)}`);
     return { ok: true, room: this.room(id) };
+  }
+
+  /** Benar hanya bila pemanggil terbukti berhubungan dengan pengiriman ini. */
+  private async mayWatch(shipmentId: string, sessionId: string | undefined, client: Socket): Promise<boolean> {
+    const user = await identifySocket(this.jwt, client);
+    if (user) {
+      if (user.role === "OPERATOR") return true;
+      const owned = await this.prisma.shipment.findFirst({
+        where: {
+          id: shipmentId,
+          OR: [
+            { order: { buyer: { userId: user.sub } } },
+            { items: { some: { batch: { product: { tenant: { userId: user.sub } } } } } },
+          ],
+        },
+        select: { id: true },
+      });
+      return owned !== null;
+    }
+
+    if (!sessionId) return false;
+    const session = await this.prisma.trackingSession.findFirst({
+      // shipmentId ikut disyaratkan di dalam kueri: sesi kurir hanya membuka room
+      // pengirimannya sendiri, bukan room mana pun yang id-nya ia sebutkan.
+      where: { id: sessionId, shipmentId, endedAt: null },
+      select: { id: true },
+    });
+    return session !== null;
   }
 
   emitPosition(shipmentId: string, position: GpsCoordinate, at: Date, distanceToDestM: number) {

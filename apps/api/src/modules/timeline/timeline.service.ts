@@ -25,6 +25,16 @@ export interface UploadedPhoto {
   size: number;
 }
 
+/** Klien di dalam $transaction — tipe resmi Prisma, bukan bentuk struktural buatan sendiri. */
+type Tx = Parameters<Parameters<PrismaService["$transaction"]>[0]>[0];
+
+/**
+ * Batas percobaan urutan untuk bukti LAMA yang tersimpan sebelum `ordinal` ada.
+ * Faktorial tumbuh cepat; empat foto = 24 percobaan, masih murah. Di atas itu node
+ * dilaporkan tidak cocok apa adanya, bukan diverifikasi setengah-setengah.
+ */
+const MAX_LEGACY_PHOTO_PERMUTATIONS = 4;
+
 @Injectable()
 export class TimelineService {
   constructor(
@@ -38,8 +48,20 @@ export class TimelineService {
   /**
    * Tambah node timeline — SATU-SATUNYA cara menulis (FR-4.1: INSERT ONLY).
    * Tidak ada update/delete di seluruh service ini; trigger DB menjadi jaring pengaman.
+   *
+   * `dalamTransaksi` dijalankan di dalam transaksi yang sama, SETELAH node dan efek
+   * status batch tertulis. Itu jalan bagi pemanggil (lihat HarvestService) untuk
+   * menyatukan perubahan miliknya dengan pencatatan panen: kalau bukti ditolak atau
+   * alokasi gagal, perubahan itu ikut batal alih-alih tertinggal sebagai jejak
+   * "sudah dikonfirmasi" untuk panen yang tidak pernah tercatat.
    */
-  async appendNode(tenantId: string, batchId: string, dto: CreateNodeDto, photos: UploadedPhoto[]) {
+  async appendNode(
+    tenantId: string,
+    batchId: string,
+    dto: CreateNodeDto,
+    photos: UploadedPhoto[],
+    dalamTransaksi?: (tx: Tx) => Promise<void>,
+  ) {
     if (!photos.length) {
       throw new BadRequestException({
         code: "PHOTO_REQUIRED",
@@ -144,10 +166,14 @@ export class TimelineService {
       `;
       const id = rows[0]!.id;
 
-      for (const s of stored) {
+      for (const [ordinal, s] of stored.entries()) {
         await tx.nodePhoto.create({
           data: {
             nodeId: id,
+            // Urutan unggahan disimpan eksplisit. Hash node dihitung dari urutan ini;
+            // tanpa kolomnya, verifikasi hanya bisa mengurutkan menurut UUID acak dan
+            // dua foto yang sah menghasilkan `intact:false` (BE-11).
+            ordinal,
             objectUrl: s.url,
             photoType: dto.photoType ?? "KEGIATAN",
             // Sumber foto ditandai apa adanya: galeri menurunkan kepercayaan node (§5.4.1).
@@ -187,6 +213,7 @@ export class TimelineService {
         });
       }
 
+      await dalamTransaksi?.(tx);
       return id;
     });
 
@@ -333,6 +360,10 @@ export class TimelineService {
 
     const photos = await this.prisma.nodePhoto.findMany({
       where: { nodeId: { in: rows.map((r) => r.id) } },
+      // Urutan yang sama dengan saat node di-hash. `id` hanya pemutus seri untuk baris
+      // lama yang ordinal-nya masih 0 — tanpa urutan eksplisit, daftar foto di layar
+      // pembeli bisa berbeda urutan pada tiap muat ulang.
+      orderBy: [{ ordinal: "asc" }, { id: "asc" }],
     });
     const byNode = new Map<string, typeof photos>();
     for (const p of photos) {
@@ -375,12 +406,21 @@ export class TimelineService {
     const nodes = await this.listNodes(batchId);
     const photoRows = await this.prisma.nodePhoto.findMany({
       where: { node: { batchId } },
-      select: { nodeId: true, sha256: true, id: true },
-      orderBy: { id: "asc" },
+      select: { nodeId: true, sha256: true, id: true, ordinal: true },
+      // HARUS urutan yang sama dengan saat hash dihitung. Sebelumnya diurutkan menurut
+      // `id` — UUID acak — sementara hash dibuat dari urutan unggahan, sehingga dua foto
+      // yang sah punya peluang 50% dilaporkan sebagai rantai rusak (BE-11).
+      orderBy: [{ ordinal: "asc" }, { id: "asc" }],
     });
     const photosByNode = new Map<string, string[]>();
+    const legacyOrderNodes = new Set<string>();
     for (const p of photoRows) {
-      photosByNode.set(p.nodeId, [...(photosByNode.get(p.nodeId) ?? []), p.sha256]);
+      const sudah = photosByNode.get(p.nodeId) ?? [];
+      // Baris yang ditulis sebelum kolom `ordinal` ada semuanya bernilai 0. Untuk satu
+      // foto itu tidak berarti apa-apa; untuk dua foto atau lebih, urutan unggahannya
+      // memang tidak pernah tersimpan.
+      if (p.ordinal === 0 && sudah.length > 0) legacyOrderNodes.add(p.nodeId);
+      photosByNode.set(p.nodeId, [...sudah, p.sha256]);
     }
 
     let prevHash: string | null = null;
@@ -396,20 +436,32 @@ export class TimelineService {
     const recomputedHashes: string[] = [];
 
     for (const n of nodes as Array<any>) {
-      const recomputed = computeNodeHash(
-        {
-          batchId,
-          seq: n.seq,
-          activityType: n.activityType,
-          description: n.description,
-          lng: n.gps.lng,
-          lat: n.gps.lat,
-          deviceTs: new Date(n.deviceTs),
-          photoHashes: photosByNode.get(n.id) ?? [],
-          ralatOfId: n.ralatOfId,
-        },
-        prevHash,
-      );
+      const photoHashes = photosByNode.get(n.id) ?? [];
+      const hitung = (urutan: string[]) =>
+        computeNodeHash(
+          {
+            batchId,
+            seq: n.seq,
+            activityType: n.activityType,
+            description: n.description,
+            lng: n.gps.lng,
+            lat: n.gps.lat,
+            deviceTs: new Date(n.deviceTs),
+            photoHashes: urutan,
+            ralatOfId: n.ralatOfId,
+          },
+          prevHash,
+        );
+
+      let recomputed = hitung(photoHashes);
+      // Bukti lama: urutan unggahannya tidak pernah disimpan, jadi satu-satunya cara
+      // memeriksa ISI-nya adalah mencoba urutan lain dari kumpulan foto YANG SAMA.
+      // Ini tidak melonggarkan apa pun soal substitusi foto — mengganti satu foto
+      // mengubah hash-nya, dan tidak ada permutasi yang bisa menyelamatkannya.
+      if (recomputed !== n.nodeHash && legacyOrderNodes.has(n.id)) {
+        const cocok = this.cariUrutanLama(photoHashes, hitung, n.nodeHash);
+        if (cocok) recomputed = cocok;
+      }
       recomputedHashes.push(recomputed);
 
       if (n.prevHash !== prevHash) broken.push({ seq: n.seq, reason: "prevHash tidak menyambung ke node sebelumnya" });
@@ -445,10 +497,39 @@ export class TimelineService {
     };
   }
 
+  /**
+   * Cari urutan foto yang menghasilkan hash tersimpan, untuk node yang ditulis sebelum
+   * kolom `ordinal` ada. Mengembalikan hash yang cocok, atau null bila tidak ada —
+   * termasuk bila fotonya terlalu banyak untuk dicoba semua.
+   */
+  private cariUrutanLama(
+    photoHashes: string[],
+    hitung: (urutan: string[]) => string,
+    nodeHash: string,
+  ): string | null {
+    if (photoHashes.length > MAX_LEGACY_PHOTO_PERMUTATIONS) return null;
+    for (const urutan of permutasi(photoHashes)) {
+      if (hitung(urutan) === nodeHash) return nodeHash;
+    }
+    return null;
+  }
+
   /** Foto nota input hanya relevan untuk pemupukan & pengendalian hama (FR-4.7). */
   static allowsInputReceipt(activity: string) {
     return (ALLOWS_INPUT_RECEIPT as readonly string[]).includes(activity);
   }
 
   static hashOf = sha256;
+}
+
+/** Semua urutan dari sebuah daftar. Dipakai hanya untuk daftar sangat pendek. */
+function* permutasi<T>(items: T[]): Generator<T[]> {
+  if (items.length <= 1) {
+    yield [...items];
+    return;
+  }
+  for (let i = 0; i < items.length; i += 1) {
+    const sisa = [...items.slice(0, i), ...items.slice(i + 1)];
+    for (const ekor of permutasi(sisa)) yield [items[i]!, ...ekor];
+  }
 }

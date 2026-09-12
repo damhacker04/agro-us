@@ -236,7 +236,12 @@ export const ambilSenioritas = () => ambil<BuyerSeniority[]>("/buyer/seniority")
 
 export const ambilProfilPembeli = () => ambil<BuyerProfileResponse>("/buyer/profile");
 
-export const buatProfilPembeli = (body: { companyName: string; activeZoneId?: string }) =>
+/**
+ * `activeZoneId` WAJIB, bukan opsional: `CreateBuyerProfileDto` menolak badan tanpa zona
+ * dengan 400. Tipe lama membuat halaman pemanggil merasa boleh menghilangkannya, dan
+ * kegagalannya baru muncul sebagai galat validasi server.
+ */
+export const buatProfilPembeli = (body: { companyName: string; activeZoneId: string }) =>
   kirim<BuyerProfileResponse>("/buyer/profile", body);
 
 export const ubahProfilPembeli = (body: { companyName?: string; activeZoneId?: string }) =>

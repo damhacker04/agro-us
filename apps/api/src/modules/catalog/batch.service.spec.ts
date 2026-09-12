@@ -133,12 +133,23 @@ describe("BatchService opening a quota", () => {
     expect(f.prisma.batch.create).not.toHaveBeenCalled();
   });
 
-  // The service checks availability before a separate insert; there is no unique
-  // active-plot constraint in the checked-in migrations. Both callers can observe
-  // the same free plot. This controlled interleaving tests that business invariant.
-  const regression = process.env.QA_ENFORCE_REGRESSIONS === "1" ? it : it.fails;
-  regression("KNOWN GAP: concurrent requests must not open two active batches on the same plot", async () => {
+  // Pemeriksaan ketersediaan terjadi sebelum insert yang terpisah, jadi dua pemanggil
+  // bersamaan sama-sama melihat petak kosong. Yang menutup celahnya adalah partial unique
+  // index `batches_land_plot_aktif_uniq`; di sini database-nya diwakili test double yang
+  // menolak insert kedua persis seperti Postgres (P2002).
+  function withActivePlotConstraint(f: ReturnType<typeof fixture>) {
+    const taken = new Set<string>();
+    const create = f.prisma.batch.create.getMockImplementation()!;
+    f.prisma.batch.create.mockImplementation(async (args: { data: { landPlotId: string } }) => {
+      if (taken.has(args.data.landPlotId)) throw Object.assign(new Error("Unique constraint failed"), { code: "P2002", meta: { target: "batches_land_plot_aktif_uniq" } });
+      taken.add(args.data.landPlotId);
+      return create(args);
+    });
+  }
+
+  it("does not open two active batches on the same plot when requests race (BE-15)", async () => {
     const f = fixture();
+    withActivePlotConstraint(f);
     let completedChecks = 0;
     let releaseChecks!: () => void;
     const bothChecked = new Promise<void>((resolve) => { releaseChecks = resolve; });
@@ -153,6 +164,22 @@ describe("BatchService opening a quota", () => {
       f.service.openQuota("tenant-1", "product-1", quotaDto),
     ]);
     expect(opened.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+  });
+
+  it("answers a lost race with the same LAND_PLOT_BUSY conflict as the pre-check (BE-15)", async () => {
+    const f = fixture();
+    f.prisma.batch.create.mockRejectedValue(Object.assign(new Error("Unique constraint failed"), { code: "P2002" }));
+    f.prisma.batch.findFirst.mockResolvedValueOnce(null).mockResolvedValue({ id: "batch-pemenang" });
+    await expect(f.service.openQuota("tenant-1", "product-1", quotaDto)).rejects.toMatchObject({
+      response: { code: "LAND_PLOT_BUSY", blockingBatchId: "batch-pemenang" },
+    });
+  });
+
+  it("does not disguise an unrelated database failure as a busy plot", async () => {
+    const f = fixture();
+    const failure = Object.assign(new Error("connection reset"), { code: "P1001" });
+    f.prisma.batch.create.mockRejectedValue(failure);
+    await expect(f.service.openQuota("tenant-1", "product-1", quotaDto)).rejects.toBe(failure);
   });
 });
 

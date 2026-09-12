@@ -5,7 +5,6 @@ import { computeNodeHash, computeRootHash, sha256 } from "./hash.util";
 import type { CreateNodeDto } from "./timeline.dto";
 
 vi.mock("exifr", () => ({ default: { parse: vi.fn() } }));
-const regression = process.env["QA_ENFORCE_REGRESSIONS"] === "1" ? it : it.fails;
 const now = new Date("2026-09-10T12:00:00Z");
 const photo: UploadedPhoto = { buffer: Buffer.from("camera proof"), originalname: "proof.jpg", mimetype: "image/jpeg", size: 12 };
 const input = (overrides: Partial<CreateNodeDto> = {}): CreateNodeDto => ({ activityType: "PENGAIRAN", description: "Menyiram tanaman", lat: -7.9, lng: 112.6, deviceTs: now.toISOString(), captureSource: "IN_APP_CAMERA", ...overrides });
@@ -104,7 +103,7 @@ describe("TimelineService writes and harvest side effects", () => {
     expect(exifr.parse).toHaveBeenCalledWith(photo.buffer, { gps: true, exif: true });
     expect(storage.put).toHaveBeenCalledWith(photo.buffer, photo.originalname, photo.mimetype);
     expect(storage.put.mock.invocationCallOrder[0]).toBeLessThan(prisma.$transaction.mock.invocationCallOrder[0]!);
-    expect(tx.nodePhoto.create).toHaveBeenCalledWith({ data: { nodeId: "node", objectUrl: "/proof", photoType: "KEGIATAN", captureSource: "IN_APP_CAMERA", exifLat: -7.9, exifLng: 112.6, exifTs: originalDate, sha256: "photo-hash" } });
+    expect(tx.nodePhoto.create).toHaveBeenCalledWith({ data: { nodeId: "node", ordinal: 0, objectUrl: "/proof", photoType: "KEGIATAN", captureSource: "IN_APP_CAMERA", exifLat: -7.9, exifLng: 112.6, exifTs: originalDate, sha256: "photo-hash" } });
     expect(tx.batch.update).not.toHaveBeenCalled(); expect(allocation.apply).not.toHaveBeenCalled();
   });
   it.each([null, { latitude: "-7.9", longitude: "112", DateTimeOriginal: "invalid" }, {}])("stores missing or nonnumeric EXIF as explicit nulls (%j)", async (metadata) => {
@@ -195,15 +194,47 @@ describe("TimelineService public evidence and chain verification", () => {
     expect(result.broken.map(b => b.seq)).toEqual([1, 2, 2]);
     expect(result.rootHash).not.toBe(computeRootHash(["hash", "hash"]));
   });
-  regression("BUG-BE-TIMELINE-01: uploaded photo order must survive verification even when UUID order differs", async () => {
+  const uploadOrderHash = () => computeNodeHash({ batchId: "batch", seq: 1, activityType: "PENGAIRAN", description: "Menyiram tanaman", lng: 112.6, lat: -7.9, deviceTs: now, photoHashes: ["A", "B"], ralatOfId: null }, null);
+
+  it("stores photos in upload order so a multi-photo node verifies (BE-11)", async () => {
     const { service, prisma } = fixture();
-    // INSERT hashes upload order [A, B], while verification explicitly sorts random photo UUIDs.
-    const hash = computeNodeHash({ batchId: "batch", seq: 1, activityType: "PENGAIRAN", description: "Menyiram tanaman", lng: 112.6, lat: -7.9, deviceTs: now, photoHashes: ["A", "B"], ralatOfId: null }, null);
+    const hash = uploadOrderHash();
     prisma.$queryRaw.mockResolvedValue([nodeRow({ node_hash: hash })]);
-    prisma.nodePhoto.findMany.mockResolvedValue([{ id: "0001", nodeId: "node", sha256: "B" }, { id: "9999", nodeId: "node", sha256: "A" }]);
+    // Seperti yang dikembalikan Postgres untuk orderBy [ordinal, id]: urutan unggahan,
+    // walau UUID-nya kebetulan berlawanan.
+    prisma.nodePhoto.findMany.mockResolvedValue([{ id: "9999", nodeId: "node", ordinal: 0, sha256: "A" }, { id: "0001", nodeId: "node", ordinal: 1, sha256: "B" }]);
     const result = await service.verifyChain("batch");
     expect(result.intact).toBe(true);
     expect(result.rootHash).toBe(computeRootHash([hash]));
+    expect(prisma.nodePhoto.findMany.mock.calls[0]![0].orderBy).toEqual([{ ordinal: "asc" }, { id: "asc" }]);
+  });
+  it("still verifies evidence written before the ordinal column existed (BE-11)", async () => {
+    const { service, prisma } = fixture();
+    const hash = uploadOrderHash();
+    prisma.$queryRaw.mockResolvedValue([nodeRow({ node_hash: hash })]);
+    // Baris lama: ordinal 0 untuk semuanya, jadi yang tersisa hanya urutan UUID — dan
+    // di sini urutan itu kebetulan terbalik terhadap urutan unggahan.
+    prisma.nodePhoto.findMany.mockResolvedValue([{ id: "0001", nodeId: "node", ordinal: 0, sha256: "B" }, { id: "9999", nodeId: "node", ordinal: 0, sha256: "A" }]);
+    const result = await service.verifyChain("batch");
+    expect(result.intact).toBe(true);
+    expect(result.rootHash).toBe(computeRootHash([hash]));
+  });
+  it("does not let the legacy ordering fallback excuse a substituted photo (BE-11)", async () => {
+    const { service, prisma } = fixture();
+    prisma.$queryRaw.mockResolvedValue([nodeRow({ node_hash: uploadOrderHash() })]);
+    // Satu foto ditukar. Tidak ada urutan apa pun dari kumpulan ini yang menghasilkan
+    // hash tersimpan — dan memang tidak boleh ada.
+    prisma.nodePhoto.findMany.mockResolvedValue([{ id: "0001", nodeId: "node", ordinal: 0, sha256: "B" }, { id: "9999", nodeId: "node", ordinal: 0, sha256: "PALSU" }]);
+    const result = await service.verifyChain("batch");
+    expect(result.intact).toBe(false);
+    expect(result.broken).toEqual([{ seq: 1, reason: "isi node tidak cocok dengan hash tersimpan" }]);
+  });
+  it("reports legacy nodes with too many photos as unverifiable rather than guessing (BE-11)", async () => {
+    const { service, prisma } = fixture();
+    const hashes = ["A", "B", "C", "D", "E"];
+    prisma.$queryRaw.mockResolvedValue([nodeRow({ node_hash: computeNodeHash({ batchId: "batch", seq: 1, activityType: "PENGAIRAN", description: "Menyiram tanaman", lng: 112.6, lat: -7.9, deviceTs: now, photoHashes: hashes, ralatOfId: null }, null) })]);
+    prisma.nodePhoto.findMany.mockResolvedValue([...hashes].reverse().map((sha256, i) => ({ id: `id-${i}`, nodeId: "node", ordinal: 0, sha256 })));
+    expect((await service.verifyChain("batch")).intact).toBe(false);
   });
   it.each([["PEMUPUKAN", true], ["PENGENDALIAN_HAMA", true], ["PANEN", false]])("input receipts are relevant for %s = %s", (activity, allowed) => {
     expect(TimelineService.allowsInputReceipt(activity as string)).toBe(allowed);

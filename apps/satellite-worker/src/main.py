@@ -21,6 +21,7 @@ import os
 import sys
 from datetime import date, timedelta
 
+import requests
 from dotenv import load_dotenv
 
 from .indices import MAX_CLOUD_PCT
@@ -37,6 +38,18 @@ TIER_TOO_SMALL = "TERBATAS"
 # sebelum tanam dan kembalinya ke tanah terbuka setelah panen.
 LOOKBACK_DAYS = 45
 LOOKAHEAD_DAYS = 30
+
+# FR-9.2 — badge yang SUDAH TERBIT adalah fakta historis: buktinya sudah ter-anchor
+# dan pembeli sudah membayar premium atasnya. Job yang tidak melihat citra apa pun
+# (langganan lapse, lahan di bawah resolusi) tidak membawa bukti baru, jadi tidak
+# berhak mencabutnya. Hanya siklus verifikasi yang benar-benar membaca citra yang
+# boleh menurunkan atau mengubah nilai-nilai ini.
+ISSUED_BADGES = frozenset({"TERVERIFIKASI", "PERLU_DITINJAU", "TIDAK_SESUAI"})
+
+# Nilai balik process_batch yang berarti "tidak ada verifikasi yang dijalankan".
+# Dipisahkan dari status verifikasi supaya rekap job tidak terbaca seperti vonis.
+SKIPPED = "SKIPPED"
+FAILED = "GAGAL"
 
 log = logging.getLogger("satellite-worker")
 
@@ -60,41 +73,62 @@ def observation_window(batch: ActiveBatch) -> tuple[date, date]:
     return start, end
 
 
+def record_without_imagery(repo: Repository, batch: ActiveBatch, status: str) -> str:
+    """Catat status yang ditetapkan TANPA membaca citra, tanpa melanggar FR-9.2.
+
+    Dua penjagaan:
+      1. Badge yang sudah terbit tidak ditimpa — status lama dikembalikan apa adanya.
+      2. Status yang tidak berubah tidak ditulis ulang, supaya job harian tidak
+         menghasilkan penulisan kosong ke tabel batch.
+    """
+    if batch.verification_status in ISSUED_BADGES:
+        return batch.verification_status
+    if status != batch.verification_status:
+        repo.update_batch_verification(batch.batch_id, status, None, None)
+    return status
+
+
 def process_batch(repo: Repository, batch: ActiveBatch) -> str:
     """Verifikasi satu batch. Mengembalikan status akhir untuk keperluan log."""
     # FR-1.6 — lahan terlalu kecil untuk resolusi Sentinel-2.
     if batch.verification_tier == TIER_TOO_SMALL:
-        repo.update_batch_verification(batch.batch_id, "TIDAK_DAPAT", None, None)
-        log.info("  %s: TIDAK_DAPAT (lahan < 0,1 ha)", batch.batch_id[:8])
-        return "TIDAK_DAPAT"
+        status = record_without_imagery(repo, batch, "TIDAK_DAPAT")
+        log.info("  %s: %s (lahan < 0,1 ha)", batch.batch_id[:8], status)
+        return status
 
     # FR-9.1 — verifikasi satelit adalah fitur berlangganan. Batch dengan PO terjual
     # dikecualikan di repository (FR-9.3), jadi di sini cukup cek hasil efektifnya.
     if not batch.subscription_active:
-        status = "FOTO_SAJA" if batch.has_photo_evidence else "TIDAK_DAPAT"
-        repo.update_batch_verification(batch.batch_id, status, None, None)
+        status = record_without_imagery(
+            repo, batch, "FOTO_SAJA" if batch.has_photo_evidence else "TIDAK_DAPAT"
+        )
         log.info("  %s: %s (langganan tidak aktif)", batch.batch_id[:8], status)
         return status
 
-    start, end = observation_window(batch)
+    # Jendela milik BATCH INI, dipegang utuh. `start` di bawah boleh maju karena
+    # inkremental, tetapi penilaian tetap dibatasi jendela penuh batch — bukan
+    # seluruh riwayat lahan, yang bisa memuat musim tanam sebelumnya.
+    window_start, window_end = observation_window(batch)
+    start = window_start
 
-    # Inkremental: hanya tarik scene yang BELUM tersimpan. Riwayat lama tetap dipakai
-    # untuk analisis (dibaca dari DB di bawah), jadi tidak ada informasi yang hilang.
+    # Inkremental: hanya tarik scene yang BELUM tersimpan. Riwayat dalam jendela ini
+    # tetap dipakai untuk analisis (dibaca dari DB di bawah), jadi tidak ada yang hilang.
     last_seen = repo.last_observation_date(batch.land_plot_id)
     if last_seen is not None and os.getenv("SYNTHETIC_SCENES") != "1":
         start = max(start, last_seen + timedelta(days=1))
-        if start > end:
+        if start > window_end:
             log.info("  %s: tidak ada citra baru sejak %s", batch.batch_id[:8], last_seen)
 
     provider = build_provider(batch)
 
     try:
-        scenes = provider.fetch(batch.polygon_geojson, start, end) if start <= end else []
-    except (NotImplementedError, RuntimeError) as e:
-        # Sumber citra belum siap — JANGAN menebak, dan jangan menurunkan status
-        # batch yang sebelumnya sudah terverifikasi.
+        scenes = provider.fetch(batch.polygon_geojson, start, window_end) if start <= window_end else []
+    except (NotImplementedError, RuntimeError, requests.RequestException) as e:
+        # Sumber citra belum siap ATAU katalog sedang gagal — JANGAN menebak, jangan
+        # menurunkan status batch yang sebelumnya sudah terverifikasi, dan jangan
+        # menghentikan batch lain: gagalnya satu lahan bukan gagalnya job harian.
         log.warning("  %s: sumber citra tidak tersedia (%s)", batch.batch_id[:8], e)
-        return "SKIPPED"
+        return SKIPPED
 
     # Satu tanggal bisa punya lebih dari satu scene (tile/orbit berbeda). Simpan yang
     # tutupan awannya paling rendah — bukan yang kebetulan terakhir diproses, karena
@@ -113,7 +147,7 @@ def process_batch(repo: Repository, batch: ActiveBatch) -> str:
         )
         kept += int(stats.usable)
 
-    rows = repo.load_observations(batch.land_plot_id)
+    rows = repo.load_observations(batch.land_plot_id, window_start, window_end)
     observations = [
         Observation(
             scene_date=r["scene_date"],
@@ -123,6 +157,11 @@ def process_batch(repo: Repository, batch: ActiveBatch) -> str:
             usable=bool(r["usable"]) and r["ndvi_mean"] is not None,
         )
         for r in rows
+        # Penjagaan di batas keputusan, bukan pengulangan filter SQL: apa pun yang
+        # dikembalikan penyimpanan, vonis batch ini hanya boleh bersandar pada
+        # jendelanya sendiri. Satu baris dari musim lalu sudah cukup membuat detektor
+        # mengunci tajuk siklus yang salah.
+        if window_start <= r["scene_date"] <= window_end
     ]
 
     verdict = classify(
@@ -170,10 +209,24 @@ def main() -> int:
 
     tally: dict[str, int] = {}
     for b in batches:
-        status = process_batch(repo, b)
+        try:
+            status = process_batch(repo, b)
+        except Exception:  # noqa: BLE001
+            # Isolasi per batch, sengaja seluas mungkin: satu lahan bermasalah tidak
+            # boleh membuat lahan lain kehilangan verifikasi hari itu. Jejaknya tetap
+            # lengkap di log, dan hitungannya ikut menentukan kode keluar.
+            log.exception("  %s: gagal diproses", b.batch_id[:8])
+            status = FAILED
         tally[status] = tally.get(status, 0) + 1
 
     log.info("Selesai: %s", ", ".join(f"{k}={v}" for k, v in sorted(tally.items())) or "tidak ada batch")
+
+    # Bedakan sukses penuh dari sebagian gagal. Job yang menyelesaikan 3 dari 200 batch
+    # tidak boleh keluar hijau — status hijau palsu persis yang membuat scheduler tampak
+    # sehat sementara verifikasi berhenti diam-diam.
+    if tally.get(FAILED):
+        log.error("%d batch gagal diproses — hasil job PARSIAL", tally[FAILED])
+        return 2
     return 0
 
 

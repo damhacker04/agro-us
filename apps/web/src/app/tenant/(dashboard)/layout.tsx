@@ -12,8 +12,9 @@ import {
   Star,
   Wallet,
 } from "lucide-react";
-import { ambilProfilTenant } from "@/lib/api";
-import { hapusSesi } from "@/lib/auth";
+import { GalatApi, ambilProfilTenant } from "@/lib/api";
+import { akhiriSesi } from "@/lib/auth";
+import { RUTE_ONBOARDING_TENANT } from "@/lib/rute-masuk";
 import { Cangkang, type ItemMenu } from "@/ui";
 
 /**
@@ -48,8 +49,15 @@ export default function TenantDashboardLayout({ children }: { children: React.Re
   useEffect(() => {
     ambilProfilTenant()
       .then((p) => setNamaUsaha(p.companyName))
-      .catch(() => {
-        /* Kepala cangkang bukan alasan menggagalkan halaman — biarkan kosong. */
+      .catch((err) => {
+        // Profil yang MEMANG belum dibuat bukan galat tampilan: onboarding-nya
+        // dilanjutkan di sini, supaya membuka /tenant dari riwayat peramban tidak
+        // berakhir pada dasbor yang seluruh datanya menjawab TENANT_NOT_FOUND.
+        if (err instanceof GalatApi && (err.kode === "TENANT_NOT_FOUND" || err.status === 404)) {
+          router.replace(RUTE_ONBOARDING_TENANT);
+          return;
+        }
+        /* Kegagalan lain: kepala cangkang bukan alasan menggagalkan halaman. */
       });
   }, []);
 
@@ -60,7 +68,7 @@ export default function TenantDashboardLayout({ children }: { children: React.Re
       nama={namaUsaha}
       menu={MENU}
       keluar={() => {
-        hapusSesi();
+        akhiriSesi();
         router.push("/");
       }}
     >
