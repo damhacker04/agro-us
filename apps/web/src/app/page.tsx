@@ -233,18 +233,19 @@ export default function LandingPage() {
 
           <div className="flex flex-col gap-8 border-t-2 border-tinta pt-8 md:flex-row md:items-end md:justify-between">
             <div className="flex flex-wrap items-center gap-4">
-              <Link
+              {/* <a> biasa, bukan Link: router Next.js tidak menggulir ulang bila hash-nya sama dengan URL saat ini. */}
+              <a
                 href="#verifikasi"
                 className="bg-tinta px-7 py-3.5 text-[15px] font-semibold text-kertas-terang transition-colors hover:bg-ungu focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ungu"
               >
                 Bagaimana ini diverifikasi
-              </Link>
-              <Link
+              </a>
+              <a
                 href="#masuk"
                 className="border border-tinta px-7 py-3.5 text-[15px] font-semibold transition-colors hover:bg-tinta hover:text-kertas-terang focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ungu"
               >
                 Masuk ke aplikasi
-              </Link>
+              </a>
             </div>
 
             <div className="cap max-w-[24rem] border-[2.5px] border-stempel px-5 py-3 text-stempel">
