@@ -48,7 +48,7 @@ export function FormMasuk({
   }
 
   return (
-    <Halaman lebar="sempit" kembali={<TautanKembali href="/">Kembali ke beranda</TautanKembali>}>
+    <Halaman lebar="ringkas" tengah kembali={<TautanKembali href="/">Kembali ke beranda</TautanKembali>}>
       <Panel label="Masuk" judul={judul} nada="utama">
         <Prosa className="text-[14px]">{keterangan}</Prosa>
 

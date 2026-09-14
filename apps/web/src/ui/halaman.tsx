@@ -25,6 +25,7 @@ export function Halaman({
   kembali,
   children,
   lebar = "biasa",
+  tengah = false,
   className = "",
 }: {
   judul?: React.ReactNode;
@@ -34,15 +35,34 @@ export function Halaman({
   /** Slot untuk `<TautanKembali>`. Di atas judul, karena ia menjawab "saya dari mana". */
   kembali?: React.ReactNode;
   children: React.ReactNode;
-  lebar?: "biasa" | "sempit" | "penuh";
+  lebar?: "biasa" | "sempit" | "ringkas" | "penuh";
+  /**
+   * Isi berdiri di tengah layar penuh — untuk gerbang tunggal seperti masuk dan verifikasi.
+   * `min-h-full` saja tidak cukup di sini: `<body>` tidak punya tinggi, jadi kertasnya
+   * berhenti di bawah kartu dan sisa layar tampil sebagai bidang putih polos.
+   */
+  tengah?: boolean;
   className?: string;
 }) {
-  const batas = { biasa: "max-w-[1100px]", sempit: "max-w-[720px]", penuh: "max-w-none" }[lebar];
+  const batas = {
+    biasa: "max-w-[1100px]",
+    sempit: "max-w-[720px]",
+    ringkas: "max-w-[480px]",
+    penuh: "max-w-none",
+  }[lebar];
   const adaKepala = judul !== undefined || pengantar !== undefined || aksi !== undefined || kembali !== undefined;
 
   return (
-    <div className={cn(`kertas-sekuriti min-h-full bg-kertas font-sertifikat text-tinta ${className}`)}>
-      <div className={cn(`mx-auto ${batas} px-6 py-8 md:px-8 md:py-10`)}>
+    <div
+      className={cn(
+        `kertas-sekuriti bg-kertas font-sertifikat text-tinta ${tengah ? "flex min-h-dvh flex-col" : "min-h-full"} ${className}`,
+      )}
+    >
+      <div
+        className={cn(
+          `mx-auto w-full ${batas} px-6 py-8 md:px-8 md:py-10 ${tengah ? "flex flex-1 flex-col justify-center" : ""}`,
+        )}
+      >
         {adaKepala ? (
           /* Jarak ke bawah dari kepala halaman selalu lebih besar daripada jarak antar
              barisnya sendiri, supaya kepala terbaca sebagai satu kelompok, bukan sebagai

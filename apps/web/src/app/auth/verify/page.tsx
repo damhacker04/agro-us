@@ -128,7 +128,8 @@ function VerifyContent() {
 
   return (
     <Halaman
-      lebar="sempit"
+      lebar="ringkas"
+      tengah
       kembali={
         <button
           type="button"
@@ -216,7 +217,7 @@ export default function VerifyPage() {
   return (
     <Suspense
       fallback={
-        <Halaman lebar="sempit">
+        <Halaman lebar="ringkas" tengah>
           <Panel judul="Memuat…" />
         </Halaman>
       }
