@@ -158,6 +158,20 @@ export default function LandingPage() {
             <div className="flex items-center gap-3">
               <Image src="/logo.png" alt="" width={40} height={40} className="h-10 w-10 object-contain" />
               <span className="text-[19px] font-bold tracking-[0.02em]">AgroUs</span>
+              {/* Logo TCC wajib tampil pada karya (syarat lomba poin 3). Diletakkan SESUDAH
+                  merek AgroUs agar tidak terbaca sebagai pemilik produk, dan diberi label supaya
+                  tidak dikira logo mitra — halaman ini menyatakan tidak memuat logo mitra. */}
+              <span aria-hidden className="ml-2 h-8 w-px bg-kertas-garis" />
+              <Image
+                src="/logo_tcc.png"
+                alt="Logo TCC"
+                width={20}
+                height={36}
+                className="ml-2 h-9 w-auto"
+              />
+              <span className="hidden text-[11px] font-semibold uppercase tracking-cap text-tinta-samar sm:inline">
+                Karya untuk Jack 2026
+              </span>
             </div>
             <p className="text-[11px] font-semibold uppercase tracking-cap text-tinta-samar">
               Malang Raya · cabai, bawang, umbi
