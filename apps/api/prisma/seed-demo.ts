@@ -82,9 +82,15 @@ const TENANTS = [
     nama: "Tani Makmur Pujon",
     telepon: "081100000101",
     zona: ["Kabupaten Malang", "Kota Malang"],
+    // Tiga petak, bukan dua. Katalog Pujon punya tiga batch yang sedang tumbuh bersamaan,
+    // dan sejak migration `integritas_konkurensi` (BE-15, FR-3.3) basis data menolak dua
+    // batch aktif pada satu petak — sebagaimana mestinya: satu bidang tanah tidak ditanami
+    // wortel dan kubis sekaligus. Seed lama menaruh keduanya di petak 0 dan baru ketahuan
+    // saat seed pertama kali dijalankan ke PostgreSQL yang migration-nya lengkap.
     lahan: [
       { lat: -7.8412, lng: 112.4701 },
       { lat: -7.8455, lng: 112.4762 },
+      { lat: -7.839, lng: 112.4745 },
     ],
   },
   {
@@ -92,9 +98,12 @@ const TENANTS = [
     nama: "Kebun Lestari Batu",
     telepon: "081100000102",
     zona: ["Kota Batu", "Kota Malang"],
+    // Tiga petak untuk alasan yang sama dengan Pujon: Selada, Tomat, dan Wortel kedua
+    // (penyedia substitusi) tumbuh bersamaan.
     lahan: [
       { lat: -7.8701, lng: 112.5203 },
       { lat: -7.8748, lng: 112.5261 },
+      { lat: -7.8725, lng: 112.529 },
     ],
   },
   {
@@ -146,7 +155,7 @@ export const BATCH_UNGGULAN = "Wortel Pujon Grade A";
  */
 const KATALOG = [
   { tenant: "pujon", lahan: 0, komoditas: "Wortel", produk: BATCH_UNGGULAN, grade: "A", hargaBox: 145_000, kgBox: 10, kuota: 180, panenHari: 0, verifikasi: "TERVERIFIKASI" },
-  { tenant: "pujon", lahan: 0, komoditas: "Kubis", produk: "Kubis Krop Padat Pujon", grade: "A", hargaBox: 95_000, kgBox: 12, kuota: 150, panenHari: 26, verifikasi: "TERVERIFIKASI" },
+  { tenant: "pujon", lahan: 2, komoditas: "Kubis", produk: "Kubis Krop Padat Pujon", grade: "A", hargaBox: 95_000, kgBox: 12, kuota: 150, panenHari: 26, verifikasi: "TERVERIFIKASI" },
   { tenant: "pujon", lahan: 1, komoditas: "Sawi Hijau (Caisim)", produk: "Caisim Segar Pujon", grade: "B", hargaBox: 78_000, kgBox: 8, kuota: 120, panenHari: 9, verifikasi: "FOTO_SAJA" },
   { tenant: "batu", lahan: 0, komoditas: "Selada", produk: "Selada Keriting Batu", grade: "A", hargaBox: 132_000, kgBox: 6, kuota: 90, panenHari: 15, verifikasi: "TERVERIFIKASI" },
   { tenant: "batu", lahan: 1, komoditas: "Tomat", produk: "Tomat Beef Batu", grade: "A", hargaBox: 118_000, kgBox: 10, kuota: 140, panenHari: 21, verifikasi: "PERLU_DITINJAU" },
@@ -156,7 +165,7 @@ const KATALOG = [
   // Tenant berbeda + zona sama, dan setiap Tenant lain menjual komoditas yang
   // berlainan. Harganya sengaja sedikit lebih mahal supaya selisih yang ditanggung
   // Tenant gagal ikut terlihat, bukan nol.
-  { tenant: "batu", lahan: 0, komoditas: "Wortel", produk: "Wortel Batu Grade A", grade: "A", hargaBox: 152_000, kgBox: 10, kuota: 120, panenHari: 24, verifikasi: "TERVERIFIKASI" },
+  { tenant: "batu", lahan: 2, komoditas: "Wortel", produk: "Wortel Batu Grade A", grade: "A", hargaBox: 152_000, kgBox: 10, kuota: 120, panenHari: 24, verifikasi: "TERVERIFIKASI" },
 ] as const;
 
 /** Kronologi budidaya yang wajar untuk satu batch — dipakai membangun Verified Timeline. */

@@ -13,6 +13,8 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
     "db:seed:demo": "tsx prisma/seed-demo.ts",
+    "demo:e2e": "tsx scripts/demo-e2e.ts",
+    "probe:gps": "tsx scripts/probe-gps-gap.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -1386,6 +1386,15 @@ export interface TimelineVerifyResponse {
   /** false = ada isi node yang pernah diubah setelah tersimpan. */
   intact: boolean;
   rootHash: string;
+  /**
+   * Node yang gagal diverifikasi beserta alasannya; kosong bila rantai utuh.
+   *
+   * Sudah lama dikirim API tetapi tidak pernah dideklarasikan di sini, sehingga layar
+   * mana pun hanya bisa menyatakan "rusak" tanpa bisa menunjuk node yang mana — padahal
+   * justru itulah yang dibutuhkan pembeli atau auditor untuk memeriksanya sendiri.
+   * Tertangkap saat skrip demo end-to-end ikut di-type-check.
+   */
+  broken: Array<{ seq: number; reason: string }>;
   /** Jangkar eksternal terakhir, bila sudah dipublikasikan (§6.1). */
   anchor: { anchorDate: string; rootHash: string; externalRef: string | null } | null;
 }

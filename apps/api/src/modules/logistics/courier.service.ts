@@ -176,8 +176,8 @@ export class CourierService {
     // sehingga geofence tidak pernah menyala walau kurir sudah sampai. Ini bukan
     // sekadar kasus serangan — gangguan GPS biasa (terowongan, pantulan gedung)
     // menghasilkan lompatan serupa.
-    const prev = await this.prisma.$queryRaw<Array<{ lat: number; lng: number; device_ts: Date }>>`
-      SELECT ST_Y(point) AS lat, ST_X(point) AS lng, device_ts
+    const prev = await this.prisma.$queryRaw<Array<{ lat: number; lng: number; device_ts: Date; server_ts: Date }>>`
+      SELECT ST_Y(point) AS lat, ST_X(point) AS lng, device_ts, server_ts
       FROM tracking_positions
       WHERE session_id = ${sessionId}::uuid AND is_plausible = true
       ORDER BY server_ts DESC LIMIT 1
@@ -186,12 +186,16 @@ export class CourierService {
     let plausible = true;
     if (prev[0]) {
       const meters = haversineM(prev[0].lat, prev[0].lng, lat, lng);
-      const seconds = Math.max((deviceTs.getTime() - prev[0].device_ts.getTime()) / 1000, 1);
-      const kmh = (meters / seconds) * 3.6;
-      // Lompatan besar ATAU kecepatan mustahil → tandai (§6.3 Batasan 4).
-      plausible = kmh <= MAX_PLAUSIBLE_SPEED_KMH && meters <= MAX_PLAUSIBLE_JUMP_M;
+      const nilai = nilaiKewajaran({
+        meters,
+        detikPerangkat: (deviceTs.getTime() - prev[0].device_ts.getTime()) / 1000,
+        detikServer: (Date.now() - prev[0].server_ts.getTime()) / 1000,
+      });
+      plausible = nilai.plausible;
       if (!plausible) {
-        this.log.warn(`Sesi ${sessionId.slice(0, 8)}: posisi tidak wajar (${kmh.toFixed(0)} km/j, ${meters.toFixed(0)} m)`);
+        this.log.warn(
+          `Sesi ${sessionId.slice(0, 8)}: posisi tidak wajar (${nilai.kmh.toFixed(0)} km/j, ${meters.toFixed(0)} m, jeda diakui ${nilai.detikDiakui.toFixed(0)} dtk)`,
+        );
       }
     }
 
@@ -307,6 +311,62 @@ export class CourierService {
     }
     return s;
   }
+}
+
+/**
+ * Toleransi selisih jam ponsel terhadap jam server, dalam detik. Jam ponsel murah memang
+ * meleset beberapa detik, dan jaringan seluler menambah jeda kirim.
+ */
+const TOLERANSI_JAM_DETIK = 30;
+
+/**
+ * Batas lompatan absolut hanya berlaku untuk bacaan BERUNTUN — jeda sampai kira-kira enam
+ * interval pelaporan. Di luar itu yang menilai adalah kecepatan.
+ */
+const JENDELA_BATAS_LOMPATAN_DETIK = 60;
+
+/**
+ * Apakah perpindahan dari posisi wajar terakhir masuk akal (§6.3 Batasan 4).
+ *
+ * ═══ Dua cacat yang diperbaiki di sini — keduanya DITEMUKAN DI API SUNGGUHAN ═══
+ *
+ * 1. KURIR JUJUR TERKUNCI SELAMANYA. Sebelumnya lompatan > 5 km selalu ditolak, berapa pun
+ *    waktu yang lewat. Kurir yang masuk area tanpa sinyal 10 menit pada 36 km/jam muncul
+ *    kembali 6 km dari titik wajar terakhirnya: bacaan jujur itu ditolak, lalu SETIAP
+ *    bacaan berikutnya dibandingkan dengan titik beku yang sama — yang makin jauh. Uji
+ *    lawan API hidup (`scripts/probe-gps-gap.ts`): 0 dari 41 bacaan sesudahnya wajar,
+ *    termasuk 18 menit berdiri 20 m dari pintu pembeli. Geofence tidak pernah menyala,
+ *    hitung mundur penerimaan tidak pernah mulai, dan peta pembeli membeku 19 km jauhnya.
+ *    Pembanding "posisi wajar terakhir" dipilih justru untuk mencegah rantai teracuni;
+ *    batas lompatan yang buta waktu memasukkan racun itu kembali lewat pintu lain.
+ *
+ * 2. JAM PONSEL DIPERCAYA PENUH. Kecepatan dihitung dari `deviceTs` — nilai yang dikirim
+ *    ponsel dan tidak pernah diperiksa. Mengirim `deviceTs` sejam ke depan membuat
+ *    lompatan 80 km terlihat seperti 80 km/jam; satu-satunya yang menghalanginya adalah
+ *    batas 5 km tadi. Jadi batas itu tidak bisa sekadar dilonggarkan.
+ *
+ * Perbaikannya berpasangan: waktu tempuh yang diakui adalah yang LEBIH PENDEK antara jam
+ * ponsel dan jam server (ditambah toleransi). Ponsel boleh mengaku lebih cepat — itu hanya
+ * membuatnya lebih ketat — tetapi tidak bisa mengaku menempuh waktu lebih lama daripada
+ * yang benar-benar lewat di server. Dengan waktu yang tidak bisa dipalsukan, aturan
+ * kecepatan cukup untuk jeda panjang, dan batas lompatan absolut dipertahankan untuk
+ * bacaan beruntun sebagai lapisan kedua terhadap pantulan GPS.
+ *
+ * Mengandalkan jam server aman karena halaman kurir mengirim posisi SAAT ITU JUGA, tanpa
+ * antrean offline. Kalau kelak ada antrean offline, jeda server akan terlalu pendek untuk
+ * bacaan yang dikirim beruntun — hasilnya lebih ketat, bukan lebih longgar, tetapi aturan
+ * ini harus ditinjau ulang bersama perubahan itu.
+ */
+export function nilaiKewajaran(input: { meters: number; detikPerangkat: number; detikServer: number }): {
+  plausible: boolean;
+  detikDiakui: number;
+  kmh: number;
+} {
+  const detikDiakui = Math.max(Math.min(input.detikPerangkat, input.detikServer + TOLERANSI_JAM_DETIK), 1);
+  const kmh = (input.meters / detikDiakui) * 3.6;
+  const beruntun = detikDiakui <= JENDELA_BATAS_LOMPATAN_DETIK;
+  const plausible = kmh <= MAX_PLAUSIBLE_SPEED_KMH && (!beruntun || input.meters <= MAX_PLAUSIBLE_JUMP_M);
+  return { plausible, detikDiakui, kmh };
 }
 
 /** Jarak dua koordinat dalam meter. Cukup untuk cek kewajaran; geofence tetap pakai PostGIS. */

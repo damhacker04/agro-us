@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { COURIER_PIN_MAX_ATTEMPTS, POSITION_INTERVAL_MS, POD_TIMEOUT_MS } from "@agro-os/shared";
-import { CourierService, haversineM } from "./courier.service";
+import { CourierService, haversineM, nilaiKewajaran } from "./courier.service";
 const now = new Date("2026-09-09T00:00:00Z");
 function fixture() {
   const shipment = { id: "s1", courierPinHash: "valid-hash", pinAttempts: 0, destRadiusM: 100, zone: { name: "Malang" } };
@@ -80,7 +80,7 @@ describe("CourierService GPS plausibility and staged notifications", () => {
   });
   it("stores an implausible jump for audit without triggering arrival", async () => {
     const { service, prisma, gateway, notif } = fixture();
-    prisma.$queryRaw.mockResolvedValueOnce([{ lat: -7.98, lng: 112.63, device_ts: new Date(now.getTime() - 10_000) }]).mockResolvedValueOnce([{ dist: 5 }]);
+    prisma.$queryRaw.mockResolvedValueOnce([{ lat: -7.98, lng: 112.63, device_ts: new Date(now.getTime() - 10_000), server_ts: new Date(now.getTime() - 10_000) }]).mockResolvedValueOnce([{ dist: 5 }]);
     const result = await service.reportPosition("session1", -8.1, 112.63, now);
     expect(result).toEqual({ accepted: true, plausible: false, distanceToDestM: 5, arrived: false });
     expect(prisma.$queryRaw.mock.calls[1]!.slice(1)).toContain(false);
@@ -89,7 +89,7 @@ describe("CourierService GPS plausibility and staged notifications", () => {
   });
   it("permits a stationary position with a backwards device clock without dividing by zero", async () => {
     const { service, prisma } = fixture();
-    prisma.$queryRaw.mockResolvedValueOnce([{ lat: -7.98, lng: 112.63, device_ts: new Date(now.getTime() + 10_000) }]).mockResolvedValueOnce([{ dist: 5000 }]);
+    prisma.$queryRaw.mockResolvedValueOnce([{ lat: -7.98, lng: 112.63, device_ts: new Date(now.getTime() + 10_000), server_ts: new Date(now.getTime() - 10_000) }]).mockResolvedValueOnce([{ dist: 5000 }]);
     expect(await service.reportPosition("session1", -7.98, 112.63, now)).toMatchObject({ plausible: true, arrived: false });
   });
   it("starts the one-hour receipt countdown only after a plausible geofence arrival", async () => {
@@ -122,7 +122,7 @@ describe("CourierService GPS plausibility and staged notifications", () => {
   });
   it("does not broadcast an implausible GPS jump to the buyer's live map (BE-06)", async () => {
     const { service, prisma, gateway } = fixture();
-    prisma.$queryRaw.mockResolvedValueOnce([{ lat: -7.98, lng: 112.63, device_ts: new Date(now.getTime() - 10_000) }]).mockResolvedValueOnce([{ dist: 5 }]);
+    prisma.$queryRaw.mockResolvedValueOnce([{ lat: -7.98, lng: 112.63, device_ts: new Date(now.getTime() - 10_000), server_ts: new Date(now.getTime() - 10_000) }]).mockResolvedValueOnce([{ dist: 5 }]);
     const hasil = await service.reportPosition("session1", -8.1, 112.63, now);
     expect(gateway.emitPosition).not.toHaveBeenCalled();
     // Tetap DITERIMA dan tetap disimpan sebagai bukti — yang ditahan hanya siarannya.
@@ -131,8 +131,53 @@ describe("CourierService GPS plausibility and staged notifications", () => {
 
   it("still broadcasts a plausible position (BE-06)", async () => {
     const { service, prisma, gateway } = fixture();
-    prisma.$queryRaw.mockResolvedValueOnce([{ lat: -7.98, lng: 112.63, device_ts: new Date(now.getTime() - 10_000) }]).mockResolvedValueOnce([{ dist: 500 }]);
+    prisma.$queryRaw.mockResolvedValueOnce([{ lat: -7.98, lng: 112.63, device_ts: new Date(now.getTime() - 10_000), server_ts: new Date(now.getTime() - 10_000) }]).mockResolvedValueOnce([{ dist: 500 }]);
     await service.reportPosition("session1", -7.9801, 112.6301, now);
     expect(gateway.emitPosition).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Aturan kewajaran GPS. Dua kasus pertama adalah cacat yang ditemukan dengan menjalankan
+ * kurir sungguhan terhadap API hidup (`scripts/probe-gps-gap.ts`), bukan dari membaca kode.
+ */
+describe("nilaiKewajaran — waktu tempuh yang diakui dan batas lompatan", () => {
+  it("menerima kurir jujur yang muncul kembali 6 km kemudian setelah sinyal hilang 10 menit", () => {
+    // 36 km/jam selama 600 detik, dan jam server memang mencatat 600 detik lewat.
+    expect(nilaiKewajaran({ meters: 6_000, detikPerangkat: 600, detikServer: 600 })).toMatchObject({ plausible: true });
+  });
+
+  it("menolak jam ponsel yang mengaku lebih banyak waktu lewat daripada yang dicatat server", () => {
+    // Surabaya dari Malang, ~80 km. Ponsel mengaku sejam lewat; server tahu baru 10 detik.
+    const hasil = nilaiKewajaran({ meters: 80_000, detikPerangkat: 3_600, detikServer: 10 });
+    expect(hasil.plausible).toBe(false);
+    expect(hasil.detikDiakui).toBe(40); // 10 detik server + toleransi 30 detik, bukan 3.600
+  });
+
+  it("tetap menolak lompatan besar pada bacaan beruntun walau kecepatannya tampak wajar", () => {
+    // 5,5 km dalam 55 detik sama dengan 360 km/jam — dan juga melewati batas lompatan.
+    expect(nilaiKewajaran({ meters: 5_500, detikPerangkat: 55, detikServer: 55 }).plausible).toBe(false);
+  });
+
+  it("memberlakukan batas lompatan hanya di dalam jendela bacaan beruntun", () => {
+    // Jarak yang sama: dalam 58 detik ditolak (322 km/jam); dalam 10 menit wajar (31 km/jam).
+    expect(nilaiKewajaran({ meters: 5_200, detikPerangkat: 58, detikServer: 58 }).plausible).toBe(false);
+    expect(nilaiKewajaran({ meters: 5_200, detikPerangkat: 600, detikServer: 600 }).plausible).toBe(true);
+  });
+
+  it("menolak kecepatan mustahil setelah jeda panjang sekalipun", () => {
+    // 60 km dalam 10 menit = 360 km/jam.
+    expect(nilaiKewajaran({ meters: 60_000, detikPerangkat: 600, detikServer: 600 }).plausible).toBe(false);
+  });
+
+  it("tidak membagi dengan nol saat jam ponsel berjalan mundur", () => {
+    const hasil = nilaiKewajaran({ meters: 0, detikPerangkat: -10, detikServer: 10 });
+    expect(hasil.detikDiakui).toBe(1);
+    expect(hasil.plausible).toBe(true);
+  });
+
+  it("memakai jam ponsel bila ia justru lebih pendek dari jeda server", () => {
+    // Laporan terlambat sampai di server tidak boleh membuat lompatan tampak lebih pelan.
+    expect(nilaiKewajaran({ meters: 3_000, detikPerangkat: 20, detikServer: 300 })).toMatchObject({ detikDiakui: 20, plausible: false });
   });
 });

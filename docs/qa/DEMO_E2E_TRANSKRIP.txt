@@ -1,0 +1,85 @@
+API: http://localhost:3001
+01. Aktor masuk lewat OTP
+    Tenant Tani Makmur Pujon, pembeli Resto Padi Emas, dan operator memegang JWT masing-masing.
+02. Pembeli checkout 30 box Wortel Pujon Grade A
+    Order ac4856c8, tagihan AGR-MU0NSEX9-0GE9 sebesar Rp4.435.000
+    ✓ kuota direservasi atomik: terjual 24 → 54
+03. Gateway pembayaran mengirim callback LUNAS bertanda tangan HMAC
+    dua callback bersamaan → HTTP 200 dan 200
+    ✓ tepat SATU entri HOLD untuk dua callback kembar (dapat 1)
+    ✓ dana Rp4.350.000 ditahan di escrow, belum milik Tenant
+04. Callback PALSU dengan tanda tangan salah ditolak
+    ✓ callback palsu → HTTP 401, pesanan tetap PAID
+05. Tenant melaporkan panen hanya 45 box (pratinjau, belum mengikat)
+    Katering Sehat Nusantara   pesan 24 → dapat 24, kurang 0
+    Resto Padi Emas            pesan 30 → dapat 21, kurang 9
+    ✓ yang dialokasikan = hasil panen (45 box)
+    ✓ jumlah alokasi seluruh pembeli tepat sama dengan hasil panen — tidak ada box yang dijanjikan dua kali
+    ✓ kekurangan jatuh ke pesanan yang dibayar paling akhir (Resto Padi Emas kurang 9)
+    ✓ pratinjau hanya menulis penilaian kewajaran — belum ada satu pun alokasi yang mengikat
+06. Tenant mengonfirmasi panen dengan foto bukti dan GPS di dalam petak
+    titik GPS dari poligon lahan: -7.84045, 112.47085
+    ✓ qtyBoxFulfilled di basis data berjumlah 45
+    ✓ alokasi yang mengikat sama persis dengan pratinjau (21 box)
+    ✓ rantai hash Verified Timeline utuh setelah node PANEN (6 node, dihitung ulang oleh server)
+07. Pembeli melihat keputusan yang harus diambil atas kekurangannya
+    ✓ kekurangan muncul sebagai keputusan tertunda milik pembeli ini
+    kurang 9 box senilai Rp1.305.000; sisa memenuhi minimum: true
+    substitusi: Wortel Batu Grade A (Kebun Lestari Batu)
+    ✓ opsi terima sebagian sah karena sisanya masih di atas minimum order zona
+08. Pembeli memilih TERIMA SEBAGIAN — nilai kekurangan dikembalikan
+    Porsi yang tersedia tetap dikirim; sisanya dikembalikan ke rekening Anda.
+    ✓ refund Rp1.305.000 = 9 box × harga terkunci
+    ✓ saldo escrow turun tepat Rp1.305.000: Rp4.350.000 → Rp3.045.000
+    ✓ keputusan kedua atas kekurangan yang sama ditolak — tidak ada refund dobel
+09. Tenant mencetak QR — satu label per box yang BENAR-BENAR dikirim
+    21 label tercetak, Kode Antar 3568 (hanya tampil sekali)
+    ✓ label = box terpenuhi (21), bukan box dipesan (30)
+    ✓ jumlah token di basis data sama dengan lembar cetak
+10. Posisi pengiriman tidak bisa diintip tanpa hak
+    ✓ tamu tanpa token ditolak (HTTP 403)
+    ✓ pembeli lain yang login pun ditolak (HTTP 403)
+    ✓ pembeli pemilik pesanan diizinkan
+11. Kurir tanpa akun memindai QR dan memasukkan Kode Antar
+    ✓ Kode Antar salah ditolak (HTTP 400)
+    ✓ sesi terbuka dan pengiriman berstatus DIKIRIM
+12. Kurir melaporkan posisi sepanjang rute Pujon → Kota Malang
+    ✓ laporan posisi tanpa header sesi ditolak (HTTP 400)
+    waktu perjalanan disimulasikan dengan memundurkan stempel waktu bacaan sebelumnya (jam ponsel DAN server)
+    posisi terakhir 2830 m dari tujuan
+    ✓ lompatan ~80 km dalam semenit dinilai TIDAK wajar
+    ✓ peta pembeli tetap di posisi wajar terakhir, tidak melompat ke Surabaya
+    ✓ bacaan palsu tetap DISIMPAN sebagai bukti, bertanda is_plausible = false
+    ✓ geofence terpicu 22 m dari tujuan
+    ✓ status TIBA_DI_LOKASI — GPS saja TIDAK menyelesaikan transaksi
+13. Pembeli memotret barang dan mengonfirmasi penerimaan
+    ✓ DITERIMA, jendela klaim sampai 2026-09-14T05:03:58.402Z
+14. Pembeli menimbang 170 kg dan mengajukan klaim
+    diharapkan 210 kg, kurang 40 kg, toleransi 6.3 kg → dapat diklaim 33.7 kg = Rp488.650 (11.02% pesanan)
+    ✓ berat acuan memakai box TERKIRIM (210 kg), bukan box dipesan
+    ✓ klaim masuk antrean operator (rute OPERATOR)
+15. LOMPAT WAKTU — jendela klaim 24 jam dianggap sudah lewat
+    ⚠ satu-satunya langkah yang tidak lewat API: stempel waktu digeser di basis data,
+      karena jendela klaim 24 jam tidak bisa ditunggu saat peragaan.
+16. Job pencairan berjalan — pengiriman JATUH TEMPO, tapi dana DITAHAN karena klaim belum diputus
+    rekap job: {"settled":0,"totalAmount":0,"heldByPendingClaims":1}
+    ✓ job melaporkan 1 pengiriman DITAHAN klaim — penahanannya benar-benar terjadi
+    ✓ tidak ada RELEASE dan pengiriman tetap DITERIMA selama sengketa terbuka
+17. Operator memutus klaim: disetujui Rp400.000 dari Rp488.650
+    ✓ persetujuan melebihi nilai klaim ditolak (HTTP 400)
+    ✓ satu entri POTONG_KLAIM Rp400.000
+    ✓ saldo escrow kini Rp2.645.000
+18. Job pencairan berjalan lagi — sisa dana dilepas ke Tenant
+    rekap job: {"settled":1,"totalAmount":2645000,"heldByPendingClaims":0}
+    ✓ satu RELEASE Rp2.645.000 = Rp3.045.000 − klaim Rp400.000
+    ✓ pengiriman SELESAI
+    ✓ saldo escrow order ini tepat NOL — tidak ada rupiah tertinggal atau keluar dua kali
+19. Job dijalankan sekali lagi — harus idempoten
+    ✓ tetap satu RELEASE
+20. Rekonsiliasi akhir uang pesanan ini
+    HOLD              Rp4.350.000
+    POTONG_KLAIM        Rp400.000
+    REFUND            Rp1.305.000
+    RELEASE           Rp2.645.000
+    ✓ HOLD Rp4.350.000 = refund + potongan klaim + pencairan Rp4.350.000
+SELESAI — seluruh invarian terpenuhi.

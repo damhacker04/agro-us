@@ -21,6 +21,6 @@
     // (Express.Multer.File) yang dipakai upload foto bukti timeline.
     "types": ["node", "express", "multer"]
   },
-  "include": ["src/**/*.ts", "prisma/**/*.ts", "prisma.config.ts", "generated/**/*.ts"],
+  "include": ["src/**/*.ts", "prisma/**/*.ts", "scripts/**/*.ts", "prisma.config.ts", "generated/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }
